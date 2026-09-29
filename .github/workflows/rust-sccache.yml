@@ -67,6 +67,38 @@ jobs:
       - name: Checkout caller repository
         uses: actions/checkout@v7
 
+      - name: Show OIDC identity claims
+        uses: actions/github-script@v8
+        env:
+          OIDC_AUDIENCE: ${{ env.TAILSCALE_AUDIENCE }}
+        with:
+          script: |
+            const token = await core.getIDToken(process.env.OIDC_AUDIENCE);
+            const payload = JSON.parse(
+              Buffer.from(token.split('.')[1], 'base64url').toString('utf8')
+            );
+            const keys = [
+              'iss',
+              'aud',
+              'sub',
+              'repository',
+              'repository_id',
+              'repository_owner',
+              'repository_owner_id',
+              'repository_visibility',
+              'ref',
+              'event_name',
+              'workflow',
+              'workflow_ref',
+              'job_workflow_ref',
+              'runner_environment'
+            ];
+            const selected = Object.fromEntries(
+              keys.filter((key) => Object.hasOwn(payload, key))
+                  .map((key) => [key, payload[key]])
+            );
+            console.log(JSON.stringify(selected, null, 2));
+
       - name: Join tailnet
         uses: tailscale/github-action@v4
         with:
