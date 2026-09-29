@@ -189,7 +189,14 @@ jobs:
             rustup target add --toolchain "$RUST_TOOLCHAIN" "${targets[@]}"
           fi
 
-          rustc +"$RUST_TOOLCHAIN" --version
+          rustc_path="$(rustup which rustc --toolchain "$RUST_TOOLCHAIN")"
+          rustdoc_path="$(rustup which rustdoc --toolchain "$RUST_TOOLCHAIN")"
+          {
+            echo "RUSTC=$rustc_path"
+            echo "RUSTDOC=$rustdoc_path"
+          } >> "$GITHUB_ENV"
+
+          "$rustc_path" --version
           cargo +"$RUST_TOOLCHAIN" --version
 
       - name: Install canonical sccache client
