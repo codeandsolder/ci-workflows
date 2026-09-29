@@ -85,9 +85,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sccache-l0
-          key: >-
-            sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-
-            ${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
 
