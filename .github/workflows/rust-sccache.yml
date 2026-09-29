@@ -82,6 +82,40 @@ jobs:
             exit 1
           fi
 
+      - name: Fetch shared-cache credentials over tailnet
+        id: cache-broker
+        shell: bash
+        run: |
+          set -euo pipefail
+          broker_url="http://100.65.0.2:3903/v1/sccache-credentials"
+          response_file="${RUNNER_TEMP}/sccache-credentials.json"
+
+          if curl --fail --silent --show-error --connect-timeout 3             --output "$response_file" "$broker_url"; then
+            access_key="$(jq -er '.access_key_id' "$response_file")"
+            secret_key="$(jq -er '.secret_access_key' "$response_file")"
+            endpoint="$(jq -er '.endpoint' "$response_file")"
+            bucket="$(jq -er '.bucket' "$response_file")"
+            region="$(jq -er '.region' "$response_file")"
+            key_prefix="$(jq -er '.key_prefix' "$response_file")"
+
+            echo "::add-mask::$access_key"
+            echo "::add-mask::$secret_key"
+            {
+              echo "CACHE_ACCESS_KEY=$access_key"
+              echo "CACHE_SECRET_KEY=$secret_key"
+              echo "CACHE_ENDPOINT=$endpoint"
+              echo "CACHE_BUCKET=$bucket"
+              echo "CACHE_REGION=$region"
+              echo "CACHE_KEY_PREFIX=$key_prefix"
+            } >> "$GITHUB_ENV"
+            echo "source=tailnet-broker" >> "$GITHUB_OUTPUT"
+            rm -f "$response_file"
+          else
+            rm -f "$response_file"
+            echo "Tailnet credential broker unavailable; falling back to caller secrets if configured."
+            echo "source=caller-secrets" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Detect shared-cache credentials
         id: cache-config
         shell: bash
@@ -163,11 +197,11 @@ jobs:
             echo "SCCACHE_CACHE_SIZE=2G"
             echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
             echo "SCCACHE_MULTILEVEL_WRITE_ERROR_POLICY=l0"
-            echo "SCCACHE_BUCKET=sccache"
-            echo "SCCACHE_REGION=garage-jlc"
-            echo "SCCACHE_ENDPOINT=http://100.65.0.2:3902"
+            echo "SCCACHE_BUCKET=${CACHE_BUCKET:-sccache}"
+            echo "SCCACHE_REGION=${CACHE_REGION:-garage-jlc}"
+            echo "SCCACHE_ENDPOINT=${CACHE_ENDPOINT:-http://100.65.0.2:3902}"
             echo "SCCACHE_S3_USE_SSL=false"
-            echo "SCCACHE_S3_KEY_PREFIX=rust/"
+            echo "SCCACHE_S3_KEY_PREFIX=${CACHE_KEY_PREFIX:-rust/}"
             echo "AWS_ACCESS_KEY_ID=$CACHE_ACCESS_KEY"
             echo "AWS_SECRET_ACCESS_KEY=$CACHE_SECRET_KEY"
           } >> "$GITHUB_ENV"
