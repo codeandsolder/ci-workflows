@@ -115,17 +115,14 @@ fn handle_connection(mut stream: TcpStream) {
         Ok(0) | Err(_) => return,
         Ok(bytes_read) => bytes_read,
     };
-    let request = match std::str::from_utf8(&buffer[..bytes_read]) {
-        Ok(request) => request,
-        Err(_) => {
-            http_response(
-                &mut stream,
-                "400 Bad Request",
-                "invalid request\n",
-                "text/plain",
-            );
-            return;
-        }
+    let Ok(request) = std::str::from_utf8(&buffer[..bytes_read]) else {
+        http_response(
+            &mut stream,
+            "400 Bad Request",
+            "invalid request\n",
+            "text/plain",
+        );
+        return;
     };
 
     let request_line = request.lines().next().unwrap_or_default();
