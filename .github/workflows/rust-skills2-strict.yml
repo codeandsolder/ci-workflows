@@ -1,0 +1,29 @@
+name: Strict Rust
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  strict-rust-broker:
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@main
+    with:
+      working-directory: broker
+
+  strict-rust-smoke-cache:
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@main
+    with:
+      working-directory: smoke-cache
+
+  strict-rust-smoke-generated-path:
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@main
+    with:
+      working-directory: smoke-generated-path
