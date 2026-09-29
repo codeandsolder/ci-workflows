@@ -44,6 +44,8 @@ env:
   TAILSCALE_CLIENT_ID: "TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
   TAILSCALE_AUDIENCE: "api.tailscale.com/TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
   SCCACHE_FORK_REV: "6b19bb3cf89ae095be71f06ac55208010c72d582"
+  SCCACHE_RELEASE_TAG: "sccache-ci-6b19bb3"
+  SCCACHE_RELEASE_SHA256: "96310b2ed64aad915fce2e421b1aa8ba20b3a508e4e7951b4a056f7bbc15e7aa"
   CARGO_EPHEMERAL_REV: "3e2509217ce5865c0fbe2b26534cb2cddcb8a48c"
   CARGO_EPHEMERAL_TAG: "cargo-ephemeral-3e2509217"
   CARGO_EPHEMERAL_SHA256: "6f735846e7f796bac2131ede59ee3286107a97544b5e1ba2dc308d58bdc36270"
@@ -190,39 +192,27 @@ jobs:
           rustc +"$RUST_TOOLCHAIN" --version
           cargo +"$RUST_TOOLCHAIN" --version
 
-      - name: Restore maintained sccache binary
+      - name: Install canonical sccache client
         if: steps.cache-config.outputs.enabled == 'true'
-        id: sccache-binary-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/.local/bin/sccache
-          key: maintained-sccache-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_FORK_REV }}
-
-      - name: Install canonical sccache
-        if: steps.cache-config.outputs.enabled == 'true' && steps.sccache-binary-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --yes bubblewrap
+          mkdir -p "$HOME/.local/bin"
+          sccache_bin="$HOME/.local/bin/sccache"
 
-          src="${RUNNER_TEMP}/sccache-src"
-          rm -rf "$src"
-          git clone --filter=blob:none --no-checkout             https://github.com/codeandsolder/sccache-deduplicated.git "$src"
-          git -C "$src" fetch --depth=1 origin "$SCCACHE_FORK_REV"
-          git -C "$src" checkout --detach "$SCCACHE_FORK_REV"
+          curl --fail --location --silent --show-error \
+            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2" \
+            --output "$sccache_bin"
 
-          cargo +"$RUST_TOOLCHAIN" install             --path "$src"             --root "$HOME/.local"             --locked             --bin sccache             --no-default-features             --features s3
+          printf '%s  %s\n' "$SCCACHE_RELEASE_SHA256" "$sccache_bin" | sha256sum --check
+          chmod 0755 "$sccache_bin"
 
-      - name: Ensure bubblewrap is available
-        if: steps.cache-config.outputs.enabled == 'true' && steps.sccache-binary-cache.outputs.cache-hit == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
           if [[ ! -x /usr/bin/bwrap ]]; then
             sudo apt-get update
             sudo apt-get install --yes bubblewrap
           fi
+
+          "$sccache_bin" --version
 
       - name: Install maintained Cargo client
         shell: bash
