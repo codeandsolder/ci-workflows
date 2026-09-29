@@ -9,9 +9,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let asset = asset
         .to_str()
         .ok_or("OUT_DIR asset path is not valid UTF-8")?;
-    let generated = format!(
-        "pub static GENERATED_ASSET: &[u8] = include_bytes!({asset:?});\n"
-    );
+    let generated = format!("pub static GENERATED_ASSET: &[u8] = include_bytes!({asset:?});\n");
     fs::write(out_dir.join("generated.rs"), generated)?;
     Ok(())
 }
