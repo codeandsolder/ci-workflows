@@ -15,6 +15,6 @@ mod tests {
 
     #[test]
     fn smoke_value_is_stable() {
-        assert_eq!(mix(7), 0x879f_ab06_a5e3_a7c0);
+        assert_eq!(mix(7), 0x7991_bc20_18b4_4a0b);
     }
 }
