@@ -35,7 +35,7 @@ on:
       distributed:
         description: Register this trusted runner as a direct sccache-dist worker and use the scheduler for cache misses
         required: false
-        default: true
+        default: false
         type: boolean
     secrets:
       SCCACHE_S3_ACCESS_KEY_ID:
@@ -79,6 +79,17 @@ jobs:
     steps:
       - name: Checkout caller repository
         uses: actions/checkout@v7
+
+      - name: Restore persistent local sccache L0
+        id: sccache-l0-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/sccache-l0
+          key: >-
+            sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-
+            ${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
 
       - name: Show OIDC identity claims
         uses: actions/github-script@v8
@@ -147,12 +158,14 @@ jobs:
             bucket="$(jq -er '.bucket' "$response_file")"
             region="$(jq -er '.region' "$response_file")"
             key_prefix="$(jq -er '.key_prefix' "$response_file")"
-            scheduler_url="$(jq -er '.scheduler_url' "$response_file")"
-            scheduler_token="$(jq -er '.scheduler_token' "$response_file")"
+            scheduler_url="$(jq -r '.scheduler_url // empty' "$response_file")"
+            scheduler_token="$(jq -r '.scheduler_token // empty' "$response_file")"
 
             echo "::add-mask::$access_key"
             echo "::add-mask::$secret_key"
-            echo "::add-mask::$scheduler_token"
+            if [[ -n "$scheduler_token" ]]; then
+              echo "::add-mask::$scheduler_token"
+            fi
             {
               echo "CACHE_ACCESS_KEY=$access_key"
               echo "CACHE_SECRET_KEY=$secret_key"
@@ -408,7 +421,7 @@ jobs:
             echo "RUSTC_WRAPPER=$HOME/.local/bin/sccache"
             echo "SCCACHE_EXPERIMENTAL_CANONICAL_RUST=1"
             echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-l0"
-            echo "SCCACHE_CACHE_SIZE=2G"
+            echo "SCCACHE_CACHE_SIZE=1G"
             echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
             echo "SCCACHE_MULTILEVEL_WRITE_ERROR_POLICY=l0"
             echo "SCCACHE_BUCKET=${CACHE_BUCKET:-sccache}"
@@ -444,6 +457,19 @@ jobs:
           # runner a small drain window before GitHub tears the process down.
           sleep 5
           "$HOME/.local/bin/sccache" --show-stats || true
+
+      - name: Stop sccache before persisting L0
+        if: always() && steps.cache-config.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          "$HOME/.local/bin/sccache" --stop-server || true
+
+      - name: Save updated local sccache L0
+        if: always() && steps.cache-config.outputs.enabled == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/sccache-l0
+          key: ${{ steps.sccache-l0-restore.outputs.cache-primary-key }}
 
       - name: Stop direct sccache-dist worker
         if: always() && steps.cache-config.outputs.dist_enabled == 'true'
