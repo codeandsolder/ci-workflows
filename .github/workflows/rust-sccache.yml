@@ -191,9 +191,9 @@ jobs:
               echo "Distributed mode requested but scheduler credentials are unavailable." >&2
               exit 1
             fi
-            echo "dist-enabled=true" >> "$GITHUB_OUTPUT"
+            echo "dist_enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "dist-enabled=false" >> "$GITHUB_OUTPUT"
+            echo "dist_enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install Rust toolchain
@@ -223,7 +223,7 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" --version
 
       - name: Install canonical sccache client and direct worker
-        if: steps.cache-config.outputs.enabled == 'true' || steps.cache-config.outputs.dist-enabled == 'true'
+        if: steps.cache-config.outputs.enabled == 'true' || steps.cache-config.outputs.dist_enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -320,7 +320,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Configure distributed sccache client
-        if: steps.cache-config.outputs.dist-enabled == 'true'
+        if: steps.cache-config.outputs.dist_enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -343,7 +343,7 @@ jobs:
           echo "SCCACHE_CONF=$client_config" >> "$GITHUB_ENV"
 
       - name: Start direct sccache-dist worker
-        if: steps.cache-config.outputs.dist-enabled == 'true'
+        if: steps.cache-config.outputs.dist_enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -446,7 +446,7 @@ jobs:
           "$HOME/.local/bin/sccache" --show-stats || true
 
       - name: Stop direct sccache-dist worker
-        if: always() && steps.cache-config.outputs.dist-enabled == 'true'
+        if: always() && steps.cache-config.outputs.dist_enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
