@@ -1,0 +1,16 @@
+name: Shared sccache smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  smoke:
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@main
+    with:
+      command: cargo +1.98.1 check --locked --manifest-path broker/Cargo.toml
+      rust-toolchain: "1.98.1"
+      rustflags: "-C target-cpu=x86-64-v2"
