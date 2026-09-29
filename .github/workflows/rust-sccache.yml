@@ -44,6 +44,9 @@ env:
   TAILSCALE_CLIENT_ID: "TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
   TAILSCALE_AUDIENCE: "api.tailscale.com/TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
   SCCACHE_FORK_REV: "6b19bb3cf89ae095be71f06ac55208010c72d582"
+  CARGO_EPHEMERAL_REV: "3e2509217ce5865c0fbe2b26534cb2cddcb8a48c"
+  CARGO_EPHEMERAL_TAG: "cargo-ephemeral-3e2509217"
+  CARGO_EPHEMERAL_SHA256: "6f735846e7f796bac2131ede59ee3286107a97544b5e1ba2dc308d58bdc36270"
 
 jobs:
   rust:
@@ -220,6 +223,48 @@ jobs:
             sudo apt-get update
             sudo apt-get install --yes bubblewrap
           fi
+
+      - name: Install maintained Cargo client
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_dir="$HOME/.local/libexec"
+          wrapper_dir="$HOME/.local/bin"
+          mkdir -p "$install_dir" "$wrapper_dir" "$RUNNER_TEMP/cargo-source"
+
+          cargo_bin="$install_dir/cargo-ephemeral"
+          curl --fail --location --silent --show-error \
+            "https://github.com/codeandsolder/cargo-ephemeral/releases/download/$CARGO_EPHEMERAL_TAG/cargo-ephemeral-linux-x86_64" \
+            --output "$cargo_bin"
+
+          printf '%s  %s\n' "$CARGO_EPHEMERAL_SHA256" "$cargo_bin" | sha256sum --check
+          chmod 0755 "$cargo_bin"
+
+          cat > "$wrapper_dir/cargo" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          if [[ "${1:-}" == +* ]]; then
+            export RUSTUP_TOOLCHAIN="${1#+}"
+            shift
+          fi
+
+          export EPHEMERAL_CARGO_REGISTRY_SRC="${EPHEMERAL_CARGO_REGISTRY_SRC:-${RUNNER_TEMP:?}/cargo-source}"
+          export EPHEMERAL_CARGO_WRAPPER="$0"
+
+          exec "$HOME/.local/libexec/cargo-ephemeral" "$@"
+          EOF
+          chmod 0755 "$wrapper_dir/cargo"
+
+          {
+            echo "PATH=$wrapper_dir:$PATH"
+            echo "EPHEMERAL_CARGO_REGISTRY_SRC=$RUNNER_TEMP/cargo-source"
+            echo "EPHEMERAL_CARGO_WRAPPER=$wrapper_dir/cargo"
+          } >> "$GITHUB_ENV"
+
+          version="$("$wrapper_dir/cargo" --version)"
+          echo "$version"
+          [[ "$version" == *"${CARGO_EPHEMERAL_REV:0:9}"* ]]
 
       - name: Configure shared sccache
         if: steps.cache-config.outputs.enabled == 'true'
