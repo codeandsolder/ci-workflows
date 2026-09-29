@@ -219,6 +219,18 @@ jobs:
             sudo apt-get install --yes bubblewrap
           fi
 
+          # Ubuntu 24.04 enables AppArmor's unprivileged-userns restriction.
+          # Canonical Rust paths use bubblewrap mount namespaces, so trusted
+          # GitHub-hosted jobs need user namespaces enabled for this ephemeral VM.
+          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] \
+             && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+          # Fail here with a useful platform error rather than deep inside rustc
+          # discovery after sccache has started.
+          /usr/bin/bwrap --ro-bind / / /bin/true
+
           "$sccache_bin" --version
 
       - name: Install maintained Cargo client
