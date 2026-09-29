@@ -8,6 +8,7 @@ const REQUIRED_TAG: &str = "tag:sccache-worker";
 const GARAGE_BIN: &str = "/srv/scratch/garage-jlc/bin/garage";
 const GARAGE_CONFIG: &str = "/srv/scratch/garage-jlc/garage.toml";
 const GARAGE_KEY_NAME: &str = "github-actions-sccache";
+const SCCACHE_CLIENT_CONFIG: &str = "/etc/sccache/config";
 
 fn http_response(stream: &mut TcpStream, status: &str, body: &str, content_type: &str) {
     let response = format!(
@@ -77,6 +78,48 @@ fn garage_credentials() -> Result<(String, String), String> {
         .ok_or_else(|| "Garage output did not contain a secret key".to_owned())?;
 
     Ok((access_key.to_owned(), secret_key.to_owned()))
+}
+
+fn scheduler_credentials() -> Result<(String, String), String> {
+    let config = std::fs::read_to_string(SCCACHE_CLIENT_CONFIG)
+        .map_err(|error| format!("failed to read sccache client config: {error}"))?;
+
+    let mut section = "";
+    let mut scheduler_url = None;
+    let mut token = None;
+
+    for raw_line in config.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = &line[1..line.len() - 1];
+            continue;
+        }
+
+        let Some((key, raw_value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = raw_value.trim().trim_matches('"');
+
+        match (section, key) {
+            ("dist", "scheduler_url") if !value.is_empty() => {
+                scheduler_url = Some(value.to_owned());
+            }
+            ("dist.auth", "token") if !value.is_empty() => {
+                token = Some(value.to_owned());
+            }
+            _ => {}
+        }
+    }
+
+    let scheduler_url = scheduler_url
+        .ok_or_else(|| "sccache config did not contain dist.scheduler_url".to_owned())?;
+    let token = token.ok_or_else(|| "sccache config did not contain dist.auth.token".to_owned())?;
+
+    Ok((scheduler_url, token))
 }
 
 fn json_escape(value: &str) -> String {
@@ -169,10 +212,26 @@ fn handle_connection(mut stream: TcpStream) {
         }
     };
 
+    let (scheduler_url, scheduler_token) = match scheduler_credentials() {
+        Ok(credentials) => credentials,
+        Err(error) => {
+            eprintln!("scheduler credential lookup failed: {error}");
+            http_response(
+                &mut stream,
+                "503 Service Unavailable",
+                "scheduler credential lookup failed\n",
+                "text/plain",
+            );
+            return;
+        }
+    };
+
     let body = format!(
-        "{{\"access_key_id\":\"{}\",\"secret_access_key\":\"{}\",\"endpoint\":\"http://100.65.0.2:3902\",\"bucket\":\"sccache\",\"region\":\"garage-jlc\",\"key_prefix\":\"rust/\"}}\n",
+        "{{\"access_key_id\":\"{}\",\"secret_access_key\":\"{}\",\"endpoint\":\"http://100.65.0.2:3902\",\"bucket\":\"sccache\",\"region\":\"garage-jlc\",\"key_prefix\":\"rust/\",\"scheduler_url\":\"{}\",\"scheduler_token\":\"{}\"}}\n",
         json_escape(&access_key),
-        json_escape(&secret_key)
+        json_escape(&secret_key),
+        json_escape(&scheduler_url),
+        json_escape(&scheduler_token)
     );
     http_response(&mut stream, "200 OK", &body, "application/json");
     eprintln!("issued sccache credentials to tagged peer {peer_ip}");

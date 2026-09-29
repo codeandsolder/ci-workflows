@@ -32,6 +32,11 @@ on:
         required: false
         default: "ubuntu-24.04"
         type: string
+      distributed:
+        description: Register this trusted runner as a direct sccache-dist worker and use the scheduler for cache misses
+        required: false
+        default: false
+        type: boolean
     secrets:
       SCCACHE_S3_ACCESS_KEY_ID:
         required: false
@@ -43,9 +48,11 @@ env:
   CARGO_INCREMENTAL: "0"
   TAILSCALE_CLIENT_ID: "TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
   TAILSCALE_AUDIENCE: "api.tailscale.com/TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
-  SCCACHE_FORK_REV: "3d98d4fed867c4f91bebae1416ded81759b5a16d"
-  SCCACHE_RELEASE_TAG: "sccache-ci-3d98d4f"
-  SCCACHE_RELEASE_SHA256: "18ea306e32d8a0475f759e515e45941d360d50038b975744f64d9cea918ab0f9"
+  SCCACHE_FORK_REV: "9ea1b9a753906ffbc128ea57319e6ec0e14a2f43"
+  SCCACHE_RELEASE_TAG: "sccache-ci-dist-9ea1b9a"
+  SCCACHE_RELEASE_SHA256: "27139d236c88259188b8974ff3a5b05e8f4929829045934cf008687c368825fb"
+  SCCACHE_DIST_RELEASE_SHA256: "b1e23087c8a2cde92ebce07a08b041788b7c853e365a88b763f156a145b616bf"
+  SCCACHE_DIST_PORT: "10501"
   CARGO_EPHEMERAL_REV: "3e2509217ce5865c0fbe2b26534cb2cddcb8a48c"
   CARGO_EPHEMERAL_TAG: "cargo-ephemeral-ci-3e2509217-u22"
   CARGO_EPHEMERAL_SHA256: "3317623dfc56cb59fd69d66781a6cb4a75a2725472df730b1731fe0e121ae9ce"
@@ -65,12 +72,22 @@ jobs:
       RUST_COMPONENTS: ${{ inputs.rust-components }}
       RUST_TARGETS: ${{ inputs.rust-targets }}
       RUSTFLAGS: ${{ inputs.rustflags }}
+      ENABLE_DISTRIBUTED: ${{ inputs.distributed }}
       CACHE_ACCESS_KEY: ${{ secrets.SCCACHE_S3_ACCESS_KEY_ID }}
       CACHE_SECRET_KEY: ${{ secrets.SCCACHE_S3_SECRET_ACCESS_KEY }}
 
     steps:
       - name: Checkout caller repository
         uses: actions/checkout@v7
+
+      - name: Restore persistent local sccache L0
+        id: sccache-l0-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/sccache-l0
+          key: sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
 
       - name: Show OIDC identity claims
         uses: actions/github-script@v8
@@ -139,9 +156,14 @@ jobs:
             bucket="$(jq -er '.bucket' "$response_file")"
             region="$(jq -er '.region' "$response_file")"
             key_prefix="$(jq -er '.key_prefix' "$response_file")"
+            scheduler_url="$(jq -r '.scheduler_url // empty' "$response_file")"
+            scheduler_token="$(jq -r '.scheduler_token // empty' "$response_file")"
 
             echo "::add-mask::$access_key"
             echo "::add-mask::$secret_key"
+            if [[ -n "$scheduler_token" ]]; then
+              echo "::add-mask::$scheduler_token"
+            fi
             {
               echo "CACHE_ACCESS_KEY=$access_key"
               echo "CACHE_SECRET_KEY=$secret_key"
@@ -149,6 +171,8 @@ jobs:
               echo "CACHE_BUCKET=$bucket"
               echo "CACHE_REGION=$region"
               echo "CACHE_KEY_PREFIX=$key_prefix"
+              echo "DIST_SCHEDULER_URL=$scheduler_url"
+              echo "DIST_SCHEDULER_TOKEN=$scheduler_token"
             } >> "$GITHUB_ENV"
             echo "source=tailnet-broker" >> "$GITHUB_OUTPUT"
             rm -f "$response_file"
@@ -171,6 +195,16 @@ jobs:
           else
             echo "Only one Garage credential is configured; both are required." >&2
             exit 1
+          fi
+
+          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
+            if [[ -z "${DIST_SCHEDULER_URL:-}" || -z "${DIST_SCHEDULER_TOKEN:-}" ]]; then
+              echo "Distributed mode requested but scheduler credentials are unavailable." >&2
+              exit 1
+            fi
+            echo "dist_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dist_enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install Rust toolchain
@@ -199,20 +233,25 @@ jobs:
           "$rustc_path" --version
           cargo +"$RUST_TOOLCHAIN" --version
 
-      - name: Install canonical sccache client
-        if: steps.cache-config.outputs.enabled == 'true'
+      - name: Install canonical sccache client and direct worker
+        if: steps.cache-config.outputs.enabled == 'true' || steps.cache-config.outputs.dist_enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
           sccache_bin="$HOME/.local/bin/sccache"
+          sccache_dist_bin="$HOME/.local/bin/sccache-dist"
 
           curl --fail --location --silent --show-error \
             "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2" \
             --output "$sccache_bin"
+          curl --fail --location --silent --show-error \
+            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-dist-linux-x86_64-v2" \
+            --output "$sccache_dist_bin"
 
           printf '%s  %s\n' "$SCCACHE_RELEASE_SHA256" "$sccache_bin" | sha256sum --check
-          chmod 0755 "$sccache_bin"
+          printf '%s  %s\n' "$SCCACHE_DIST_RELEASE_SHA256" "$sccache_dist_bin" | sha256sum --check
+          chmod 0755 "$sccache_bin" "$sccache_dist_bin"
 
           if [[ ! -x /usr/bin/bwrap ]]; then
             sudo apt-get update
@@ -232,6 +271,9 @@ jobs:
           /usr/bin/bwrap --ro-bind / / /bin/true
 
           "$sccache_bin" --version
+          if [[ "${ENABLE_DISTRIBUTED}" == "true" ]]; then
+            "$sccache_dist_bin" --version
+          fi
 
       - name: Install maintained Cargo client
         shell: bash
@@ -288,6 +330,85 @@ jobs:
             echo "SCCACHE_CANONICAL_TARGET_ROOT=$target_dir"
           } >> "$GITHUB_ENV"
 
+      - name: Configure distributed sccache client
+        if: steps.cache-config.outputs.dist_enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          client_cache="$RUNNER_TEMP/sccache-dist-client"
+          client_config="$RUNNER_TEMP/sccache-client.toml"
+          mkdir -p "$client_cache"
+
+          cat > "$client_config" <<EOF
+          [dist]
+          scheduler_url = "$DIST_SCHEDULER_URL"
+          toolchains = []
+          toolchain_cache_size = 2147483648
+          cache_dir = "$client_cache"
+
+          [dist.auth]
+          type = "token"
+          token = "$DIST_SCHEDULER_TOKEN"
+          EOF
+          chmod 0600 "$client_config"
+          echo "SCCACHE_CONF=$client_config" >> "$GITHUB_ENV"
+
+      - name: Start direct sccache-dist worker
+        if: steps.cache-config.outputs.dist_enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ts_ip="$(tailscale ip -4 | head -n1)"
+          [[ -n "$ts_ip" ]]
+
+          worker_cache="$RUNNER_TEMP/sccache-dist-worker-toolchains"
+          worker_build="$RUNNER_TEMP/sccache-dist-worker-build"
+          worker_config="$RUNNER_TEMP/sccache-dist-worker.toml"
+          worker_log="$RUNNER_TEMP/sccache-dist-worker.log"
+          worker_pidfile="$RUNNER_TEMP/sccache-dist-worker.pid"
+          mkdir -p "$worker_cache" "$worker_build"
+
+          cat > "$worker_config" <<EOF
+          cache_dir = "$worker_cache"
+          toolchain_cache_size = 4294967296
+          public_addr = "$ts_ip:$SCCACHE_DIST_PORT"
+          bind_address = "$ts_ip:$SCCACHE_DIST_PORT"
+          scheduler_url = "$DIST_SCHEDULER_URL"
+
+          [builder]
+          type = "overlay"
+          build_dir = "$worker_build"
+          bwrap_path = "/usr/bin/bwrap"
+
+          [scheduler_auth]
+          type = "DANGEROUSLY_INSECURE"
+          EOF
+
+          sudo sh -c '
+            echo $ > "$1"
+            exec env SCCACHE_NO_DAEMON=1 SCCACHE_LOG=info "$2" server --config "$3"
+          ' sh "$worker_pidfile" "$HOME/.local/bin/sccache-dist" "$worker_config" \
+            >"$worker_log" 2>&1 &
+
+          for _ in {1..30}; do
+            if [[ -s "$worker_pidfile" ]] && sudo kill -0 "$(cat "$worker_pidfile")" 2>/dev/null; then
+              if timeout 1 bash -c "</dev/tcp/$ts_ip/$SCCACHE_DIST_PORT" 2>/dev/null; then
+                echo "direct sccache-dist worker listening at $ts_ip:$SCCACHE_DIST_PORT"
+                break
+              fi
+            elif [[ -s "$worker_pidfile" ]]; then
+              cat "$worker_log" >&2 || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if ! timeout 1 bash -c "</dev/tcp/$ts_ip/$SCCACHE_DIST_PORT" 2>/dev/null; then
+            cat "$worker_log" >&2 || true
+            echo "direct sccache-dist worker did not become reachable" >&2
+            exit 1
+          fi
+
       - name: Configure shared sccache
         if: steps.cache-config.outputs.enabled == 'true'
         shell: bash
@@ -298,7 +419,7 @@ jobs:
             echo "RUSTC_WRAPPER=$HOME/.local/bin/sccache"
             echo "SCCACHE_EXPERIMENTAL_CANONICAL_RUST=1"
             echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-l0"
-            echo "SCCACHE_CACHE_SIZE=2G"
+            echo "SCCACHE_CACHE_SIZE=1G"
             echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
             echo "SCCACHE_MULTILEVEL_WRITE_ERROR_POLICY=l0"
             echo "SCCACHE_BUCKET=${CACHE_BUCKET:-sccache}"
@@ -317,6 +438,9 @@ jobs:
           set -euo pipefail
           "$HOME/.local/bin/sccache" --start-server
           "$HOME/.local/bin/sccache" --zero-stats
+          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
+            "$HOME/.local/bin/sccache" --dist-status
+          fi
 
       - name: Run caller command
         shell: bash
@@ -331,3 +455,34 @@ jobs:
           # runner a small drain window before GitHub tears the process down.
           sleep 5
           "$HOME/.local/bin/sccache" --show-stats || true
+
+      - name: Stop sccache before persisting L0
+        if: always() && steps.cache-config.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          "$HOME/.local/bin/sccache" --stop-server || true
+
+      - name: Save updated local sccache L0
+        if: always() && steps.cache-config.outputs.enabled == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/sccache-l0
+          key: ${{ steps.sccache-l0-restore.outputs.cache-primary-key }}
+
+      - name: Stop direct sccache-dist worker
+        if: always() && steps.cache-config.outputs.dist_enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker_pidfile="$RUNNER_TEMP/sccache-dist-worker.pid"
+          worker_log="$RUNNER_TEMP/sccache-dist-worker.log"
+          if [[ -s "$worker_pidfile" ]]; then
+            pid="$(cat "$worker_pidfile")"
+            sudo kill "$pid" 2>/dev/null || true
+            for _ in {1..10}; do
+              sudo kill -0 "$pid" 2>/dev/null || break
+              sleep 0.2
+            done
+            sudo kill -KILL "$pid" 2>/dev/null || true
+          fi
+          tail -n 80 "$worker_log" 2>/dev/null || true
