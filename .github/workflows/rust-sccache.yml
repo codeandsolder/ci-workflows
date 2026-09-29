@@ -37,6 +37,11 @@ on:
         required: false
         default: false
         type: boolean
+      timeout-minutes:
+        description: Job timeout; cold-L0 first fills can be much slower than steady-state runs
+        required: false
+        default: 90
+        type: number
     secrets:
       SCCACHE_S3_ACCESS_KEY_ID:
         required: false
@@ -63,7 +68,7 @@ jobs:
     # sufficient because id-token:write applies to every step in the job.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
       id-token: write
@@ -88,38 +93,6 @@ jobs:
           key: sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
-
-      - name: Show OIDC identity claims
-        uses: actions/github-script@v8
-        env:
-          OIDC_AUDIENCE: ${{ env.TAILSCALE_AUDIENCE }}
-        with:
-          script: |
-            const token = await core.getIDToken(process.env.OIDC_AUDIENCE);
-            const payload = JSON.parse(
-              Buffer.from(token.split('.')[1], 'base64url').toString('utf8')
-            );
-            const keys = [
-              'iss',
-              'aud',
-              'sub',
-              'repository',
-              'repository_id',
-              'repository_owner',
-              'repository_owner_id',
-              'repository_visibility',
-              'ref',
-              'event_name',
-              'workflow',
-              'workflow_ref',
-              'job_workflow_ref',
-              'runner_environment'
-            ];
-            const selected = Object.fromEntries(
-              keys.filter((key) => Object.hasOwn(payload, key))
-                  .map((key) => [key, payload[key]])
-            );
-            console.log(JSON.stringify(selected, null, 2));
 
       - name: Join tailnet
         uses: tailscale/github-action@v4
@@ -245,13 +218,16 @@ jobs:
           curl --fail --location --silent --show-error \
             "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2" \
             --output "$sccache_bin"
-          curl --fail --location --silent --show-error \
-            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-dist-linux-x86_64-v2" \
-            --output "$sccache_dist_bin"
-
           printf '%s  %s\n' "$SCCACHE_RELEASE_SHA256" "$sccache_bin" | sha256sum --check
-          printf '%s  %s\n' "$SCCACHE_DIST_RELEASE_SHA256" "$sccache_dist_bin" | sha256sum --check
-          chmod 0755 "$sccache_bin" "$sccache_dist_bin"
+          chmod 0755 "$sccache_bin"
+
+          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
+            curl --fail --location --silent --show-error \
+              "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-dist-linux-x86_64-v2" \
+              --output "$sccache_dist_bin"
+            printf '%s  %s\n' "$SCCACHE_DIST_RELEASE_SHA256" "$sccache_dist_bin" | sha256sum --check
+            chmod 0755 "$sccache_dist_bin"
+          fi
 
           if [[ ! -x /usr/bin/bwrap ]]; then
             sudo apt-get update
