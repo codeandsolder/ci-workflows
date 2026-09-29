@@ -27,6 +27,11 @@ on:
         required: false
         default: "-C target-cpu=x86-64-v2"
         type: string
+      runner:
+        description: GitHub-hosted runner label
+        required: false
+        default: "ubuntu-24.04"
+        type: string
     secrets:
       SCCACHE_S3_ACCESS_KEY_ID:
         required: false
@@ -45,7 +50,7 @@ jobs:
     # Keep OIDC entirely out of ordinary PR jobs. A step-level guard is not
     # sufficient because id-token:write applies to every step in the job.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     permissions:
       contents: read
