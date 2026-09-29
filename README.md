@@ -21,3 +21,17 @@ Caller repositories only need the two optional repository secrets below to enabl
 - `SCCACHE_S3_SECRET_ACCESS_KEY`
 
 Without them, the workflow still validates OIDC/Tailscale connectivity and runs the requested Rust command without sccache.
+
+
+## Tailnet credential broker
+
+The server-side broker lives in `broker/`. It binds only to cold-storage's Tailscale address on TCP 3903. For `GET /v1/sccache-credentials` it:
+
+1. identifies the TCP peer with `tailscale whois`;
+2. requires `tag:sccache-worker`;
+3. obtains the dedicated `github-actions-sccache` key from the local Garage CLI;
+4. returns only the sccache S3 connection parameters with `Cache-Control: no-store`.
+
+The reusable workflow masks both returned key values immediately. Garage itself remains available only over the tailnet, and the dedicated key has RW permission only on the `sccache` bucket.
+
+The broker is intentionally a system service rather than a copied GitHub secret. This makes importing the reusable workflow into another repository secret-free while keeping authentication rooted in GitHub OIDC -> Tailscale machine identity.
