@@ -209,7 +209,7 @@ jobs:
           git -C "$src" fetch --depth=1 origin "$SCCACHE_FORK_REV"
           git -C "$src" checkout --detach "$SCCACHE_FORK_REV"
 
-          cargo +"$RUST_TOOLCHAIN" install             --path "$src"             --root "$HOME/.local"             --locked             --no-default-features             --features s3
+          cargo +"$RUST_TOOLCHAIN" install             --path "$src"             --root "$HOME/.local"             --locked             --bin sccache             --no-default-features             --features s3
 
       - name: Ensure bubblewrap is available
         if: steps.cache-config.outputs.enabled == 'true' && steps.sccache-binary-cache.outputs.cache-hit == 'true'
