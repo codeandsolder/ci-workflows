@@ -1,0 +1,195 @@
+name: Rust shared sccache
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: Rust/Cargo command to run in the caller repository
+        required: true
+        type: string
+      rust-toolchain:
+        description: Rust toolchain used for the caller command and sccache build
+        required: false
+        default: "1.98.1"
+        type: string
+      rust-components:
+        description: Space-separated rustup components to install
+        required: false
+        default: ""
+        type: string
+      rust-targets:
+        description: Space-separated rustup targets to install
+        required: false
+        default: ""
+        type: string
+      rustflags:
+        description: RUSTFLAGS for the caller command
+        required: false
+        default: "-C target-cpu=x86-64-v2"
+        type: string
+    secrets:
+      SCCACHE_S3_ACCESS_KEY_ID:
+        required: false
+      SCCACHE_S3_SECRET_ACCESS_KEY:
+        required: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  TAILSCALE_CLIENT_ID: "TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
+  TAILSCALE_AUDIENCE: "api.tailscale.com/TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
+  SCCACHE_FORK_REV: "6b19bb3cf89ae095be71f06ac55208010c72d582"
+
+jobs:
+  rust:
+    # Keep OIDC entirely out of ordinary PR jobs. A step-level guard is not
+    # sufficient because id-token:write applies to every step in the job.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+      RUST_COMPONENTS: ${{ inputs.rust-components }}
+      RUST_TARGETS: ${{ inputs.rust-targets }}
+      RUSTFLAGS: ${{ inputs.rustflags }}
+      CACHE_ACCESS_KEY: ${{ secrets.SCCACHE_S3_ACCESS_KEY_ID }}
+      CACHE_SECRET_KEY: ${{ secrets.SCCACHE_S3_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v7
+
+      - name: Join tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
+          audience: ${{ env.TAILSCALE_AUDIENCE }}
+          tags: tag:sccache-worker
+          ping: 100.65.0.2
+
+      - name: Verify Garage ingress
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="${RUNNER_TEMP}/garage-probe.txt"
+          code="$(curl --silent --show-error --connect-timeout 5             --output "$body" --write-out '%{http_code}'             http://100.65.0.2:3902/)"
+          if [[ "$code" != "403" ]]; then
+            echo "Expected Garage AccessDenied (HTTP 403), got HTTP $code" >&2
+            cat "$body" >&2
+            exit 1
+          fi
+
+      - name: Detect shared-cache credentials
+        id: cache-config
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${CACHE_ACCESS_KEY:-}" && -n "${CACHE_SECRET_KEY:-}" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [[ -z "${CACHE_ACCESS_KEY:-}" && -z "${CACHE_SECRET_KEY:-}" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Garage credentials are not configured; running without shared sccache."
+          else
+            echo "Only one Garage credential is configured; both are required." >&2
+            exit 1
+          fi
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+
+          if [[ -n "$RUST_COMPONENTS" ]]; then
+            read -r -a components <<< "$RUST_COMPONENTS"
+            rustup component add --toolchain "$RUST_TOOLCHAIN" "${components[@]}"
+          fi
+
+          if [[ -n "$RUST_TARGETS" ]]; then
+            read -r -a targets <<< "$RUST_TARGETS"
+            rustup target add --toolchain "$RUST_TOOLCHAIN" "${targets[@]}"
+          fi
+
+          rustc +"$RUST_TOOLCHAIN" --version
+          cargo +"$RUST_TOOLCHAIN" --version
+
+      - name: Restore maintained sccache binary
+        if: steps.cache-config.outputs.enabled == 'true'
+        id: sccache-binary-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/bin/sccache
+          key: maintained-sccache-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_FORK_REV }}
+
+      - name: Install canonical sccache
+        if: steps.cache-config.outputs.enabled == 'true' && steps.sccache-binary-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+
+          src="${RUNNER_TEMP}/sccache-src"
+          rm -rf "$src"
+          git clone --filter=blob:none --no-checkout             https://github.com/codeandsolder/sccache-deduplicated.git "$src"
+          git -C "$src" fetch --depth=1 origin "$SCCACHE_FORK_REV"
+          git -C "$src" checkout --detach "$SCCACHE_FORK_REV"
+
+          cargo +"$RUST_TOOLCHAIN" install             --path "$src"             --root "$HOME/.local"             --locked             --no-default-features             --features s3
+
+      - name: Ensure bubblewrap is available
+        if: steps.cache-config.outputs.enabled == 'true' && steps.sccache-binary-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -x /usr/bin/bwrap ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes bubblewrap
+          fi
+
+      - name: Configure shared sccache
+        if: steps.cache-config.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "PATH=$HOME/.local/bin:$PATH"
+            echo "RUSTC_WRAPPER=$HOME/.local/bin/sccache"
+            echo "SCCACHE_EXPERIMENTAL_CANONICAL_RUST=1"
+            echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-l0"
+            echo "SCCACHE_CACHE_SIZE=2G"
+            echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
+            echo "SCCACHE_MULTILEVEL_WRITE_ERROR_POLICY=l0"
+            echo "SCCACHE_BUCKET=sccache"
+            echo "SCCACHE_REGION=garage-jlc"
+            echo "SCCACHE_ENDPOINT=http://100.65.0.2:3902"
+            echo "SCCACHE_S3_USE_SSL=false"
+            echo "SCCACHE_S3_KEY_PREFIX=rust/"
+            echo "AWS_ACCESS_KEY_ID=$CACHE_ACCESS_KEY"
+            echo "AWS_SECRET_ACCESS_KEY=$CACHE_SECRET_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Start sccache
+        if: steps.cache-config.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HOME/.local/bin/sccache" --start-server
+          "$HOME/.local/bin/sccache" --zero-stats
+
+      - name: Run caller command
+        shell: bash
+        run: ${{ inputs.command }}
+
+      - name: Show shared-cache stats
+        if: always() && steps.cache-config.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          "$HOME/.local/bin/sccache" --show-stats || true
+          # L1 writes may complete after rustc returns. Give the ephemeral
+          # runner a small drain window before GitHub tears the process down.
+          sleep 5
+          "$HOME/.local/bin/sccache" --show-stats || true
