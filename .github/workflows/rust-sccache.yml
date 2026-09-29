@@ -275,6 +275,20 @@ jobs:
           echo "$version"
           [[ "$version" == *"${CARGO_EPHEMERAL_REV:0:9}"* ]]
 
+      - name: Configure runner-local Cargo target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_dir="$RUNNER_TEMP/cargo-target"
+          target_tmp="$RUNNER_TEMP/cargo-target-tmp"
+          mkdir -p "$target_dir" "$target_tmp"
+          {
+            echo "CARGO_TARGET_DIR=$target_dir"
+            echo "CARGO_TARGET_TMPDIR=$target_tmp"
+            echo "SCCACHE_CANONICAL_TARGET_ROOT=$target_dir"
+            echo "SCCACHE_CANONICAL_BUILD_ROOT=$GITHUB_WORKSPACE"
+          } >> "$GITHUB_ENV"
+
       - name: Configure shared sccache
         if: steps.cache-config.outputs.enabled == 'true'
         shell: bash
