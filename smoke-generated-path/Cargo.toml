@@ -1,0 +1,15 @@
+[package]
+name = "canonical-generated-path-smoke"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
