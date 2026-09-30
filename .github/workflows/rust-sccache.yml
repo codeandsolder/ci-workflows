@@ -165,7 +165,11 @@ jobs:
           oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
           audience: ${{ env.TAILSCALE_AUDIENCE }}
           tags: tag:sccache-worker
-          ping: 100.65.0.2
+          # Shared cache is optional. Bound federated-auth/network retries so a
+          # degraded tailnet cannot dominate the build. The next step probes
+          # Garage directly, so the action's separate 3-minute ping is redundant.
+          timeout: 15s
+          retry: 2
 
       - name: Verify Garage ingress
         id: garage-ingress
