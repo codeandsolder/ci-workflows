@@ -423,13 +423,33 @@ jobs:
         run: ${{ inputs.command }}
 
       - name: Show shared-cache stats
+        id: cache-stats
         if: always() && steps.cache-config.outputs.enabled == 'true'
         shell: bash
         run: |
+          set -u
           "$HOME/.local/bin/sccache" --show-stats || true
           # L1 writes may complete after rustc returns. Give the ephemeral
           # runner a small drain window before GitHub tears the process down.
           sleep 5
+
+          # Default to saving if stats are unavailable: losing newly-written L0
+          # state is worse than uploading one redundant snapshot.
+          l0_changed=true
+          stats_json="$("$HOME/.local/bin/sccache" --show-stats --stats-format json 2>/dev/null || true)"
+          if [[ -n "$stats_json" ]] && jq -e '.stats.multi_level' >/dev/null 2>&1 <<<"$stats_json"; then
+            l0_changed="$(
+              jq -r '
+                [
+                  .stats.multi_level[]?
+                  | select(.name == "L0 (disk)")
+                  | ((.writes // 0) + (.backfills_to // 0))
+                ]
+                | (add // 0) > 0
+              ' <<<"$stats_json"
+            )"
+          fi
+          echo "l0_changed=$l0_changed" >> "$GITHUB_OUTPUT"
           "$HOME/.local/bin/sccache" --show-stats || true
 
       - name: Stop sccache before persisting L0
@@ -439,7 +459,10 @@ jobs:
           "$HOME/.local/bin/sccache" --stop-server || true
 
       - name: Save updated local sccache L0
-        if: always() && steps.cache-config.outputs.enabled == 'true'
+        if: >-
+          always() &&
+          steps.cache-config.outputs.enabled == 'true' &&
+          steps.cache-stats.outputs.l0_changed == 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/sccache-l0
