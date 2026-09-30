@@ -542,6 +542,10 @@ jobs:
             echo "SCCACHE_MULTILEVEL_SLOW_WRITE_CONCURRENCY=$SLOW_WRITE_CONCURRENCY"
             if [[ "${{ steps.cache-config.outputs.remote_enabled }}" == "true" ]]; then
               echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
+              # Tailnet reachability and credential acquisition were already
+              # established above. Do not let a slow S3 read/write capability
+              # probe block the local-first daemon from becoming ready.
+              echo "SCCACHE_SKIP_CACHE_CHECK=true"
               echo "SCCACHE_BUCKET=${CACHE_BUCKET:-sccache}"
               echo "SCCACHE_REGION=${CACHE_REGION:-garage-jlc}"
               echo "SCCACHE_ENDPOINT=${CACHE_ENDPOINT:-http://100.65.0.2:3902}"
