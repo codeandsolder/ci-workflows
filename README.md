@@ -42,3 +42,7 @@ Trusted jobs restore a per-repository rolling 1 GiB local sccache L0 before the 
 
 Direct GitHub-hosted `sccache-dist` worker mode is available through `distributed: true`, but remains opt-in. The normal deployment path uses `distributed: false` and relies on persistent L0 plus Garage L1.
 
+
+### Cargo compatibility
+
+The shared Rust workflow uses the maintained ephemeral Cargo client by default so registry source paths are normalized for cross-run cache reuse. Callers whose compile-time tooling spawns `$CARGO` for nested workspace queries can set `ephemeral-cargo: false`; this switches only Cargo back to the stock toolchain client while retaining the same sccache L0/Garage configuration.
