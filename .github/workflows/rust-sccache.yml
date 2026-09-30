@@ -180,9 +180,9 @@ jobs:
           body="$RUNNER_TEMP/garage-probe.txt"
           ready=false
           code=000
-          for _ in {1..12}; do
+          for _ in {1..4}; do
             code="$(
-              curl --silent --show-error --connect-timeout 2 \
+              curl --silent --show-error --connect-timeout 1 --max-time 3 \
                 --output "$body" --write-out '%{http_code}' \
                 http://100.65.0.2:3902/ \
                 || true
@@ -213,8 +213,8 @@ jobs:
           response_file="${RUNNER_TEMP}/sccache-credentials.json"
 
           broker_ready=false
-          for _ in {1..12}; do
-            if curl --fail --silent --show-error --connect-timeout 3 \
+          for _ in {1..4}; do
+            if curl --fail --silent --show-error --connect-timeout 1 --max-time 3 \
               --output "$response_file" "$broker_url"; then
               broker_ready=true
               break
