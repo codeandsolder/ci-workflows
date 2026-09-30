@@ -1,0 +1,118 @@
+name: Shared sccache slow-write benchmark
+
+on:
+  push:
+    branches: [fix/cache-pipeline-v8]
+    paths:
+      - .github/workflows/rust-sccache.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  benchmark:
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      rust-toolchain: "1.98.1"
+      rustflags: "-C target-cpu=x86-64-v2"
+      l0-size-mib: 64
+      command: |
+        set -euo pipefail
+        bench="$GITHUB_WORKSPACE/.sccache-write-bench"
+        rm -rf "$bench"
+        mkdir -p "$bench"
+        {
+          echo '[workspace]'
+          printf 'members = ['
+          for i in $(seq 0 127); do printf '"c%03d",' "$i"; done
+          echo ']'
+          echo 'resolver = "2"'
+        } > "$bench/Cargo.toml"
+
+        for i in $(seq 0 127); do
+          crate="$(printf 'c%03d' "$i")"
+          mkdir -p "$bench/$crate/src"
+          cat > "$bench/$crate/Cargo.toml" <<EOF
+        [package]
+        name = "$crate"
+        version = "0.0.0"
+        edition = "2021"
+        publish = false
+        EOF
+          cat > "$bench/$crate/src/lib.rs" <<EOF
+        const fn make_data(mut x: u64) -> [u64; 65536] {
+            let mut out = [0u64; 65536];
+            let mut i = 0;
+            while i < out.len() {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                out[i] = x;
+                i += 1;
+            }
+            out
+        }
+
+        #[used]
+        pub static DATA: [u64; 65536] = make_data(${i}u64 + 0x9e3779b97f4a7c15);
+
+        #[inline(never)]
+        pub fn sample(index: usize) -> u64 {
+            DATA[index & 65535]
+        }
+        EOF
+        done
+
+        cargo +1.98.1 generate-lockfile --offline --manifest-path "$bench/Cargo.toml"
+        results="$RUNNER_TEMP/sccache-slow-write-results.tsv"
+        printf 'concurrency\tbuild_ms\trequests\thits\tmisses\tl1_writes\tl1_failures\tl1_write_ms\n' > "$results"
+
+        for concurrency in 1 2 4 8 16; do
+          "$HOME/.local/bin/sccache" --stop-server || true
+          rm -rf "$RUNNER_TEMP/sccache-bench-l0" "$CARGO_TARGET_DIR"
+          mkdir -p "$RUNNER_TEMP/sccache-bench-l0" "$CARGO_TARGET_DIR"
+
+          export SCCACHE_DIR="$RUNNER_TEMP/sccache-bench-l0"
+          export SCCACHE_CACHE_SIZE=64M
+          export SCCACHE_MULTILEVEL_CHAIN=disk,s3
+          export SCCACHE_MULTILEVEL_WRITE_ERROR_POLICY=all
+          export SCCACHE_MULTILEVEL_SLOW_WRITE_CONCURRENCY="$concurrency"
+          "$HOME/.local/bin/sccache" --start-server
+          "$HOME/.local/bin/sccache" --zero-stats
+
+          start_ns="$(date +%s%N)"
+          CARGO_BUILD_JOBS=16 RUSTFLAGS="-C target-cpu=x86-64-v2 --cfg sccache_bench_${GITHUB_RUN_ID}_${concurrency}" \
+            cargo +1.98.1 build --release --locked --offline --manifest-path "$bench/Cargo.toml"
+          end_ns="$(date +%s%N)"
+
+          stats="$RUNNER_TEMP/sccache-stats-$concurrency.json"
+          "$HOME/.local/bin/sccache" --show-stats --stats-format json > "$stats"
+          "$HOME/.local/bin/sccache" --stop-server
+
+          CONCURRENCY="$concurrency" START_NS="$start_ns" END_NS="$end_ns" STATS="$stats" RESULTS="$results" python3 - <<'PY'
+        import json, os
+        s=json.load(open(os.environ["STATS"]))
+        st=s["stats"]
+        levels={x["name"]:x for x in st.get("multi_level",[])}
+        l1=levels.get("L1 (s3)",{})
+        def total(v):
+            return sum(v.values()) if isinstance(v,dict) else (v or 0)
+        row=[
+            int(os.environ["CONCURRENCY"]),
+            (int(os.environ["END_NS"])-int(os.environ["START_NS"]))//1_000_000,
+            st.get("compile_requests",0),
+            total(st.get("cache_hits")),
+            total(st.get("cache_misses")),
+            l1.get("writes",0),
+            l1.get("write_failures",0),
+            l1.get("write_duration_nanos",0)//1_000_000,
+        ]
+        with open(os.environ["RESULTS"],"a") as f:
+            f.write("\t".join(map(str,row))+"\n")
+        PY
+        done
+
+        cat "$results"
+        cat "$results" >> "$GITHUB_STEP_SUMMARY"
+        rm -rf "$bench" "$RUNNER_TEMP/sccache-bench-l0" "$CARGO_TARGET_DIR"
