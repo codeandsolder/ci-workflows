@@ -115,8 +115,8 @@ fn scheduler_credentials() -> Result<(String, String), String> {
         }
     }
 
-    let scheduler_url =
-        scheduler_url.ok_or_else(|| "sccache config did not contain dist.scheduler_url".to_owned())?;
+    let scheduler_url = scheduler_url
+        .ok_or_else(|| "sccache config did not contain dist.scheduler_url".to_owned())?;
     let token = token.ok_or_else(|| "sccache config did not contain dist.auth.token".to_owned())?;
 
     Ok((scheduler_url, token))
@@ -158,17 +158,14 @@ fn handle_connection(mut stream: TcpStream) {
         Ok(0) | Err(_) => return,
         Ok(bytes_read) => bytes_read,
     };
-    let request = match std::str::from_utf8(&buffer[..bytes_read]) {
-        Ok(request) => request,
-        Err(_) => {
-            http_response(
-                &mut stream,
-                "400 Bad Request",
-                "invalid request\n",
-                "text/plain",
-            );
-            return;
-        }
+    let Ok(request) = std::str::from_utf8(&buffer[..bytes_read]) else {
+        http_response(
+            &mut stream,
+            "400 Bad Request",
+            "invalid request\n",
+            "text/plain",
+        );
+        return;
     };
 
     let request_line = request.lines().next().unwrap_or_default();

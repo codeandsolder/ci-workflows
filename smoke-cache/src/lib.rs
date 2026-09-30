@@ -3,10 +3,7 @@
 /// Deterministic function used by the cross-client sccache acceptance test.
 #[must_use]
 pub const fn mix(value: u64) -> u64 {
-    value
-        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        .rotate_left(17)
-        ^ 0xD1B5_4A32_D192_ED03
+    value.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(17) ^ 0xD1B5_4A32_D192_ED03
 }
 
 /// Unique marker for the L0-to-Garage repair acceptance test.
