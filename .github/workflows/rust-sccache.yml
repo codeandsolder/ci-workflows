@@ -90,9 +90,18 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sccache-l0
-          key: sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: sccache-l0-canonical-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
+            sccache-l0-canonical-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
+
+      - name: Snapshot restored L0 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          l0="$RUNNER_TEMP/sccache-l0"
+          mkdir -p "$l0"
+          find "$l0" -type f -printf '%P\n' | LC_ALL=C sort > "$RUNNER_TEMP/sccache-l0-baseline.txt"
+          printf 'restored_l0_files=%s\n' "$(wc -l < "$RUNNER_TEMP/sccache-l0-baseline.txt")"
 
       - name: Join tailnet
         uses: tailscale/github-action@v4
@@ -458,15 +467,51 @@ jobs:
         run: |
           "$HOME/.local/bin/sccache" --stop-server || true
 
-      - name: Save updated local sccache L0
+      - name: Build local sccache L0 delta
+        id: sccache-l0-delta
         if: >-
           always() &&
           steps.cache-config.outputs.enabled == 'true' &&
           steps.cache-stats.outputs.l0_changed == 'true'
-        uses: actions/cache/save@v6
+        shell: bash
+        run: |
+          set -euo pipefail
+          l0="$RUNNER_TEMP/sccache-l0"
+          baseline="$RUNNER_TEMP/sccache-l0-baseline.txt"
+          current="$RUNNER_TEMP/sccache-l0-current.txt"
+          delta_list="$RUNNER_TEMP/sccache-l0-delta-files.txt"
+          delta_tar="$RUNNER_TEMP/sccache-l0-delta.tar.zst"
+
+          find "$l0" -type f -printf '%P\n' | LC_ALL=C sort > "$current"
+          comm -13 "$baseline" "$current" > "$delta_list"
+
+          count="$(wc -l < "$delta_list")"
+          bytes=0
+          if [[ "$count" -gt 0 ]]; then
+            while IFS= read -r rel; do
+              size="$(stat -c '%s' "$l0/$rel")"
+              bytes=$((bytes + size))
+            done < "$delta_list"
+
+            tar --zstd -C "$l0" -cf "$delta_tar" -T "$delta_list"
+          fi
+
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          printf 'l0_delta_files=%s l0_delta_bytes=%s\n' "$count" "$bytes"
+
+      - name: Upload local sccache L0 delta
+        if: >-
+          always() &&
+          steps.sccache-l0-delta.outputs.count != '' &&
+          steps.sccache-l0-delta.outputs.count != '0'
+        uses: actions/upload-artifact@v7
         with:
-          path: ${{ runner.temp }}/sccache-l0
-          key: ${{ steps.sccache-l0-restore.outputs.cache-primary-key }}
+          name: sccache-l0-delta
+          path: ${{ runner.temp }}/sccache-l0-delta.tar.zst
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
       - name: Stop direct sccache-dist worker
         if: always() && steps.cache-config.outputs.dist_enabled == 'true'
