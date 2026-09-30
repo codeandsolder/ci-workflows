@@ -52,6 +52,16 @@ on:
         required: false
         default: 90
         type: number
+      l0-size-mib:
+        description: Persisted runner-local sccache L0 size in MiB
+        required: false
+        default: 1024
+        type: number
+      slow-write-concurrency:
+        description: Maximum concurrent operations against slower cache levels such as Garage
+        required: false
+        default: 4
+        type: number
     secrets:
       SCCACHE_S3_ACCESS_KEY_ID:
         required: false
@@ -63,11 +73,12 @@ env:
   CARGO_INCREMENTAL: "0"
   TAILSCALE_CLIENT_ID: "TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
   TAILSCALE_AUDIENCE: "api.tailscale.com/TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
-  SCCACHE_FORK_REV: "ba34cd70f5f858367af5b404bd55dd3f03dbcf50"
-  SCCACHE_RELEASE_TAG: "sccache-ci-ba34cd70f5f858367af5b404bd55dd3f03dbcf50"
-  SCCACHE_RELEASE_SHA256: "e3f21638aafe16276854878d11a7ed14cb6555d8b6b0ea2e7dae22449b666dd8"
-  SCCACHE_DIST_RELEASE_SHA256: "5984f33387d83188a14beb518b3621dcf461190fd6765759da8a4420a7dc07f0"
+  SCCACHE_FORK_REV: "e5d3c46b6055722cf972a2a46afbbf00ddf8c0bc"
+  SCCACHE_RELEASE_TAG: "sccache-ci-e5d3c46b6055722cf972a2a46afbbf00ddf8c0bc"
+  SCCACHE_RELEASE_SHA256: "9f0e509c151d13590cb3ba3f73ef430a06c1c143d1582a55e0f1d39b1617e743"
+  SCCACHE_DIST_RELEASE_SHA256: "e656c08ddd2558199477fc9f41b669009e68fd1d7ae679d2bfa622c5a6e7ea12"
   SCCACHE_DIST_PORT: "10501"
+  SCCACHE_CACHE_LAYOUT_ID: "rust-v7-layout2"
   CARGO_EPHEMERAL_REV: "3e2509217ce5865c0fbe2b26534cb2cddcb8a48c"
   CARGO_EPHEMERAL_TAG: "cargo-ephemeral-ci-3e2509217-u22"
   CARGO_EPHEMERAL_SHA256: "3317623dfc56cb59fd69d66781a6cb4a75a2725472df730b1731fe0e121ae9ce"
@@ -89,6 +100,8 @@ jobs:
       RUSTFLAGS: ${{ inputs.rustflags }}
       ENABLE_DISTRIBUTED: ${{ inputs.distributed }}
       ENABLE_CANONICAL_RUST: ${{ inputs.canonical-rust }}
+      L0_SIZE_MIB: ${{ inputs.l0-size-mib }}
+      SLOW_WRITE_CONCURRENCY: ${{ inputs.slow-write-concurrency }}
       CACHE_ACCESS_KEY: ${{ secrets.SCCACHE_S3_ACCESS_KEY_ID }}
       CACHE_SECRET_KEY: ${{ secrets.SCCACHE_S3_SECRET_ACCESS_KEY }}
 
@@ -96,14 +109,44 @@ jobs:
       - name: Checkout caller repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Compute local sccache L0 namespace
+        id: cache-namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$L0_SIZE_MIB" =~ ^[0-9]+$ ]] || {
+            echo "l0-size-mib must be an integer" >&2
+            exit 1
+          }
+          (( L0_SIZE_MIB >= 64 && L0_SIZE_MIB <= 8192 )) || {
+            echo "l0-size-mib must be between 64 and 8192" >&2
+            exit 1
+          }
+          [[ "$SLOW_WRITE_CONCURRENCY" =~ ^[0-9]+$ ]] || {
+            echo "slow-write-concurrency must be an integer" >&2
+            exit 1
+          }
+          (( SLOW_WRITE_CONCURRENCY >= 1 && SLOW_WRITE_CONCURRENCY <= 64 )) || {
+            echo "slow-write-concurrency must be between 1 and 64" >&2
+            exit 1
+          }
+
+          mode="physical"
+          if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
+            mode="canonical-v2"
+          fi
+          namespace="sccache-l0-${SCCACHE_CACHE_LAYOUT_ID}-${mode}-${RUNNER_OS}-${RUNNER_ARCH}-${GITHUB_REPOSITORY_ID}"
+          echo "namespace=$namespace" >> "$GITHUB_OUTPUT"
+          echo "L0 namespace: $namespace"
+
       - name: Restore persistent local sccache L0
         id: sccache-l0-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}/sccache-l0
-          key: sccache-l0-canonical-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ${{ steps.cache-namespace.outputs.namespace }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            sccache-l0-canonical-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
+            ${{ steps.cache-namespace.outputs.namespace }}-
 
       - name: Snapshot restored L0 baseline
         shell: bash
@@ -115,6 +158,8 @@ jobs:
           printf 'restored_l0_files=%s\n' "$(wc -l < "$RUNNER_TEMP/sccache-l0-baseline.txt")"
 
       - name: Join tailnet
+        id: tailnet
+        continue-on-error: true
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
         with:
           oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
@@ -123,15 +168,17 @@ jobs:
           ping: 100.65.0.2
 
       - name: Verify Garage ingress
+        id: garage-ingress
+        if: steps.tailnet.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
           body="$RUNNER_TEMP/garage-probe.txt"
           ready=false
           code=000
-          for _ in {1..30}; do
+          for _ in {1..12}; do
             code="$(
-              curl --silent --show-error --connect-timeout 3 \
+              curl --silent --show-error --connect-timeout 2 \
                 --output "$body" --write-out '%{http_code}' \
                 http://100.65.0.2:3902/ \
                 || true
@@ -143,14 +190,18 @@ jobs:
             sleep 1
           done
 
-          if [[ "$ready" != "true" ]]; then
-            echo "Garage ingress did not become ready; last HTTP status was $code" >&2
+          if [[ "$ready" == "true" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Garage ingress unavailable (last HTTP status $code); continuing with local L0 only."
             cat "$body" >&2 2>/dev/null || true
-            exit 1
           fi
 
       - name: Fetch shared-cache credentials over tailnet
         id: cache-broker
+        if: steps.garage-ingress.outputs.enabled == 'true'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -158,7 +209,7 @@ jobs:
           response_file="${RUNNER_TEMP}/sccache-credentials.json"
 
           broker_ready=false
-          for _ in {1..30}; do
+          for _ in {1..12}; do
             if curl --fail --silent --show-error --connect-timeout 3 \
               --output "$response_file" "$broker_url"; then
               broker_ready=true
@@ -197,44 +248,49 @@ jobs:
           else
             rm -f "$response_file"
             if [[ -n "${CACHE_ACCESS_KEY:-}" && -n "${CACHE_SECRET_KEY:-}" ]]; then
-              echo "Tailnet credential broker unavailable; using explicitly supplied caller credentials."
+              echo "::warning::Tailnet credential broker unavailable; using explicitly supplied caller credentials."
               echo "source=caller-secrets" >> "$GITHUB_OUTPUT"
             else
-              echo "Tailnet credential broker did not become ready and no caller credentials were supplied." >&2
-              exit 1
+              echo "::warning::Tailnet credential broker unavailable; continuing with local L0 only."
+              echo "source=none" >> "$GITHUB_OUTPUT"
             fi
           fi
 
-      - name: Detect shared-cache credentials
+      - name: Detect shared-cache availability
         id: cache-config
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "${CACHE_ACCESS_KEY:-}" && -n "${CACHE_SECRET_KEY:-}" ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          elif [[ -z "${CACHE_ACCESS_KEY:-}" && -z "${CACHE_SECRET_KEY:-}" ]]; then
-            echo "Shared sccache credentials are unavailable; refusing to run this trusted cache job uncached." >&2
-            exit 1
-          else
-            echo "Only one Garage credential is configured; both are required." >&2
-            exit 1
-          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
-            if [[ -z "${DIST_SCHEDULER_URL:-}" || -z "${DIST_SCHEDULER_TOKEN:-}" ]]; then
-              echo "Distributed mode requested but scheduler credentials are unavailable." >&2
-              exit 1
-            fi
-            echo "dist_enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "dist_enabled=false" >> "$GITHUB_OUTPUT"
+          remote_enabled=false
+          if [[ "${{ steps.garage-ingress.outputs.enabled }}" == "true" ]] \
+             && [[ -n "${CACHE_ACCESS_KEY:-}" && -n "${CACHE_SECRET_KEY:-}" ]]; then
+            remote_enabled=true
+          elif [[ -n "${CACHE_ACCESS_KEY:-}" || -n "${CACHE_SECRET_KEY:-}" ]]; then
+            echo "::warning::Garage credentials are incomplete or ingress is unavailable; using local L0 only."
           fi
+          echo "remote_enabled=$remote_enabled" >> "$GITHUB_OUTPUT"
+
+          dist_enabled=false
+          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
+            if [[ -n "${DIST_SCHEDULER_URL:-}" && -n "${DIST_SCHEDULER_TOKEN:-}" ]]; then
+              dist_enabled=true
+            else
+              echo "::warning::Distributed mode requested but scheduler credentials are unavailable; compiling locally."
+            fi
+          fi
+          echo "dist_enabled=$dist_enabled" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust toolchain
         shell: bash
         run: |
           set -euo pipefail
-          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          if ! rustup run "$RUST_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
+            rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          else
+            echo "Rust toolchain $RUST_TOOLCHAIN is already installed on the runner."
+          fi
 
           if [[ -n "$RUST_COMPONENTS" ]]; then
             read -r -a components <<< "$RUST_COMPONENTS"
@@ -256,8 +312,49 @@ jobs:
           "$rustc_path" --version
           cargo +"$RUST_TOOLCHAIN" --version
 
+      - name: Restore immutable build-client bundle
+        id: build-clients-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/shared-build-clients
+          key: shared-build-clients-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_RELEASE_SHA256 }}-${{ env.SCCACHE_DIST_RELEASE_SHA256 }}-${{ env.CARGO_EPHEMERAL_SHA256 }}
+
+      - name: Populate immutable build-client bundle
+        if: steps.build-clients-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/shared-build-clients"
+          mkdir -p "$bundle"
+
+          curl --fail --location --silent --show-error \
+            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2" \
+            --output "$bundle/sccache" &
+          p1=$!
+          curl --fail --location --silent --show-error \
+            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-dist-linux-x86_64-v2" \
+            --output "$bundle/sccache-dist" &
+          p2=$!
+          curl --fail --location --silent --show-error \
+            "https://github.com/codeandsolder/cargo-ephemeral/releases/download/$CARGO_EPHEMERAL_TAG/cargo-ephemeral-linux-x86_64" \
+            --output "$bundle/cargo-ephemeral" &
+          p3=$!
+          wait "$p1" "$p2" "$p3"
+
+          printf '%s  %s\n' "$SCCACHE_RELEASE_SHA256" "$bundle/sccache" | sha256sum --check
+          printf '%s  %s\n' "$SCCACHE_DIST_RELEASE_SHA256" "$bundle/sccache-dist" | sha256sum --check
+          printf '%s  %s\n' "$CARGO_EPHEMERAL_SHA256" "$bundle/cargo-ephemeral" | sha256sum --check
+          chmod 0755 "$bundle/sccache" "$bundle/sccache-dist" "$bundle/cargo-ephemeral"
+
+      - name: Save immutable build-client bundle
+        if: steps.build-clients-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/shared-build-clients
+          key: ${{ steps.build-clients-cache.outputs.cache-primary-key }}
+
       - name: Install canonical sccache client and direct worker
-        if: steps.cache-config.outputs.enabled == 'true' || steps.cache-config.outputs.dist_enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -265,39 +362,33 @@ jobs:
           sccache_bin="$HOME/.local/bin/sccache"
           sccache_dist_bin="$HOME/.local/bin/sccache-dist"
 
-          curl --fail --location --silent --show-error \
-            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2" \
-            --output "$sccache_bin"
-          printf '%s  %s\n' "$SCCACHE_RELEASE_SHA256" "$sccache_bin" | sha256sum --check
-          chmod 0755 "$sccache_bin"
+          install -m 0755 "$RUNNER_TEMP/shared-build-clients/sccache" "$sccache_bin"
 
-          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
-            curl --fail --location --silent --show-error \
-              "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-dist-linux-x86_64-v2" \
-              --output "$sccache_dist_bin"
-            printf '%s  %s\n' "$SCCACHE_DIST_RELEASE_SHA256" "$sccache_dist_bin" | sha256sum --check
-            chmod 0755 "$sccache_dist_bin"
+          if [[ "${{ steps.cache-config.outputs.dist_enabled }}" == "true" ]]; then
+            install -m 0755 "$RUNNER_TEMP/shared-build-clients/sccache-dist" "$sccache_dist_bin"
           fi
 
-          if [[ ! -x /usr/bin/bwrap ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes bubblewrap
-          fi
+          if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
+            if [[ ! -x /usr/bin/bwrap ]]; then
+              sudo apt-get update
+              sudo apt-get install --yes bubblewrap
+            fi
 
-          # Ubuntu 24.04 enables AppArmor's unprivileged-userns restriction.
-          # Canonical Rust paths use bubblewrap mount namespaces, so trusted
-          # GitHub-hosted jobs need user namespaces enabled for this ephemeral VM.
-          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] \
-             && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
+            # Ubuntu 24.04 enables AppArmor's unprivileged-userns restriction.
+            # Canonical Rust paths use bubblewrap mount namespaces, so trusted
+            # GitHub-hosted jobs need user namespaces enabled for this ephemeral VM.
+            if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] \
+               && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
 
-          # Fail here with a useful platform error rather than deep inside rustc
-          # discovery after sccache has started.
-          /usr/bin/bwrap --ro-bind / / /bin/true
+            # Fail here with a useful platform error rather than deep inside rustc
+            # discovery after sccache has started.
+            /usr/bin/bwrap --ro-bind / / /bin/true
+          fi
 
           "$sccache_bin" --version
-          if [[ "${ENABLE_DISTRIBUTED}" == "true" ]]; then
+          if [[ "${{ steps.cache-config.outputs.dist_enabled }}" == "true" ]]; then
             "$sccache_dist_bin" --version
           fi
 
@@ -315,12 +406,7 @@ jobs:
             "$HOME/.cargo/registry/src"
 
           cargo_bin="$install_dir/cargo-ephemeral"
-          curl --fail --location --silent --show-error \
-            "https://github.com/codeandsolder/cargo-ephemeral/releases/download/$CARGO_EPHEMERAL_TAG/cargo-ephemeral-linux-x86_64" \
-            --output "$cargo_bin"
-
-          printf '%s  %s\n' "$CARGO_EPHEMERAL_SHA256" "$cargo_bin" | sha256sum --check
-          chmod 0755 "$cargo_bin"
+          install -m 0755 "$RUNNER_TEMP/shared-build-clients/cargo-ephemeral" "$cargo_bin"
 
           cat > "$wrapper_dir/cargo" <<'EOF'
           #!/usr/bin/env bash
@@ -441,7 +527,6 @@ jobs:
           fi
 
       - name: Configure shared sccache
-        if: steps.cache-config.outputs.enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -452,26 +537,30 @@ jobs:
               echo "SCCACHE_EXPERIMENTAL_CANONICAL_RUST=1"
             fi
             echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-l0"
-            echo "SCCACHE_CACHE_SIZE=1G"
-            echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
+            echo "SCCACHE_CACHE_SIZE=${L0_SIZE_MIB}M"
             echo "SCCACHE_MULTILEVEL_WRITE_ERROR_POLICY=l0"
-            echo "SCCACHE_BUCKET=${CACHE_BUCKET:-sccache}"
-            echo "SCCACHE_REGION=${CACHE_REGION:-garage-jlc}"
-            echo "SCCACHE_ENDPOINT=${CACHE_ENDPOINT:-http://100.65.0.2:3902}"
-            echo "SCCACHE_S3_USE_SSL=false"
-            echo "SCCACHE_S3_KEY_PREFIX=${CACHE_KEY_PREFIX:-rust/}"
-            echo "AWS_ACCESS_KEY_ID=$CACHE_ACCESS_KEY"
-            echo "AWS_SECRET_ACCESS_KEY=$CACHE_SECRET_KEY"
+            echo "SCCACHE_MULTILEVEL_SLOW_WRITE_CONCURRENCY=$SLOW_WRITE_CONCURRENCY"
+            if [[ "${{ steps.cache-config.outputs.remote_enabled }}" == "true" ]]; then
+              echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
+              echo "SCCACHE_BUCKET=${CACHE_BUCKET:-sccache}"
+              echo "SCCACHE_REGION=${CACHE_REGION:-garage-jlc}"
+              echo "SCCACHE_ENDPOINT=${CACHE_ENDPOINT:-http://100.65.0.2:3902}"
+              echo "SCCACHE_S3_USE_SSL=false"
+              echo "SCCACHE_S3_KEY_PREFIX=${CACHE_KEY_PREFIX:-rust/}"
+              echo "AWS_ACCESS_KEY_ID=$CACHE_ACCESS_KEY"
+              echo "AWS_SECRET_ACCESS_KEY=$CACHE_SECRET_KEY"
+            else
+              echo "SCCACHE_MULTILEVEL_CHAIN=disk"
+            fi
           } >> "$GITHUB_ENV"
 
       - name: Start sccache
-        if: steps.cache-config.outputs.enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
           "$HOME/.local/bin/sccache" --start-server
           "$HOME/.local/bin/sccache" --zero-stats
-          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
+          if [[ "${{ steps.cache-config.outputs.dist_enabled }}" == "true" ]]; then
             "$HOME/.local/bin/sccache" --dist-status
           fi
 
@@ -480,47 +569,22 @@ jobs:
         run: ${{ inputs.command }}
 
       - name: Show shared-cache stats
-        id: cache-stats
-        if: always() && steps.cache-config.outputs.enabled == 'true'
+        if: always()
         shell: bash
         run: |
-          set -u
-          "$HOME/.local/bin/sccache" --show-stats || true
-          # L1 writes may complete after rustc returns. Give the ephemeral
-          # runner a small drain window before GitHub tears the process down.
-          sleep 5
-
-          # Default to saving if stats are unavailable: losing newly-written L0
-          # state is worse than uploading one redundant snapshot.
-          l0_changed=true
-          stats_json="$("$HOME/.local/bin/sccache" --show-stats --stats-format json 2>/dev/null || true)"
-          if [[ -n "$stats_json" ]] && jq -e '.stats.multi_level' >/dev/null 2>&1 <<<"$stats_json"; then
-            l0_changed="$(
-              jq -r '
-                [
-                  .stats.multi_level[]?
-                  | select(.name == "L0 (disk)")
-                  | ((.writes // 0) + (.backfills_to // 0))
-                ]
-                | (add // 0) > 0
-              ' <<<"$stats_json"
-            )"
-          fi
-          echo "l0_changed=$l0_changed" >> "$GITHUB_OUTPUT"
           "$HOME/.local/bin/sccache" --show-stats || true
 
-      - name: Stop sccache before persisting L0
-        if: always() && steps.cache-config.outputs.enabled == 'true'
+      - name: Stop and drain sccache before persisting L0
+        if: always()
         shell: bash
         run: |
+          # The maintained client drains tracked slower-level writes and repairs
+          # during graceful server shutdown, so no fixed sleep is required here.
           "$HOME/.local/bin/sccache" --stop-server || true
 
       - name: Build local sccache L0 delta
         id: sccache-l0-delta
-        if: >-
-          always() &&
-          steps.cache-config.outputs.enabled == 'true' &&
-          steps.cache-stats.outputs.l0_changed == 'true'
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -528,7 +592,10 @@ jobs:
           baseline="$RUNNER_TEMP/sccache-l0-baseline.txt"
           current="$RUNNER_TEMP/sccache-l0-current.txt"
           delta_list="$RUNNER_TEMP/sccache-l0-delta-files.txt"
-          delta_tar="$RUNNER_TEMP/sccache-l0-delta.tar.zst"
+          delta_dir="$RUNNER_TEMP/sccache-l0-delta"
+          delta_tar="$delta_dir/sccache-l0-delta.tar.zst"
+          metadata="$delta_dir/metadata.json"
+          mkdir -p "$delta_dir"
 
           find "$l0" -type f -printf '%P\n' | LC_ALL=C sort > "$current"
           comm -13 "$baseline" "$current" > "$delta_list"
@@ -544,9 +611,19 @@ jobs:
             tar --zstd -C "$l0" -cf "$delta_tar" -T "$delta_list"
           fi
 
+          limit_bytes=$((L0_SIZE_MIB * 1024 * 1024))
+          jq -n \
+            --arg namespace "${{ steps.cache-namespace.outputs.namespace }}" \
+            --argjson limit_bytes "$limit_bytes" \
+            --arg cache_layout "$SCCACHE_CACHE_LAYOUT_ID" \
+            --arg canonical "$ENABLE_CANONICAL_RUST" \
+            '{schema: 1, namespace: $namespace, limit_bytes: $limit_bytes, cache_layout: $cache_layout, canonical_rust: ($canonical == "true")}' \
+            > "$metadata"
+
           echo "count=$count" >> "$GITHUB_OUTPUT"
           echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
-          printf 'l0_delta_files=%s l0_delta_bytes=%s\n' "$count" "$bytes"
+          printf 'l0_delta_files=%s l0_delta_bytes=%s namespace=%s limit_bytes=%s\n' \
+            "$count" "$bytes" "${{ steps.cache-namespace.outputs.namespace }}" "$limit_bytes"
 
       - name: Upload local sccache L0 delta
         if: >-
@@ -556,7 +633,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sccache-l0-delta
-          path: ${{ runner.temp }}/sccache-l0-delta.tar.zst
+          path: ${{ runner.temp }}/sccache-l0-delta
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
