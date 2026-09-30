@@ -58,7 +58,7 @@ on:
         default: 1024
         type: number
       slow-write-concurrency:
-        description: Maximum concurrent operations against slower cache levels such as Garage
+        description: Maximum concurrent asynchronous Garage uploads in the post-run merger
         required: false
         default: 4
         type: number
@@ -101,9 +101,7 @@ jobs:
       ENABLE_DISTRIBUTED: ${{ inputs.distributed }}
       ENABLE_CANONICAL_RUST: ${{ inputs.canonical-rust }}
       L0_SIZE_MIB: ${{ inputs.l0-size-mib }}
-      SLOW_WRITE_CONCURRENCY: ${{ inputs.slow-write-concurrency }}
-      CACHE_ACCESS_KEY: ${{ secrets.SCCACHE_S3_ACCESS_KEY_ID }}
-      CACHE_SECRET_KEY: ${{ secrets.SCCACHE_S3_SECRET_ACCESS_KEY }}
+      GARAGE_UPLOAD_CONCURRENCY: ${{ inputs.slow-write-concurrency }}
 
     steps:
       - name: Checkout caller repository
@@ -122,11 +120,11 @@ jobs:
             echo "l0-size-mib must be between 64 and 8192" >&2
             exit 1
           }
-          [[ "$SLOW_WRITE_CONCURRENCY" =~ ^[0-9]+$ ]] || {
+          [[ "$GARAGE_UPLOAD_CONCURRENCY" =~ ^[0-9]+$ ]] || {
             echo "slow-write-concurrency must be an integer" >&2
             exit 1
           }
-          (( SLOW_WRITE_CONCURRENCY >= 1 && SLOW_WRITE_CONCURRENCY <= 64 )) || {
+          (( GARAGE_UPLOAD_CONCURRENCY >= 1 && GARAGE_UPLOAD_CONCURRENCY <= 64 )) || {
             echo "slow-write-concurrency must be between 1 and 64" >&2
             exit 1
           }
@@ -157,54 +155,21 @@ jobs:
           find "$l0" -type f -printf '%P\n' | LC_ALL=C sort > "$RUNNER_TEMP/sccache-l0-baseline.txt"
           printf 'restored_l0_files=%s\n' "$(wc -l < "$RUNNER_TEMP/sccache-l0-baseline.txt")"
 
-      - name: Join tailnet
+      - name: Join tailnet for distributed compilation
         id: tailnet
+        if: inputs.distributed
         continue-on-error: true
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
         with:
           oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
           audience: ${{ env.TAILSCALE_AUDIENCE }}
           tags: tag:sccache-worker
-          # Shared cache is optional. Bound federated-auth/network retries so a
-          # degraded tailnet cannot dominate the build. The next step probes
-          # Garage directly, so the action's separate 3-minute ping is redundant.
           timeout: 15s
           retry: 2
 
-      - name: Verify Garage ingress
-        id: garage-ingress
-        if: steps.tailnet.outcome == 'success'
-        shell: bash
-        run: |
-          set -euo pipefail
-          body="$RUNNER_TEMP/garage-probe.txt"
-          ready=false
-          code=000
-          for _ in {1..4}; do
-            code="$(
-              curl --silent --show-error --connect-timeout 1 --max-time 3 \
-                --output "$body" --write-out '%{http_code}' \
-                http://100.65.0.2:3902/ \
-                || true
-            )"
-            if [[ "$code" == "403" ]]; then
-              ready=true
-              break
-            fi
-            sleep 1
-          done
-
-          if [[ "$ready" == "true" ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Garage ingress unavailable (last HTTP status $code); continuing with local L0 only."
-            cat "$body" >&2 2>/dev/null || true
-          fi
-
-      - name: Fetch shared-cache credentials over tailnet
+      - name: Fetch distributed scheduler credentials
         id: cache-broker
-        if: steps.garage-ingress.outputs.enabled == 'true'
+        if: inputs.distributed && steps.tailnet.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: |
@@ -223,59 +188,27 @@ jobs:
           done
 
           if [[ "$broker_ready" == "true" ]]; then
-            access_key="$(jq -er '.access_key_id' "$response_file")"
-            secret_key="$(jq -er '.secret_access_key' "$response_file")"
-            endpoint="$(jq -er '.endpoint' "$response_file")"
-            bucket="$(jq -er '.bucket' "$response_file")"
-            region="$(jq -er '.region' "$response_file")"
-            key_prefix="$(jq -er '.key_prefix' "$response_file")"
             scheduler_url="$(jq -r '.scheduler_url // empty' "$response_file")"
             scheduler_token="$(jq -r '.scheduler_token // empty' "$response_file")"
-
-            echo "::add-mask::$access_key"
-            echo "::add-mask::$secret_key"
             if [[ -n "$scheduler_token" ]]; then
               echo "::add-mask::$scheduler_token"
             fi
             {
-              echo "CACHE_ACCESS_KEY=$access_key"
-              echo "CACHE_SECRET_KEY=$secret_key"
-              echo "CACHE_ENDPOINT=$endpoint"
-              echo "CACHE_BUCKET=$bucket"
-              echo "CACHE_REGION=$region"
-              echo "CACHE_KEY_PREFIX=$key_prefix"
               echo "DIST_SCHEDULER_URL=$scheduler_url"
               echo "DIST_SCHEDULER_TOKEN=$scheduler_token"
             } >> "$GITHUB_ENV"
             echo "source=tailnet-broker" >> "$GITHUB_OUTPUT"
-            rm -f "$response_file"
           else
-            rm -f "$response_file"
-            if [[ -n "${CACHE_ACCESS_KEY:-}" && -n "${CACHE_SECRET_KEY:-}" ]]; then
-              echo "::warning::Tailnet credential broker unavailable; using explicitly supplied caller credentials."
-              echo "source=caller-secrets" >> "$GITHUB_OUTPUT"
-            else
-              echo "::warning::Tailnet credential broker unavailable; continuing with local L0 only."
-              echo "source=none" >> "$GITHUB_OUTPUT"
-            fi
+            echo "::warning::Distributed credential broker unavailable; compiling locally."
+            echo "source=none" >> "$GITHUB_OUTPUT"
           fi
+          rm -f "$response_file"
 
-      - name: Detect shared-cache availability
+      - name: Detect distributed availability
         id: cache-config
         shell: bash
         run: |
           set -euo pipefail
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-
-          remote_enabled=false
-          if [[ "${{ steps.garage-ingress.outputs.enabled }}" == "true" ]] \
-             && [[ -n "${CACHE_ACCESS_KEY:-}" && -n "${CACHE_SECRET_KEY:-}" ]]; then
-            remote_enabled=true
-          elif [[ -n "${CACHE_ACCESS_KEY:-}" || -n "${CACHE_SECRET_KEY:-}" ]]; then
-            echo "::warning::Garage credentials are incomplete or ingress is unavailable; using local L0 only."
-          fi
-          echo "remote_enabled=$remote_enabled" >> "$GITHUB_OUTPUT"
-
           dist_enabled=false
           if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
             if [[ -n "${DIST_SCHEDULER_URL:-}" && -n "${DIST_SCHEDULER_TOKEN:-}" ]]; then
@@ -530,7 +463,7 @@ jobs:
             exit 1
           fi
 
-      - name: Configure shared sccache
+      - name: Configure local sccache
         shell: bash
         run: |
           set -euo pipefail
@@ -542,24 +475,9 @@ jobs:
             fi
             echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-l0"
             echo "SCCACHE_CACHE_SIZE=${L0_SIZE_MIB}M"
-            echo "SCCACHE_MULTILEVEL_WRITE_ERROR_POLICY=l0"
-            echo "SCCACHE_MULTILEVEL_SLOW_WRITE_CONCURRENCY=$SLOW_WRITE_CONCURRENCY"
-            if [[ "${{ steps.cache-config.outputs.remote_enabled }}" == "true" ]]; then
-              echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
-              # Tailnet reachability and credential acquisition were already
-              # established above. Do not let a slow S3 read/write capability
-              # probe block the local-first daemon from becoming ready.
-              echo "SCCACHE_SKIP_CACHE_CHECK=true"
-              echo "SCCACHE_BUCKET=${CACHE_BUCKET:-sccache}"
-              echo "SCCACHE_REGION=${CACHE_REGION:-garage-jlc}"
-              echo "SCCACHE_ENDPOINT=${CACHE_ENDPOINT:-http://100.65.0.2:3902}"
-              echo "SCCACHE_S3_USE_SSL=false"
-              echo "SCCACHE_S3_KEY_PREFIX=${CACHE_KEY_PREFIX:-rust/}"
-              echo "AWS_ACCESS_KEY_ID=$CACHE_ACCESS_KEY"
-              echo "AWS_SECRET_ACCESS_KEY=$CACHE_SECRET_KEY"
-            else
-              echo "SCCACHE_MULTILEVEL_CHAIN=disk"
-            fi
+            # Build critical path is deliberately L0-only. Newly-created cache
+            # objects are published to Garage by the asynchronous merger workflow.
+            echo "SCCACHE_MULTILEVEL_CHAIN=disk"
           } >> "$GITHUB_ENV"
 
       - name: Start sccache
@@ -576,18 +494,16 @@ jobs:
         shell: bash
         run: ${{ inputs.command }}
 
-      - name: Show shared-cache stats
+      - name: Show local-cache stats
         if: always()
         shell: bash
         run: |
           "$HOME/.local/bin/sccache" --show-stats || true
 
-      - name: Stop and drain sccache before persisting L0
+      - name: Stop sccache before persisting L0
         if: always()
         shell: bash
         run: |
-          # The maintained client drains tracked slower-level writes and repairs
-          # during graceful server shutdown, so no fixed sleep is required here.
           "$HOME/.local/bin/sccache" --stop-server || true
 
       - name: Build local sccache L0 delta
@@ -625,7 +541,8 @@ jobs:
             --argjson limit_bytes "$limit_bytes" \
             --arg cache_layout "$SCCACHE_CACHE_LAYOUT_ID" \
             --arg canonical "$ENABLE_CANONICAL_RUST" \
-            '{schema: 1, namespace: $namespace, limit_bytes: $limit_bytes, cache_layout: $cache_layout, canonical_rust: ($canonical == "true")}' \
+            --argjson garage_upload_concurrency "$GARAGE_UPLOAD_CONCURRENCY" \
+            '{schema: 2, namespace: $namespace, limit_bytes: $limit_bytes, cache_layout: $cache_layout, canonical_rust: ($canonical == "true"), garage_upload_concurrency: $garage_upload_concurrency}' \
             > "$metadata"
 
           echo "count=$count" >> "$GITHUB_OUTPUT"

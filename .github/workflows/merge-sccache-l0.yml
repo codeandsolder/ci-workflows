@@ -27,11 +27,16 @@ on:
 permissions:
   actions: write
   contents: read
+  id-token: write
 
 # workflow_run is intentionally read-only for caches by default. This reusable
 # workflow is called only after a caller has gated the source event to trusted
 # push/workflow_dispatch runs.
 cache-mode: write
+
+env:
+  TAILSCALE_CLIENT_ID: "TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
+  TAILSCALE_AUDIENCE: "api.tailscale.com/TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
 
 concurrency:
   group: sccache-l0-merge-${{ github.repository_id }}
@@ -88,9 +93,11 @@ jobs:
             metadata="$RUNNER_TEMP/sccache-l0-delta/metadata.json"
             namespace="$(jq -er '.namespace' "$metadata")"
             limit_bytes="$(jq -er '.limit_bytes' "$metadata")"
+            garage_upload_concurrency="$(jq -er '.garage_upload_concurrency // 4' "$metadata")"
           else
             namespace="sccache-l0-rust-v7-layout2-canonical-v2-${RUNNER_OS}-${RUNNER_ARCH}-${GITHUB_REPOSITORY_ID}"
             limit_bytes=$((1024 * 1024 * 1024))
+            garage_upload_concurrency=4
           fi
 
           if [[ ! "$namespace" =~ ^sccache-l0-[A-Za-z0-9._-]+$ ]]; then
@@ -101,9 +108,15 @@ jobs:
             echo "invalid L0 size bound: $limit_bytes" >&2
             exit 1
           fi
+          if [[ ! "$garage_upload_concurrency" =~ ^[0-9]+$ ]] \
+             || (( garage_upload_concurrency < 1 || garage_upload_concurrency > 64 )); then
+            echo "invalid Garage upload concurrency: $garage_upload_concurrency" >&2
+            exit 1
+          fi
 
           echo "namespace=$namespace" >> "$GITHUB_OUTPUT"
           echo "limit_bytes=$limit_bytes" >> "$GITHUB_OUTPUT"
+          echo "garage_upload_concurrency=$garage_upload_concurrency" >> "$GITHUB_OUTPUT"
 
       - name: Restore local sccache L0
         id: l0-restore
@@ -206,8 +219,236 @@ jobs:
           path: ${{ runner.temp }}/sccache-l0
           key: ${{ steps.l0-restore.outputs.cache-primary-key }}
 
+      - name: Join tailnet for asynchronous Garage upload
+        id: tailnet
+        if: steps.delta.outputs.exists == 'true'
+        continue-on-error: true
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
+        with:
+          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
+          audience: ${{ env.TAILSCALE_AUDIENCE }}
+          tags: tag:sccache-worker
+          timeout: 15s
+          retry: 2
+
+      - name: Verify Garage ingress
+        id: garage-ingress
+        if: steps.delta.outputs.exists == 'true' && steps.tailnet.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/garage-probe.txt"
+          ready=false
+          code=000
+          for _ in {1..4}; do
+            code="$(
+              curl --silent --show-error --connect-timeout 1 --max-time 3 \
+                --output "$body" --write-out '%{http_code}' \
+                http://100.65.0.2:3902/ \
+                || true
+            )"
+            if [[ "$code" == "403" ]]; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" == "true" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Garage ingress unavailable; async upload will remain retryable."
+          fi
+
+      - name: Fetch Garage upload credentials
+        id: garage-broker
+        if: steps.garage-ingress.outputs.enabled == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$RUNNER_TEMP/sccache-credentials.json"
+          ready=false
+          for _ in {1..4}; do
+            if curl --fail --silent --show-error --connect-timeout 1 --max-time 3 \
+              --output "$response_file" \
+              http://100.65.0.2:3903/v1/sccache-credentials; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+
+          if [[ "$ready" != "true" ]]; then
+            rm -f "$response_file"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Garage credential broker unavailable; async upload will remain retryable."
+            exit 0
+          fi
+
+          access_key="$(jq -er '.access_key_id' "$response_file")"
+          secret_key="$(jq -er '.secret_access_key' "$response_file")"
+          endpoint="$(jq -er '.endpoint' "$response_file")"
+          bucket="$(jq -er '.bucket' "$response_file")"
+          region="$(jq -er '.region' "$response_file")"
+          key_prefix="$(jq -er '.key_prefix' "$response_file")"
+          echo "::add-mask::$access_key"
+          echo "::add-mask::$secret_key"
+          {
+            echo "GARAGE_ACCESS_KEY=$access_key"
+            echo "GARAGE_SECRET_KEY=$secret_key"
+            echo "GARAGE_ENDPOINT=$endpoint"
+            echo "GARAGE_BUCKET=$bucket"
+            echo "GARAGE_REGION=$region"
+            echo "GARAGE_KEY_PREFIX=$key_prefix"
+          } >> "$GITHUB_ENV"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          rm -f "$response_file"
+
+      - name: Prepare new-object Garage upload
+        id: garage-manifest
+        if: steps.delta.outputs.exists == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/sccache-l0-delta/sccache-l0-delta.tar.zst"
+          out="$RUNNER_TEMP/sccache-garage-delta"
+          manifest="$RUNNER_TEMP/sccache-garage-manifest.tsv"
+          rm -rf "$out"
+          mkdir -p "$out"
+          : > "$manifest"
+
+          while IFS= read -r path; do
+            if [[ -z "$path" || "$path" == /* || "$path" == ".." || "$path" == ../* || "$path" == */../* ]]; then
+              echo "unsafe path in L0 delta: $path" >&2
+              exit 1
+            fi
+          done < <(tar --zstd -tf "$src")
+
+          tar --zstd -xf "$src" -C "$out"
+
+          count=0
+          bytes=0
+          while IFS= read -r -d '' file; do
+            rel="${file#"$out/"}"
+            if [[ "$rel" == preprocessor/* ]]; then
+              continue
+            fi
+            key="${rel##*/}"
+            if [[ ! "$key" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "unexpected L0 object path: $rel" >&2
+              exit 1
+            fi
+            expected="${key:0:1}/${key:1:1}/$key"
+            if [[ "$rel" != "$expected" ]]; then
+              echo "unexpected disk L0 normalization: $rel (expected $expected)" >&2
+              exit 1
+            fi
+            remote="${key:0:1}/${key:1:1}/${key:2:1}/$key"
+            printf '%s\t%s\n' "$file" "$remote" >> "$manifest"
+            count=$((count + 1))
+            bytes=$((bytes + $(stat -c '%s' "$file")))
+          done < <(find "$out" -type f -print0)
+
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
+          printf 'garage_delta_objects=%s garage_delta_bytes=%s\n' "$count" "$bytes"
+
+      - name: Upload new L0 objects to Garage
+        id: garage-upload
+        if: >-
+          steps.garage-manifest.outputs.count != '' &&
+          steps.garage-manifest.outputs.count != '0' &&
+          steps.garage-broker.outputs.ready == 'true'
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.GARAGE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.GARAGE_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.GARAGE_REGION }}
+          UPLOAD_CONCURRENCY: ${{ steps.metadata.outputs.garage_upload_concurrency }}
+          MANIFEST: ${{ steps.garage-manifest.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          aws --version
+          python3 - <<'PY'
+          import concurrent.futures
+          import os
+          import subprocess
+          from pathlib import Path
+
+          manifest = Path(os.environ["MANIFEST"])
+          endpoint = os.environ["GARAGE_ENDPOINT"]
+          bucket = os.environ["GARAGE_BUCKET"]
+          prefix = os.environ["GARAGE_KEY_PREFIX"].strip("/")
+          concurrency = int(os.environ["UPLOAD_CONCURRENCY"])
+
+          entries = []
+          for line in manifest.read_text().splitlines():
+              path, remote = line.split("\t", 1)
+              object_key = f"{prefix}/{remote}" if prefix else remote
+              entries.append((path, object_key))
+
+          def upload(entry):
+              path, object_key = entry
+              subprocess.run(
+                  [
+                      "aws",
+                      "--endpoint-url",
+                      endpoint,
+                      "s3api",
+                      "put-object",
+                      "--bucket",
+                      bucket,
+                      "--key",
+                      object_key,
+                      "--body",
+                      path,
+                  ],
+                  check=True,
+                  stdout=subprocess.DEVNULL,
+              )
+              return object_key
+
+          failures = []
+          with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+              future_map = {pool.submit(upload, entry): entry for entry in entries}
+              for future in concurrent.futures.as_completed(future_map):
+                  try:
+                      future.result()
+                  except Exception as error:
+                      failures.append((future_map[future], str(error)))
+
+          if failures:
+              for (path, object_key), error in failures[:20]:
+                  print(f"Garage upload failed: {path} -> {object_key}: {error}")
+              raise SystemExit(f"{len(failures)} Garage uploads failed")
+
+          print(f"garage_uploaded_objects={len(entries)} concurrency={concurrency}")
+          PY
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+
+      - name: Require asynchronous Garage upload
+        if: >-
+          always() &&
+          steps.delta.outputs.exists == 'true' &&
+          steps.garage-manifest.outputs.count != '' &&
+          steps.garage-manifest.outputs.count != '0' &&
+          steps.garage-upload.outputs.uploaded != 'true'
+        shell: bash
+        run: |
+          echo "New L0 objects were preserved in the Actions cache, but Garage upload did not complete." >&2
+          echo "The source build is unaffected; rerun this merger workflow to retry the archive upload." >&2
+          exit 1
+
       - name: Delete merged delta artifact
-        if: always() && steps.delta.outputs.exists == 'true'
+        if: >-
+          always() &&
+          steps.delta.outputs.exists == 'true' &&
+          (
+            steps.garage-manifest.outputs.count == '0' ||
+            steps.garage-upload.outputs.uploaded == 'true'
+          )
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
