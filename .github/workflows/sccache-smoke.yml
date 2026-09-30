@@ -1,6 +1,8 @@
 name: Shared sccache smoke
 
 on:
+  push:
+    branches: [fix/cache-pipeline-v8]
   workflow_dispatch:
     inputs:
       runner:
@@ -18,7 +20,7 @@ permissions:
 
 jobs:
   smoke:
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@main
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@fix/cache-pipeline-v8
     with:
       command: >-
         cargo +1.98.1 build --release --locked --offline --manifest-path smoke-cache/Cargo.toml
