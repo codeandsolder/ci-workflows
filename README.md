@@ -46,3 +46,7 @@ Direct GitHub-hosted `sccache-dist` worker mode is available through `distribute
 ### Cargo compatibility
 
 The shared Rust workflow uses the maintained ephemeral Cargo client by default so registry source paths are normalized for cross-run cache reuse. Callers whose compile-time tooling spawns `$CARGO` for nested workspace queries can set `ephemeral-cargo: false`; this switches only Cargo back to the stock toolchain client while retaining the same sccache L0/Garage configuration.
+
+### Canonical Rust compatibility
+
+Canonical Rust path normalization is enabled by default. Set `canonical-rust: false` for a repository whose compiled code intentionally depends on physical build-tree paths at runtime. This disables only canonical path rewriting; persistent L0, Garage L1, OIDC credentials, and ordinary sccache remain enabled.

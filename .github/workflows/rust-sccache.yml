@@ -42,6 +42,11 @@ on:
         required: false
         default: true
         type: boolean
+      canonical-rust:
+        description: Canonicalize Rust build/source paths for cross-runner cache-key reuse
+        required: false
+        default: true
+        type: boolean
       timeout-minutes:
         description: Job timeout; cold-L0 first fills can be much slower than steady-state runs
         required: false
@@ -83,6 +88,7 @@ jobs:
       RUST_TARGETS: ${{ inputs.rust-targets }}
       RUSTFLAGS: ${{ inputs.rustflags }}
       ENABLE_DISTRIBUTED: ${{ inputs.distributed }}
+      ENABLE_CANONICAL_RUST: ${{ inputs.canonical-rust }}
       CACHE_ACCESS_KEY: ${{ secrets.SCCACHE_S3_ACCESS_KEY_ID }}
       CACHE_SECRET_KEY: ${{ secrets.SCCACHE_S3_SECRET_ACCESS_KEY }}
 
@@ -442,7 +448,9 @@ jobs:
           {
             echo "PATH=$HOME/.local/bin:$PATH"
             echo "RUSTC_WRAPPER=$HOME/.local/bin/sccache"
-            echo "SCCACHE_EXPERIMENTAL_CANONICAL_RUST=1"
+            if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
+              echo "SCCACHE_EXPERIMENTAL_CANONICAL_RUST=1"
+            fi
             echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-l0"
             echo "SCCACHE_CACHE_SIZE=1G"
             echo "SCCACHE_MULTILEVEL_CHAIN=disk,s3"
