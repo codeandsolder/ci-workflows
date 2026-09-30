@@ -70,6 +70,7 @@ jobs:
 
       - name: Restore canonical local sccache L0
         id: l0-restore
+        if: inputs.bootstrap-only || steps.delta.outputs.exists == 'true'
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sccache-l0
@@ -90,9 +91,11 @@ jobs:
 
       - name: Merge and bound canonical L0
         id: merge
+        if: inputs.bootstrap-only || steps.delta.outputs.exists == 'true'
         shell: bash
         env:
           HAVE_DELTA: ${{ steps.delta.outputs.exists || 'false' }}
+          BOOTSTRAP_ONLY: ${{ inputs.bootstrap-only }}
         run: |
           set -euo pipefail
           l0="$RUNNER_TEMP/sccache-l0"
@@ -163,7 +166,7 @@ jobs:
           printf 'l0_before_files=%s l0_before_bytes=%s l0_after_files=%s l0_after_bytes=%s\n' \
             "$before_files" "$before_bytes" "$after_files" "$after_bytes"
 
-          if [[ "$after_files" -gt 0 ]]; then
+          if [[ "$after_files" -gt 0 && ( "$HAVE_DELTA" == "true" || "$BOOTSTRAP_ONLY" == "true" ) ]]; then
             echo "save=true" >> "$GITHUB_OUTPUT"
           else
             echo "save=false" >> "$GITHUB_OUTPUT"
