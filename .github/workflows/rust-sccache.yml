@@ -192,7 +192,7 @@ jobs:
           response_file="${RUNNER_TEMP}/sccache-credentials.json"
 
           broker_ready=false
-          for _ in {1..30}; do
+          for _ in {1..12}; do
             if curl --fail --silent --show-error --connect-timeout 3 \
               --output "$response_file" "$broker_url"; then
               broker_ready=true
@@ -351,22 +351,24 @@ jobs:
             install -m 0755 "$RUNNER_TEMP/shared-build-clients/sccache-dist" "$sccache_dist_bin"
           fi
 
-          if [[ ! -x /usr/bin/bwrap ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes bubblewrap
-          fi
+          if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
+            if [[ ! -x /usr/bin/bwrap ]]; then
+              sudo apt-get update
+              sudo apt-get install --yes bubblewrap
+            fi
 
-          # Ubuntu 24.04 enables AppArmor's unprivileged-userns restriction.
-          # Canonical Rust paths use bubblewrap mount namespaces, so trusted
-          # GitHub-hosted jobs need user namespaces enabled for this ephemeral VM.
-          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] \
-             && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
+            # Ubuntu 24.04 enables AppArmor's unprivileged-userns restriction.
+            # Canonical Rust paths use bubblewrap mount namespaces, so trusted
+            # GitHub-hosted jobs need user namespaces enabled for this ephemeral VM.
+            if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] \
+               && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
 
-          # Fail here with a useful platform error rather than deep inside rustc
-          # discovery after sccache has started.
-          /usr/bin/bwrap --ro-bind / / /bin/true
+            # Fail here with a useful platform error rather than deep inside rustc
+            # discovery after sccache has started.
+            /usr/bin/bwrap --ro-bind / / /bin/true
+          fi
 
           "$sccache_bin" --version
           if [[ "${{ steps.cache-config.outputs.dist_enabled }}" == "true" ]]; then
