@@ -96,17 +96,25 @@ jobs:
         st=s["stats"]
         levels={x["name"]:x for x in st.get("multi_level",[])}
         l1=levels.get("L1 (s3)",{})
-        def total(v):
-            return sum(v.values()) if isinstance(v,dict) else (v or 0)
+        def total_counts(v):
+            if not isinstance(v, dict):
+                return int(v or 0)
+            return sum((v.get("counts") or {}).values())
+
+        write_duration=l1.get("write_duration") or {}
+        write_ms=(
+            int(write_duration.get("secs",0))*1000
+            + int(write_duration.get("nanos",0))//1_000_000
+        )
         row=[
             int(os.environ["CONCURRENCY"]),
             (int(os.environ["END_NS"])-int(os.environ["START_NS"]))//1_000_000,
             st.get("compile_requests",0),
-            total(st.get("cache_hits")),
-            total(st.get("cache_misses")),
+            total_counts(st.get("cache_hits")),
+            total_counts(st.get("cache_misses")),
             l1.get("writes",0),
             l1.get("write_failures",0),
-            l1.get("write_duration_nanos",0)//1_000_000,
+            write_ms,
         ]
         with open(os.environ["RESULTS"],"a") as f:
             f.write("\t".join(map(str,row))+"\n")
