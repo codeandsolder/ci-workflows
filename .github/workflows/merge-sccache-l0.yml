@@ -1,0 +1,186 @@
+name: Merge shared sccache L0
+
+on:
+  workflow_call:
+    inputs:
+      source-run-id:
+        description: Workflow run that produced sccache-l0-delta, or 0 for bootstrap-only
+        required: false
+        default: "0"
+        type: string
+      source-event:
+        description: Event that triggered the source workflow
+        required: false
+        default: ""
+        type: string
+      bootstrap-only:
+        description: Convert an existing v1 default-branch snapshot into the canonical v2 lineage
+        required: false
+        default: false
+        type: boolean
+      runner:
+        description: GitHub-hosted runner label
+        required: false
+        default: "ubuntu-22.04"
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+# workflow_run is intentionally read-only for caches by default. This reusable
+# workflow is called only after a caller has gated the source event to trusted
+# push/workflow_dispatch runs.
+cache-mode: write
+
+concurrency:
+  group: sccache-l0-merge-${{ github.repository_id }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      inputs.bootstrap-only ||
+      inputs.source-event == 'push' ||
+      inputs.source-event == 'workflow_dispatch'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Locate source delta
+        id: delta
+        if: inputs.source-run-id != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+        run: |
+          set -euo pipefail
+          artifact_id="$(
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name == "sccache-l0-delta") | .id' \
+              | head -n1
+          )"
+          if [[ -n "$artifact_id" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore canonical local sccache L0
+        id: l0-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/sccache-l0
+          key: sccache-l0-canonical-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            sccache-l0-canonical-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
+            sccache-l0-canonical-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-
+
+      - name: Download source delta
+        if: steps.delta.outputs.exists == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: sccache-l0-delta
+          path: ${{ runner.temp }}/sccache-l0-delta
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source-run-id }}
+
+      - name: Merge and bound canonical L0
+        id: merge
+        shell: bash
+        env:
+          HAVE_DELTA: ${{ steps.delta.outputs.exists || 'false' }}
+        run: |
+          set -euo pipefail
+          l0="$RUNNER_TEMP/sccache-l0"
+          mkdir -p "$l0"
+
+          before_files="$(find "$l0" -type f | wc -l)"
+          before_bytes="$(du -sb "$l0" | awk '{print $1}')"
+
+          if [[ "$HAVE_DELTA" == "true" ]]; then
+            delta="$RUNNER_TEMP/sccache-l0-delta/sccache-l0-delta.tar.zst"
+
+            while IFS= read -r path; do
+              if [[ -z "$path" || "$path" == /* || "$path" == ".." || "$path" == ../* || "$path" == */../* ]]; then
+                echo "unsafe path in L0 delta: $path" >&2
+                exit 1
+              fi
+            done < <(tar --zstd -tf "$delta")
+
+            tar --zstd -xf "$delta" -C "$l0"
+          fi
+
+          L0_DIR="$l0" python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["L0_DIR"])
+          limit = 1024 * 1024 * 1024
+          files = [path for path in root.rglob("*") if path.is_file()]
+          entries = []
+          total = 0
+          for path in files:
+              stat = path.stat()
+              total += stat.st_size
+              entries.append((stat.st_mtime_ns, stat.st_size, path))
+
+          removed_files = 0
+          removed_bytes = 0
+          if total > limit:
+              for _mtime, size, path in sorted(entries):
+                  if total <= limit:
+                      break
+                  try:
+                      path.unlink()
+                  except FileNotFoundError:
+                      continue
+                  total -= size
+                  removed_files += 1
+                  removed_bytes += size
+
+          for directory in sorted(
+              (path for path in root.rglob("*") if path.is_dir()),
+              key=lambda path: len(path.parts),
+              reverse=True,
+          ):
+              try:
+                  directory.rmdir()
+              except OSError:
+                  pass
+
+          print(
+              f"bounded_l0_bytes={total} "
+              f"pruned_files={removed_files} pruned_bytes={removed_bytes}"
+          )
+          PY
+
+          after_files="$(find "$l0" -type f | wc -l)"
+          after_bytes="$(du -sb "$l0" | awk '{print $1}')"
+          printf 'l0_before_files=%s l0_before_bytes=%s l0_after_files=%s l0_after_bytes=%s\n' \
+            "$before_files" "$before_bytes" "$after_files" "$after_bytes"
+
+          if [[ "$after_files" -gt 0 ]]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "save=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save merged canonical L0
+        if: steps.merge.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/sccache-l0
+          key: ${{ steps.l0-restore.outputs.cache-primary-key }}
+
+      - name: Delete merged delta artifact
+        if: always() && steps.delta.outputs.exists == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.delta.outputs.artifact_id }}
+        run: |
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID"
