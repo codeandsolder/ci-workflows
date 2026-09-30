@@ -71,7 +71,7 @@ jobs:
       - name: Restore canonical local sccache L0
         id: l0-restore
         if: inputs.bootstrap-only || steps.delta.outputs.exists == 'true'
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}/sccache-l0
           key: sccache-l0-canonical-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -81,7 +81,7 @@ jobs:
 
       - name: Download source delta
         if: steps.delta.outputs.exists == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: sccache-l0-delta
           path: ${{ runner.temp }}/sccache-l0-delta
@@ -174,7 +174,7 @@ jobs:
 
       - name: Save merged canonical L0
         if: steps.merge.outputs.save == 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}/sccache-l0
           key: ${{ steps.l0-restore.outputs.cache-primary-key }}
