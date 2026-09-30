@@ -114,6 +114,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          [[ "$L0_SIZE_MIB" =~ ^[0-9]+$ ]] || {
+            echo "l0-size-mib must be an integer" >&2
+            exit 1
+          }
+          (( L0_SIZE_MIB >= 64 && L0_SIZE_MIB <= 8192 )) || {
+            echo "l0-size-mib must be between 64 and 8192" >&2
+            exit 1
+          }
+          [[ "$SLOW_WRITE_CONCURRENCY" =~ ^[0-9]+$ ]] || {
+            echo "slow-write-concurrency must be an integer" >&2
+            exit 1
+          }
+          (( SLOW_WRITE_CONCURRENCY >= 1 && SLOW_WRITE_CONCURRENCY <= 64 )) || {
+            echo "slow-write-concurrency must be between 1 and 64" >&2
+            exit 1
+          }
+
           mode="physical"
           if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
             mode="canonical-v2"
@@ -543,7 +560,7 @@ jobs:
           set -euo pipefail
           "$HOME/.local/bin/sccache" --start-server
           "$HOME/.local/bin/sccache" --zero-stats
-          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
+          if [[ "${{ steps.cache-config.outputs.dist_enabled }}" == "true" ]]; then
             "$HOME/.local/bin/sccache" --dist-status
           fi
 
