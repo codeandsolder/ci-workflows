@@ -37,6 +37,11 @@ on:
         required: false
         default: false
         type: boolean
+      ephemeral-cargo:
+        description: Use the maintained Cargo client for ephemeral registry-source normalization
+        required: false
+        default: true
+        type: boolean
       timeout-minutes:
         description: Job timeout; cold-L0 first fills can be much slower than steady-state runs
         required: false
@@ -291,6 +296,7 @@ jobs:
           fi
 
       - name: Install maintained Cargo client
+        if: inputs.ephemeral-cargo
         shell: bash
         run: |
           set -euo pipefail
