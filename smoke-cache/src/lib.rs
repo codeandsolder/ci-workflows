@@ -9,12 +9,16 @@ pub const fn mix(value: u64) -> u64 {
         ^ 0xD1B5_4A32_D192_ED03
 }
 
+/// Unique marker for the L0-to-Garage repair acceptance test.
+pub const GARAGE_REPAIR_ACCEPTANCE_MARKER: u64 = 0x2026_0930_F83A_F58A;
+
 #[cfg(test)]
 mod tests {
-    use super::mix;
+    use super::{GARAGE_REPAIR_ACCEPTANCE_MARKER, mix};
 
     #[test]
     fn smoke_value_is_stable() {
         assert_eq!(mix(7), 0x7991_bc20_18b4_4a0b);
+        assert_eq!(GARAGE_REPAIR_ACCEPTANCE_MARKER, 0x2026_0930_F83A_F58A);
     }
 }
