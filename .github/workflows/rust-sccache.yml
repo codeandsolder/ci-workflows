@@ -296,7 +296,11 @@ jobs:
           set -euo pipefail
           install_dir="$HOME/.local/libexec"
           wrapper_dir="$HOME/.local/bin"
-          mkdir -p "$install_dir" "$wrapper_dir" "$RUNNER_TEMP/cargo-source"
+          mkdir -p \
+            "$install_dir" \
+            "$wrapper_dir" \
+            "$RUNNER_TEMP/cargo-source" \
+            "$HOME/.cargo/registry/src"
 
           cargo_bin="$install_dir/cargo-ephemeral"
           curl --fail --location --silent --show-error \
