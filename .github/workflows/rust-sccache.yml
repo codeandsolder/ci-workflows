@@ -83,11 +83,11 @@ jobs:
 
     steps:
       - name: Checkout caller repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Restore persistent local sccache L0
         id: sccache-l0-restore
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}/sccache-l0
           key: sccache-l0-canonical-v2-${{ runner.os }}-${{ runner.arch }}-${{ github.repository_id }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -104,7 +104,7 @@ jobs:
           printf 'restored_l0_files=%s\n' "$(wc -l < "$RUNNER_TEMP/sccache-l0-baseline.txt")"
 
       - name: Join tailnet
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
         with:
           oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
           audience: ${{ env.TAILSCALE_AUDIENCE }}
@@ -539,7 +539,7 @@ jobs:
           always() &&
           steps.sccache-l0-delta.outputs.count != '' &&
           steps.sccache-l0-delta.outputs.count != '0'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sccache-l0-delta
           path: ${{ runner.temp }}/sccache-l0-delta.tar.zst
