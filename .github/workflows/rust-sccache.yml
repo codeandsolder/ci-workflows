@@ -5,7 +5,18 @@ on:
     inputs:
       command:
         description: Rust/Cargo command to run in the caller repository
-        required: true
+        required: false
+        default: ""
+        type: string
+      garage-upload-only:
+        description: Run only the asynchronous Garage uploader for a completed source run
+        required: false
+        default: false
+        type: boolean
+      source-run-id:
+        description: Completed caller workflow run that produced sccache-l0-delta
+        required: false
+        default: "0"
         type: string
       rust-toolchain:
         description: Rust toolchain used for the caller command and sccache build
@@ -87,7 +98,9 @@ jobs:
   rust:
     # Keep OIDC entirely out of ordinary PR jobs. A step-level guard is not
     # sufficient because id-token:write applies to every step in the job.
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: >-
+      !inputs.garage-upload-only &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
@@ -492,7 +505,13 @@ jobs:
 
       - name: Run caller command
         shell: bash
-        run: ${{ inputs.command }}
+        run: |
+          set -euo pipefail
+          [[ -n "${{ inputs.command }}" ]] || {
+            echo "command is required unless garage-upload-only is true" >&2
+            exit 1
+          }
+          ${{ inputs.command }}
 
       - name: Show local-cache stats
         if: always()
@@ -531,9 +550,11 @@ jobs:
               size="$(stat -c '%s' "$l0/$rel")"
               bytes=$((bytes + size))
             done < "$delta_list"
-
-            tar --zstd -C "$l0" -cf "$delta_tar" -T "$delta_list"
           fi
+
+          # Always publish a delta artifact so the parallel Garage uploader has
+          # a deterministic completion signal even on a 100% L0-hit build.
+          tar --zstd -C "$l0" -cf "$delta_tar" -T "$delta_list"
 
           limit_bytes=$((L0_SIZE_MIB * 1024 * 1024))
           jq -n \
@@ -542,7 +563,8 @@ jobs:
             --arg cache_layout "$SCCACHE_CACHE_LAYOUT_ID" \
             --arg canonical "$ENABLE_CANONICAL_RUST" \
             --argjson garage_upload_concurrency "$GARAGE_UPLOAD_CONCURRENCY" \
-            '{schema: 2, namespace: $namespace, limit_bytes: $limit_bytes, cache_layout: $cache_layout, canonical_rust: ($canonical == "true"), garage_upload_concurrency: $garage_upload_concurrency}' \
+            --argjson delta_count "$count" \
+            '{schema: 3, namespace: $namespace, limit_bytes: $limit_bytes, cache_layout: $cache_layout, canonical_rust: ($canonical == "true"), garage_upload_concurrency: $garage_upload_concurrency, delta_count: $delta_count}' \
             > "$metadata"
 
           echo "count=$count" >> "$GITHUB_OUTPUT"
@@ -553,8 +575,7 @@ jobs:
       - name: Upload local sccache L0 delta
         if: >-
           always() &&
-          steps.sccache-l0-delta.outputs.count != '' &&
-          steps.sccache-l0-delta.outputs.count != '0'
+          steps.sccache-l0-delta.outputs.count != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sccache-l0-delta
@@ -580,3 +601,237 @@ jobs:
             sudo kill -KILL "$pid" 2>/dev/null || true
           fi
           tail -n 80 "$worker_log" 2>/dev/null || true
+
+
+
+  garage-upload:
+    name: Async Garage upload
+    if: inputs.garage-upload-only && inputs.source-run-id != '0'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Locate source L0 delta
+        id: delta
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+        run: |
+          set -euo pipefail
+          artifact_id="$(
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name == "sccache-l0-delta") | .id' \
+              | head -n1
+          )"
+          if [[ -z "$artifact_id" ]]; then
+            echo "source run $SOURCE_RUN_ID has no sccache-l0-delta artifact" >&2
+            exit 1
+          fi
+          echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download source L0 delta
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: sccache-l0-delta
+          path: ${{ runner.temp }}/sccache-l0-delta
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source-run-id }}
+
+      - name: Read Garage upload metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$RUNNER_TEMP/sccache-l0-delta/metadata.json"
+          count="$(jq -er '.delta_count // -1' "$metadata")"
+          concurrency="$(jq -er '.garage_upload_concurrency // 4' "$metadata")"
+          if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+            echo "invalid delta_count: $count" >&2
+            exit 1
+          fi
+          if [[ ! "$concurrency" =~ ^[0-9]+$ ]] || (( concurrency < 1 || concurrency > 64 )); then
+            echo "invalid Garage upload concurrency: $concurrency" >&2
+            exit 1
+          fi
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "concurrency=$concurrency" >> "$GITHUB_OUTPUT"
+
+      - name: Join tailnet
+        id: tailnet
+        if: steps.metadata.outputs.count != '0'
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
+        with:
+          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
+          audience: ${{ env.TAILSCALE_AUDIENCE }}
+          tags: tag:sccache-worker
+          timeout: 15s
+          retry: 2
+
+      - name: Verify Garage ingress
+        id: garage-ingress
+        if: steps.metadata.outputs.count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/garage-probe.txt"
+          ready=false
+          code=000
+          for _ in {1..4}; do
+            code="$(
+              curl --silent --show-error --connect-timeout 1 --max-time 3 \
+                --output "$body" --write-out '%{http_code}' \
+                http://100.65.0.2:3902/ \
+                || true
+            )"
+            if [[ "$code" == "403" ]]; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          [[ "$ready" == "true" ]] || {
+            echo "Garage ingress unavailable" >&2
+            exit 1
+          }
+
+      - name: Fetch Garage upload credentials
+        if: steps.metadata.outputs.count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$RUNNER_TEMP/sccache-credentials.json"
+          ready=false
+          for _ in {1..4}; do
+            if curl --fail --silent --show-error --connect-timeout 1 --max-time 3 \
+              --output "$response_file" \
+              http://100.65.0.2:3903/v1/sccache-credentials; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          [[ "$ready" == "true" ]] || {
+            rm -f "$response_file"
+            echo "Garage credential broker unavailable" >&2
+            exit 1
+          }
+
+          access_key="$(jq -er '.access_key_id' "$response_file")"
+          secret_key="$(jq -er '.secret_access_key' "$response_file")"
+          echo "::add-mask::$access_key"
+          echo "::add-mask::$secret_key"
+          {
+            echo "GARAGE_ACCESS_KEY=$access_key"
+            echo "GARAGE_SECRET_KEY=$secret_key"
+            echo "GARAGE_ENDPOINT=$(jq -er '.endpoint' "$response_file")"
+            echo "GARAGE_BUCKET=$(jq -er '.bucket' "$response_file")"
+            echo "GARAGE_REGION=$(jq -er '.region' "$response_file")"
+            echo "GARAGE_KEY_PREFIX=$(jq -er '.key_prefix' "$response_file")"
+          } >> "$GITHUB_ENV"
+          rm -f "$response_file"
+
+      - name: Prepare new-object Garage upload
+        id: garage-manifest
+        if: steps.metadata.outputs.count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          delta="$RUNNER_TEMP/sccache-l0-delta/sccache-l0-delta.tar.zst"
+          out="$RUNNER_TEMP/sccache-garage-delta"
+          manifest="$RUNNER_TEMP/sccache-garage-manifest.tsv"
+          rm -rf "$out"
+          mkdir -p "$out"
+          : > "$manifest"
+
+          while IFS= read -r path; do
+            if [[ -z "$path" || "$path" == /* || "$path" == ".." || "$path" == ../* || "$path" == */../* ]]; then
+              echo "unsafe path in L0 delta: $path" >&2
+              exit 1
+            fi
+          done < <(tar --zstd -tf "$delta")
+          tar --zstd -xf "$delta" -C "$out"
+
+          count=0
+          while IFS= read -r -d '' file; do
+            rel="${file#"$out/"}"
+            [[ "$rel" == preprocessor/* ]] && continue
+            key="${rel##*/}"
+            [[ "$key" =~ ^[0-9a-f]{64}$ ]] || {
+              echo "unexpected L0 object path: $rel" >&2
+              exit 1
+            }
+            expected="${key:0:1}/${key:1:1}/$key"
+            [[ "$rel" == "$expected" ]] || {
+              echo "unexpected disk L0 normalization: $rel (expected $expected)" >&2
+              exit 1
+            }
+            remote="${key:0:1}/${key:1:1}/${key:2:1}/$key"
+            printf '%s\t%s\n' "$file" "$remote" >> "$manifest"
+            count=$((count + 1))
+          done < <(find "$out" -type f -print0)
+
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
+          printf 'garage_delta_objects=%s\n' "$count"
+
+      - name: Upload new L0 objects to Garage
+        if: steps.garage-manifest.outputs.count != '0'
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.GARAGE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.GARAGE_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.GARAGE_REGION }}
+          UPLOAD_CONCURRENCY: ${{ steps.metadata.outputs.concurrency }}
+          MANIFEST: ${{ steps.garage-manifest.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          aws --version
+          python3 - <<'PY'
+          import concurrent.futures
+          import os
+          import subprocess
+          from pathlib import Path
+
+          prefix = os.environ["GARAGE_KEY_PREFIX"].strip("/")
+          entries = []
+          for line in Path(os.environ["MANIFEST"]).read_text().splitlines():
+              path, remote = line.split("\t", 1)
+              entries.append((path, f"{prefix}/{remote}" if prefix else remote))
+
+          def upload(entry):
+              path, object_key = entry
+              subprocess.run(
+                  [
+                      "aws", "--endpoint-url", os.environ["GARAGE_ENDPOINT"],
+                      "s3api", "put-object",
+                      "--bucket", os.environ["GARAGE_BUCKET"],
+                      "--key", object_key,
+                      "--body", path,
+                  ],
+                  check=True,
+                  stdout=subprocess.DEVNULL,
+              )
+
+          failures = []
+          concurrency = int(os.environ["UPLOAD_CONCURRENCY"])
+          with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+              future_map = {pool.submit(upload, entry): entry for entry in entries}
+              for future in concurrent.futures.as_completed(future_map):
+                  try:
+                      future.result()
+                  except Exception as error:
+                      failures.append((future_map[future], error))
+
+          if failures:
+              for entry, error in failures[:20]:
+                  print(f"Garage upload failed: {entry}: {error}")
+              raise SystemExit(f"{len(failures)} Garage uploads failed")
+
+          print(f"garage_uploaded_objects={len(entries)} concurrency={concurrency}")
+          PY
