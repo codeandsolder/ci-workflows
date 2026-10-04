@@ -507,10 +507,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ -n "${{ inputs.command }}" ]] || {
+          if [[ "${{ inputs.command != '' }}" != "true" ]]; then
             echo "command is required unless garage-upload-only is true" >&2
             exit 1
-          }
+          fi
           ${{ inputs.command }}
 
       - name: Show local-cache stats
