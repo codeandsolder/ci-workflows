@@ -649,7 +649,7 @@ jobs:
             code="$(
               curl --silent --show-error --connect-timeout 1 --max-time 3 \
                 --output "$body" --write-out '%{http_code}' \
-                http://100.65.0.2:3902/ \
+                http://100.118.45.4:3914/ \
                 || true
             )"
             if [[ "$code" == "403" ]]; then
@@ -691,9 +691,11 @@ jobs:
           {
             echo "GARAGE_ACCESS_KEY=$access_key"
             echo "GARAGE_SECRET_KEY=$secret_key"
-            echo "GARAGE_ENDPOINT=$(jq -er '.endpoint' "$response_file")"
+            # The broker still authorizes trusted runners and supplies the S3 identity,
+            # but the canonical shared cache now lives on the laptop Garage.
+            echo "GARAGE_ENDPOINT=http://100.118.45.4:3914"
             echo "GARAGE_BUCKET=$(jq -er '.bucket' "$response_file")"
-            echo "GARAGE_REGION=$(jq -er '.region' "$response_file")"
+            echo "GARAGE_REGION=garage-laptop"
             echo "GARAGE_KEY_PREFIX=$(jq -er '.key_prefix' "$response_file")"
           } >> "$GITHUB_ENV"
           rm -f "$response_file"
