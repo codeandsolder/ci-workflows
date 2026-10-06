@@ -225,6 +225,28 @@ jobs:
           path: ${{ runner.temp }}/sccache-l0
           key: ${{ steps.l0-restore.outputs.cache-primary-key }}
 
+      - name: Delete superseded L0 snapshots
+        if: steps.merge.outputs.save == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          L0_NAMESPACE: ${{ steps.metadata.outputs.namespace }}
+          CURRENT_KEY: ${{ steps.l0-restore.outputs.cache-primary-key }}
+        run: |
+          set -euo pipefail
+          deleted=0
+          while IFS=$'\t' read -r cache_id cache_key; do
+            [[ "$cache_key" == "$L0_NAMESPACE-"* ]] || continue
+            [[ "$cache_key" == "$CURRENT_KEY" ]] && continue
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$cache_id"
+            deleted=$((deleted + 1))
+          done < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?per_page=100" \
+              --jq '.actions_caches[] | [.id, .key] | @tsv'
+          )
+          echo "deleted_superseded_l0_snapshots=$deleted"
+
       - name: Prepare trusted Garage upload queue
         id: garage-queue-key
         if: steps.delta.outputs.exists == 'true'
