@@ -24,6 +24,8 @@ jobs:
     with:
       command: >-
         cargo +1.99.0 build --release --locked --offline --manifest-path smoke-cache/Cargo.toml
+        && cargo +1.99.0 clean --release --package shared-cache-smoke --manifest-path smoke-cache/Cargo.toml
+        && cargo +1.99.0 build --release --locked --offline --manifest-path smoke-cache/Cargo.toml
         && cargo +1.99.0 test --release --locked --offline --manifest-path smoke-generated-path/Cargo.toml
       rust-toolchain: "1.99.0"
       rustflags: "-C target-cpu=x86-64-v2"
