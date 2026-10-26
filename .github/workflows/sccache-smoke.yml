@@ -1,6 +1,9 @@
 name: Shared sccache smoke
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       runner:
@@ -14,15 +17,14 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   smoke:
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@main
+    uses: ./.github/workflows/rust-sccache.yml
     with:
       command: >-
         cargo +1.99.0 build --release --locked --offline --manifest-path smoke-cache/Cargo.toml
         && cargo +1.99.0 test --release --locked --offline --manifest-path smoke-generated-path/Cargo.toml
       rust-toolchain: "1.99.0"
       rustflags: "-C target-cpu=x86-64-v2"
-      runner: ${{ inputs.runner }}
+      runner: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-24.04' }}
