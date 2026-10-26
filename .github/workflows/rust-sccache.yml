@@ -8,18 +8,8 @@ on:
         required: false
         default: ""
         type: string
-      garage-upload-only:
-        description: Run only the trusted asynchronous Garage uploader
-        required: false
-        default: false
-        type: boolean
-      garage-upload-cache-key:
-        description: Exact transient Actions-cache key containing sccache-l0-delta for Garage upload
-        required: false
-        default: ""
-        type: string
       rust-toolchain:
-        description: Rust toolchain used for the caller command and sccache build
+        description: Rust toolchain used for the caller command
         required: false
         default: "1.99.0"
         type: string
@@ -43,52 +33,29 @@ on:
         required: false
         default: "ubuntu-24.04"
         type: string
-      distributed:
-        description: Register this trusted runner as a direct sccache-dist worker and use the scheduler for cache misses
-        required: false
-        default: false
-        type: boolean
       ephemeral-cargo:
-        description: Use the maintained Cargo client for ephemeral registry-source normalization
+        description: Use the maintained Cargo client for registry-source normalization
         required: false
         default: true
         type: boolean
       canonical-rust:
-        description: Canonicalize Rust build/source paths for cross-runner cache-key reuse
+        description: Canonicalize Rust build/source paths for cache-key reuse across runners
         required: false
         default: true
         type: boolean
       timeout-minutes:
-        description: Job timeout; cold-L0 first fills can be much slower than steady-state runs
+        description: Job timeout
         required: false
         default: 90
         type: number
-      l0-size-mib:
-        description: Persisted runner-local sccache L0 size in MiB
-        required: false
-        default: 1024
-        type: number
-      slow-write-concurrency:
-        description: Maximum concurrent asynchronous Garage uploads in the post-run merger
-        required: false
-        default: 4
-        type: number
-    secrets:
-      SCCACHE_S3_ACCESS_KEY_ID:
-        required: false
-      SCCACHE_S3_SECRET_ACCESS_KEY:
-        required: false
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  TAILSCALE_CLIENT_ID: "TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
-  TAILSCALE_AUDIENCE: "api.tailscale.com/TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL"
-  SCCACHE_FORK_REV: "6657818bf6efa82d6506a6e1c83800323d4bb44a"
-  SCCACHE_RELEASE_TAG: "sccache-ci-6657818bf6efa82d6506a6e1c83800323d4bb44a"
-  SCCACHE_RELEASE_SHA256: "e72a5c2eb50addaff2b2f035679e3fd225132d1856584a041b7cf59845ad5059"
-  SCCACHE_DIST_RELEASE_SHA256: "06c4060965df385d1e0b1af9b14b2340c10084e6a33975297b8a97dfcb550f13"
-  SCCACHE_DIST_PORT: "10501"
+  ACTIONS_CACHE_SERVICE_V2: on
+  SCCACHE_FORK_REV: "d1d0d542d3775a190c84d4cf051e0ebe6c52f0cb"
+  SCCACHE_RELEASE_TAG: "sccache-ci-d1d0d542d3775a190c84d4cf051e0ebe6c52f0cb"
+  SCCACHE_RELEASE_SHA256: "24641b86265eb84f90911a40507356e45673d1c1c338b853909ee8659f657a5b"
   SCCACHE_CACHE_LAYOUT_ID: "rust-v7-layout2"
   CARGO_EPHEMERAL_REV: "3e2509217ce5865c0fbe2b26534cb2cddcb8a48c"
   CARGO_EPHEMERAL_TAG: "cargo-ephemeral-ci-3e2509217-u22"
@@ -96,141 +63,20 @@ env:
 
 jobs:
   rust:
-    # Keep OIDC entirely out of ordinary PR jobs. A step-level guard is not
-    # sufficient because id-token:write applies to every step in the job.
-    if: >-
-      !inputs.garage-upload-only &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
-      id-token: write
     env:
       RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
       RUST_COMPONENTS: ${{ inputs.rust-components }}
       RUST_TARGETS: ${{ inputs.rust-targets }}
       RUSTFLAGS: ${{ inputs.rustflags }}
-      ENABLE_DISTRIBUTED: ${{ inputs.distributed }}
       ENABLE_CANONICAL_RUST: ${{ inputs.canonical-rust }}
-      L0_SIZE_MIB: ${{ inputs.l0-size-mib }}
-      GARAGE_UPLOAD_CONCURRENCY: ${{ inputs.slow-write-concurrency }}
 
     steps:
       - name: Checkout caller repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Compute local sccache L0 namespace
-        id: cache-namespace
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$L0_SIZE_MIB" =~ ^[0-9]+$ ]] || {
-            echo "l0-size-mib must be an integer" >&2
-            exit 1
-          }
-          (( L0_SIZE_MIB >= 64 && L0_SIZE_MIB <= 8192 )) || {
-            echo "l0-size-mib must be between 64 and 8192" >&2
-            exit 1
-          }
-          [[ "$GARAGE_UPLOAD_CONCURRENCY" =~ ^[0-9]+$ ]] || {
-            echo "slow-write-concurrency must be an integer" >&2
-            exit 1
-          }
-          (( GARAGE_UPLOAD_CONCURRENCY >= 1 && GARAGE_UPLOAD_CONCURRENCY <= 64 )) || {
-            echo "slow-write-concurrency must be between 1 and 64" >&2
-            exit 1
-          }
-
-          mode="physical"
-          if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
-            mode="canonical-v2"
-          fi
-          namespace="sccache-l0-${SCCACHE_CACHE_LAYOUT_ID}-${mode}-${RUNNER_OS}-${RUNNER_ARCH}-${GITHUB_REPOSITORY_ID}"
-          echo "namespace=$namespace" >> "$GITHUB_OUTPUT"
-          echo "L0 namespace: $namespace"
-
-      - name: Restore persistent local sccache L0
-        id: sccache-l0-restore
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ${{ runner.temp }}/sccache-l0
-          key: ${{ steps.cache-namespace.outputs.namespace }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ steps.cache-namespace.outputs.namespace }}-
-
-      - name: Snapshot restored L0 baseline
-        shell: bash
-        run: |
-          set -euo pipefail
-          l0="$RUNNER_TEMP/sccache-l0"
-          mkdir -p "$l0"
-          find "$l0" -type f -printf '%P\n' | LC_ALL=C sort > "$RUNNER_TEMP/sccache-l0-baseline.txt"
-          printf 'restored_l0_files=%s\n' "$(wc -l < "$RUNNER_TEMP/sccache-l0-baseline.txt")"
-
-      - name: Join tailnet for distributed compilation
-        id: tailnet
-        if: inputs.distributed
-        continue-on-error: true
-        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
-        with:
-          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
-          audience: ${{ env.TAILSCALE_AUDIENCE }}
-          tags: tag:sccache-worker
-          timeout: 15s
-          retry: 2
-
-      - name: Fetch distributed scheduler credentials
-        id: cache-broker
-        if: inputs.distributed && steps.tailnet.outcome == 'success'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          broker_url="http://100.65.0.2:3903/v1/sccache-credentials"
-          response_file="${RUNNER_TEMP}/sccache-credentials.json"
-
-          broker_ready=false
-          for _ in {1..4}; do
-            if curl --fail --silent --show-error --connect-timeout 1 --max-time 3 \
-              --output "$response_file" "$broker_url"; then
-              broker_ready=true
-              break
-            fi
-            sleep 1
-          done
-
-          if [[ "$broker_ready" == "true" ]]; then
-            scheduler_url="$(jq -r '.scheduler_url // empty' "$response_file")"
-            scheduler_token="$(jq -r '.scheduler_token // empty' "$response_file")"
-            if [[ -n "$scheduler_token" ]]; then
-              echo "::add-mask::$scheduler_token"
-            fi
-            {
-              echo "DIST_SCHEDULER_URL=$scheduler_url"
-              echo "DIST_SCHEDULER_TOKEN=$scheduler_token"
-            } >> "$GITHUB_ENV"
-            echo "source=tailnet-broker" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::Distributed credential broker unavailable; compiling locally."
-            echo "source=none" >> "$GITHUB_OUTPUT"
-          fi
-          rm -f "$response_file"
-
-      - name: Detect distributed availability
-        id: cache-config
-        shell: bash
-        run: |
-          set -euo pipefail
-          dist_enabled=false
-          if [[ "$ENABLE_DISTRIBUTED" == "true" ]]; then
-            if [[ -n "${DIST_SCHEDULER_URL:-}" && -n "${DIST_SCHEDULER_TOKEN:-}" ]]; then
-              dist_enabled=true
-            else
-              echo "::warning::Distributed mode requested but scheduler credentials are unavailable; compiling locally."
-            fi
-          fi
-          echo "dist_enabled=$dist_enabled" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust toolchain
         shell: bash
@@ -267,7 +113,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}/shared-build-clients
-          key: shared-build-clients-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_RELEASE_SHA256 }}-${{ env.SCCACHE_DIST_RELEASE_SHA256 }}-${{ env.CARGO_EPHEMERAL_SHA256 }}
+          key: shared-build-clients-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_RELEASE_SHA256 }}-${{ env.CARGO_EPHEMERAL_SHA256 }}
 
       - name: Populate immutable build-client bundle
         if: steps.build-clients-cache.outputs.cache-hit != 'true'
@@ -277,24 +123,15 @@ jobs:
           bundle="$RUNNER_TEMP/shared-build-clients"
           mkdir -p "$bundle"
 
-          curl --fail --location --silent --show-error \
-            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2" \
-            --output "$bundle/sccache" &
+          curl --fail --location --silent --show-error             "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2"             --output "$bundle/sccache" &
           p1=$!
-          curl --fail --location --silent --show-error \
-            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-dist-linux-x86_64-v2" \
-            --output "$bundle/sccache-dist" &
+          curl --fail --location --silent --show-error             "https://github.com/codeandsolder/cargo-ephemeral/releases/download/$CARGO_EPHEMERAL_TAG/cargo-ephemeral-linux-x86_64"             --output "$bundle/cargo-ephemeral" &
           p2=$!
-          curl --fail --location --silent --show-error \
-            "https://github.com/codeandsolder/cargo-ephemeral/releases/download/$CARGO_EPHEMERAL_TAG/cargo-ephemeral-linux-x86_64" \
-            --output "$bundle/cargo-ephemeral" &
-          p3=$!
-          wait "$p1" "$p2" "$p3"
+          wait "$p1" "$p2"
 
           printf '%s  %s\n' "$SCCACHE_RELEASE_SHA256" "$bundle/sccache" | sha256sum --check
-          printf '%s  %s\n' "$SCCACHE_DIST_RELEASE_SHA256" "$bundle/sccache-dist" | sha256sum --check
           printf '%s  %s\n' "$CARGO_EPHEMERAL_SHA256" "$bundle/cargo-ephemeral" | sha256sum --check
-          chmod 0755 "$bundle/sccache" "$bundle/sccache-dist" "$bundle/cargo-ephemeral"
+          chmod 0755 "$bundle/sccache" "$bundle/cargo-ephemeral"
 
       - name: Save immutable build-client bundle
         if: steps.build-clients-cache.outputs.cache-hit != 'true'
@@ -304,19 +141,13 @@ jobs:
           path: ${{ runner.temp }}/shared-build-clients
           key: ${{ steps.build-clients-cache.outputs.cache-primary-key }}
 
-      - name: Install canonical sccache client and direct worker
+      - name: Install canonical sccache client
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
           sccache_bin="$HOME/.local/bin/sccache"
-          sccache_dist_bin="$HOME/.local/bin/sccache-dist"
-
           install -m 0755 "$RUNNER_TEMP/shared-build-clients/sccache" "$sccache_bin"
-
-          if [[ "${{ steps.cache-config.outputs.dist_enabled }}" == "true" ]]; then
-            install -m 0755 "$RUNNER_TEMP/shared-build-clients/sccache-dist" "$sccache_dist_bin"
-          fi
 
           if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
             if [[ ! -x /usr/bin/bwrap ]]; then
@@ -324,23 +155,14 @@ jobs:
               sudo apt-get install --yes bubblewrap
             fi
 
-            # Ubuntu 24.04 enables AppArmor's unprivileged-userns restriction.
-            # Canonical Rust paths use bubblewrap mount namespaces, so trusted
-            # GitHub-hosted jobs need user namespaces enabled for this ephemeral VM.
-            if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] \
-               && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
+            if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]                && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
 
-            # Fail here with a useful platform error rather than deep inside rustc
-            # discovery after sccache has started.
             /usr/bin/bwrap --ro-bind / / /bin/true
           fi
 
           "$sccache_bin" --version
-          if [[ "${{ steps.cache-config.outputs.dist_enabled }}" == "true" ]]; then
-            "$sccache_dist_bin" --version
-          fi
 
       - name: Install maintained Cargo client
         if: inputs.ephemeral-cargo
@@ -349,11 +171,7 @@ jobs:
           set -euo pipefail
           install_dir="$HOME/.local/libexec"
           wrapper_dir="$HOME/.local/bin"
-          mkdir -p \
-            "$install_dir" \
-            "$wrapper_dir" \
-            "$RUNNER_TEMP/cargo-source" \
-            "$HOME/.cargo/registry/src"
+          mkdir -p             "$install_dir"             "$wrapper_dir"             "$RUNNER_TEMP/cargo-source"             "$HOME/.cargo/registry/src"
 
           cargo_bin="$install_dir/cargo-ephemeral"
           install -m 0755 "$RUNNER_TEMP/shared-build-clients/cargo-ephemeral" "$cargo_bin"
@@ -397,100 +215,27 @@ jobs:
             echo "SCCACHE_CANONICAL_TARGET_ROOT=$target_dir"
           } >> "$GITHUB_ENV"
 
-      - name: Configure distributed sccache client
-        if: steps.cache-config.outputs.dist_enabled == 'true'
+      - name: Expose GitHub Actions cache runtime
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Configure GitHub Actions sccache backend
         shell: bash
         run: |
           set -euo pipefail
-          client_cache="$RUNNER_TEMP/sccache-dist-client"
-          client_config="$RUNNER_TEMP/sccache-client.toml"
-          mkdir -p "$client_cache"
-
-          cat > "$client_config" <<EOF
-          [dist]
-          scheduler_url = "$DIST_SCHEDULER_URL"
-          toolchains = []
-          toolchain_cache_size = 2147483648
-          cache_dir = "$client_cache"
-
-          [dist.auth]
-          type = "token"
-          token = "$DIST_SCHEDULER_TOKEN"
-          EOF
-          chmod 0600 "$client_config"
-          echo "SCCACHE_CONF=$client_config" >> "$GITHUB_ENV"
-
-      - name: Start direct sccache-dist worker
-        if: steps.cache-config.outputs.dist_enabled == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ts_ip="$(tailscale ip -4 | head -n1)"
-          [[ -n "$ts_ip" ]]
-
-          worker_cache="$RUNNER_TEMP/sccache-dist-worker-toolchains"
-          worker_build="$RUNNER_TEMP/sccache-dist-worker-build"
-          worker_config="$RUNNER_TEMP/sccache-dist-worker.toml"
-          worker_log="$RUNNER_TEMP/sccache-dist-worker.log"
-          worker_pidfile="$RUNNER_TEMP/sccache-dist-worker.pid"
-          mkdir -p "$worker_cache" "$worker_build"
-
-          cat > "$worker_config" <<EOF
-          cache_dir = "$worker_cache"
-          toolchain_cache_size = 4294967296
-          public_addr = "$ts_ip:$SCCACHE_DIST_PORT"
-          bind_address = "$ts_ip:$SCCACHE_DIST_PORT"
-          scheduler_url = "$DIST_SCHEDULER_URL"
-
-          [builder]
-          type = "overlay"
-          build_dir = "$worker_build"
-          bwrap_path = "/usr/bin/bwrap"
-
-          [scheduler_auth]
-          type = "DANGEROUSLY_INSECURE"
-          EOF
-
-          sudo sh -c '
-            echo $ > "$1"
-            exec env SCCACHE_NO_DAEMON=1 SCCACHE_LOG=info "$2" server --config "$3"
-          ' sh "$worker_pidfile" "$HOME/.local/bin/sccache-dist" "$worker_config" \
-            >"$worker_log" 2>&1 &
-
-          for _ in {1..30}; do
-            if [[ -s "$worker_pidfile" ]] && sudo kill -0 "$(cat "$worker_pidfile")" 2>/dev/null; then
-              if timeout 1 bash -c "</dev/tcp/$ts_ip/$SCCACHE_DIST_PORT" 2>/dev/null; then
-                echo "direct sccache-dist worker listening at $ts_ip:$SCCACHE_DIST_PORT"
-                break
-              fi
-            elif [[ -s "$worker_pidfile" ]]; then
-              cat "$worker_log" >&2 || true
-              exit 1
-            fi
-            sleep 1
-          done
-
-          if ! timeout 1 bash -c "</dev/tcp/$ts_ip/$SCCACHE_DIST_PORT" 2>/dev/null; then
-            cat "$worker_log" >&2 || true
-            echo "direct sccache-dist worker did not become reachable" >&2
-            exit 1
-          fi
-
-      - name: Configure local sccache
-        shell: bash
-        run: |
-          set -euo pipefail
+          [[ -n "${ACTIONS_RESULTS_URL:-}" ]]
+          [[ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]]
           {
             echo "PATH=$HOME/.local/bin:$PATH"
             echo "RUSTC_WRAPPER=$HOME/.local/bin/sccache"
+            echo "SCCACHE_GHA_ENABLED=on"
+            echo "SCCACHE_GHA_VERSION=$SCCACHE_CACHE_LAYOUT_ID"
             if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
               echo "SCCACHE_EXPERIMENTAL_CANONICAL_RUST=1"
             fi
-            echo "SCCACHE_DIR=$RUNNER_TEMP/sccache-l0"
-            echo "SCCACHE_CACHE_SIZE=${L0_SIZE_MIB}M"
-            # Build critical path is deliberately L0-only. Newly-created cache
-            # objects are published to Garage by the asynchronous merger workflow.
-            echo "SCCACHE_MULTILEVEL_CHAIN=disk"
           } >> "$GITHUB_ENV"
 
       - name: Start sccache
@@ -499,268 +244,33 @@ jobs:
           set -euo pipefail
           "$HOME/.local/bin/sccache" --start-server
           "$HOME/.local/bin/sccache" --zero-stats
-          if [[ "${{ steps.cache-config.outputs.dist_enabled }}" == "true" ]]; then
-            "$HOME/.local/bin/sccache" --dist-status
-          fi
 
       - name: Run caller command
         shell: bash
         run: |
           set -euo pipefail
           if [[ "${{ inputs.command != '' }}" != "true" ]]; then
-            echo "command is required unless garage-upload-only is true" >&2
+            echo "command is required" >&2
             exit 1
           fi
           ${{ inputs.command }}
 
-      - name: Show local-cache stats
+      - name: Check sccache stats
         if: always()
         shell: bash
         run: |
-          "$HOME/.local/bin/sccache" --show-stats || true
+          set -euo pipefail
+          stats_json="$("$HOME/.local/bin/sccache" --show-stats --stats-format json)"
+          "$HOME/.local/bin/sccache" --show-stats
+          read_errors="$(jq -r '.stats.cache_read_errors' <<< "$stats_json")"
+          write_errors="$(jq -r '.stats.cache_write_errors' <<< "$stats_json")"
+          if (( read_errors != 0 || write_errors != 0 )); then
+            echo "sccache backend errors: read=$read_errors write=$write_errors" >&2
+            exit 1
+          fi
 
-      - name: Stop sccache before persisting L0
+      - name: Stop sccache
         if: always()
         shell: bash
         run: |
           "$HOME/.local/bin/sccache" --stop-server || true
-
-      - name: Build local sccache L0 delta
-        id: sccache-l0-delta
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          l0="$RUNNER_TEMP/sccache-l0"
-          baseline="$RUNNER_TEMP/sccache-l0-baseline.txt"
-          current="$RUNNER_TEMP/sccache-l0-current.txt"
-          delta_list="$RUNNER_TEMP/sccache-l0-delta-files.txt"
-          delta_dir="$RUNNER_TEMP/sccache-l0-delta"
-          delta_tar="$delta_dir/sccache-l0-delta.tar.zst"
-          metadata="$delta_dir/metadata.json"
-          mkdir -p "$delta_dir"
-
-          find "$l0" -type f -printf '%P\n' | LC_ALL=C sort > "$current"
-          comm -13 "$baseline" "$current" > "$delta_list"
-
-          count="$(wc -l < "$delta_list")"
-          bytes=0
-          if [[ "$count" -gt 0 ]]; then
-            while IFS= read -r rel; do
-              size="$(stat -c '%s' "$l0/$rel")"
-              bytes=$((bytes + size))
-            done < "$delta_list"
-
-            tar --zstd -C "$l0" -cf "$delta_tar" -T "$delta_list"
-          fi
-
-          limit_bytes=$((L0_SIZE_MIB * 1024 * 1024))
-          jq -n \
-            --arg namespace "${{ steps.cache-namespace.outputs.namespace }}" \
-            --argjson limit_bytes "$limit_bytes" \
-            --arg cache_layout "$SCCACHE_CACHE_LAYOUT_ID" \
-            --arg canonical "$ENABLE_CANONICAL_RUST" \
-            --argjson garage_upload_concurrency "$GARAGE_UPLOAD_CONCURRENCY" \
-            '{schema: 2, namespace: $namespace, limit_bytes: $limit_bytes, cache_layout: $cache_layout, canonical_rust: ($canonical == "true"), garage_upload_concurrency: $garage_upload_concurrency}' \
-            > "$metadata"
-
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
-          printf 'l0_delta_files=%s l0_delta_bytes=%s namespace=%s limit_bytes=%s\n' \
-            "$count" "$bytes" "${{ steps.cache-namespace.outputs.namespace }}" "$limit_bytes"
-
-      - name: Upload local sccache L0 delta
-        if: >-
-          always() &&
-          steps.sccache-l0-delta.outputs.count != '' &&
-          steps.sccache-l0-delta.outputs.count != '0'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: sccache-l0-delta
-          path: ${{ runner.temp }}/sccache-l0-delta
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0
-
-      - name: Stop direct sccache-dist worker
-        if: always() && steps.cache-config.outputs.dist_enabled == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          worker_pidfile="$RUNNER_TEMP/sccache-dist-worker.pid"
-          worker_log="$RUNNER_TEMP/sccache-dist-worker.log"
-          if [[ -s "$worker_pidfile" ]]; then
-            pid="$(cat "$worker_pidfile")"
-            sudo kill "$pid" 2>/dev/null || true
-            for _ in {1..10}; do
-              sudo kill -0 "$pid" 2>/dev/null || break
-              sleep 0.2
-            done
-            sudo kill -KILL "$pid" 2>/dev/null || true
-          fi
-          tail -n 80 "$worker_log" 2>/dev/null || true
-
-  garage-upload:
-    name: Async Garage upload
-    if: inputs.garage-upload-only && inputs.garage-upload-cache-key != ''
-    runs-on: ${{ inputs.runner }}
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Restore Garage upload queue
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ${{ runner.temp }}/sccache-l0-delta
-          key: ${{ inputs.garage-upload-cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Read Garage upload metadata
-        id: metadata
-        shell: bash
-        run: |
-          set -euo pipefail
-          metadata="$RUNNER_TEMP/sccache-l0-delta/metadata.json"
-          concurrency="$(jq -er '.garage_upload_concurrency // 4' "$metadata")"
-          if [[ ! "$concurrency" =~ ^[0-9]+$ ]] || (( concurrency < 1 || concurrency > 64 )); then
-            echo "invalid Garage upload concurrency: $concurrency" >&2
-            exit 1
-          fi
-          echo "concurrency=$concurrency" >> "$GITHUB_OUTPUT"
-
-      - name: Join tailnet
-        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
-        with:
-          oauth-client-id: ${{ env.TAILSCALE_CLIENT_ID }}
-          audience: ${{ env.TAILSCALE_AUDIENCE }}
-          tags: tag:sccache-worker
-          timeout: 15s
-          retry: 2
-
-      - name: Verify sccache upload gateway
-        shell: bash
-        run: |
-          set -euo pipefail
-          body="$RUNNER_TEMP/sccache-upload-gateway-probe.txt"
-          ready=false
-          for _ in {1..6}; do
-            code="$(
-              curl --silent --show-error --connect-timeout 2 --max-time 4 \
-                --output "$body" --write-out '%{http_code}' \
-                http://100.65.0.2:3903/healthz \
-                || true
-            )"
-            if [[ "$code" == "200" ]] && grep -Fxq 'ok' "$body"; then
-              ready=true
-              break
-            fi
-            sleep 1
-          done
-          [[ "$ready" == "true" ]] || {
-            echo "sccache upload gateway unavailable" >&2
-            exit 1
-          }
-
-      - name: Prepare new-object Garage upload
-        id: garage-manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          delta="$RUNNER_TEMP/sccache-l0-delta/sccache-l0-delta.tar.zst"
-          out="$RUNNER_TEMP/sccache-garage-delta"
-          manifest="$RUNNER_TEMP/sccache-garage-manifest.tsv"
-          rm -rf "$out"
-          mkdir -p "$out"
-          : > "$manifest"
-
-          while IFS= read -r path; do
-            if [[ -z "$path" || "$path" == /* || "$path" == ".." || "$path" == ../* || "$path" == */../* ]]; then
-              echo "unsafe path in L0 delta: $path" >&2
-              exit 1
-            fi
-          done < <(tar --zstd -tf "$delta")
-          tar --zstd -xf "$delta" -C "$out"
-
-          count=0
-          bytes=0
-          while IFS= read -r -d '' file; do
-            rel="${file#"$out/"}"
-            [[ "$rel" == preprocessor/* ]] && continue
-            key="${rel##*/}"
-            [[ "$key" =~ ^[0-9a-f]{64}$ ]] || {
-              echo "unexpected L0 object path: $rel" >&2
-              exit 1
-            }
-            expected="${key:0:1}/${key:1:1}/$key"
-            [[ "$rel" == "$expected" ]] || {
-              echo "unexpected disk L0 normalization: $rel (expected $expected)" >&2
-              exit 1
-            }
-            remote="${key:0:1}/${key:1:1}/${key:2:1}/$key"
-            printf '%s\t%s\n' "$file" "$remote" >> "$manifest"
-            count=$((count + 1))
-            bytes=$((bytes + $(stat -c '%s' "$file")))
-          done < <(find "$out" -type f -print0)
-
-          echo "count=$count" >> "$GITHUB_OUTPUT"
-          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
-          echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
-          printf 'garage_delta_objects=%s garage_delta_bytes=%s\n' "$count" "$bytes"
-
-      - name: Upload new L0 objects through gateway
-        if: steps.garage-manifest.outputs.count != '0'
-        shell: bash
-        env:
-          UPLOAD_CONCURRENCY: ${{ steps.metadata.outputs.concurrency }}
-          MANIFEST: ${{ steps.garage-manifest.outputs.manifest }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import concurrent.futures
-          import os
-          import subprocess
-          from pathlib import Path
-
-          endpoint = "http://100.65.0.2:3903/v1/sccache-object"
-          concurrency = int(os.environ["UPLOAD_CONCURRENCY"])
-          entries = []
-          for line in Path(os.environ["MANIFEST"]).read_text().splitlines():
-              path, object_key = line.split("\t", 1)
-              entries.append((path, object_key))
-
-          def upload(entry):
-              path, object_key = entry
-              subprocess.run(
-                  [
-                      "curl",
-                      "--fail",
-                      "--silent",
-                      "--show-error",
-                      "--connect-timeout", "2",
-                      "--max-time", "120",
-                      "--request", "PUT",
-                      "--data-binary", f"@{path}",
-                      f"{endpoint}/{object_key}",
-                  ],
-                  check=True,
-                  stdout=subprocess.DEVNULL,
-              )
-
-          failures = []
-          with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-              future_map = {pool.submit(upload, entry): entry for entry in entries}
-              for future in concurrent.futures.as_completed(future_map):
-                  try:
-                      future.result()
-                  except Exception as error:
-                      failures.append((future_map[future], error))
-
-          if failures:
-              for entry, error in failures[:20]:
-                  print(f"sccache upload gateway failed: {entry}: {error}")
-              raise SystemExit(f"{len(failures)} gateway uploads failed")
-
-          print(f"gateway_uploaded_objects={len(entries)} concurrency={concurrency}")
-          PY
