@@ -29,9 +29,24 @@ on:
         default: "-C target-cpu=x86-64-v2"
         type: string
       runner:
-        description: GitHub-hosted runner label
+        description: GitHub-hosted runner label used for public repositories
         required: false
         default: "ubuntu-24.04"
+        type: string
+      private-runner:
+        description: Self-hosted runner label used for private repositories
+        required: false
+        default: "local-ci"
+        type: string
+      private-sccache-client:
+        description: System sccache client used on private self-hosted runners
+        required: false
+        default: "/usr/local/libexec/sccache-client"
+        type: string
+      private-sccache-server-port:
+        description: Existing system sccache daemon port on private self-hosted runners
+        required: false
+        default: "4228"
         type: string
       timeout-minutes:
         description: Job timeout
@@ -39,9 +54,9 @@ on:
         default: 90
         type: number
       sccache-cache-size-mib:
-        description: Maximum persistent compiler cache size in MiB
+        description: Maximum persistent compiler cache size in MiB for public repositories
         required: false
-        default: 1024
+        default: 6144
         type: number
 
 env:
@@ -53,7 +68,7 @@ env:
 
 jobs:
   rust:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ github.event.repository.private && inputs.private-runner || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -64,6 +79,8 @@ jobs:
       RUSTFLAGS: ${{ inputs.rustflags }}
       RUNNER_LABEL: ${{ inputs.runner }}
       SCCACHE_CACHE_SIZE_MIB: ${{ inputs.sccache-cache-size-mib }}
+      PRIVATE_SCCACHE_CLIENT: ${{ inputs.private-sccache-client }}
+      PRIVATE_SCCACHE_SERVER_PORT: ${{ inputs.private-sccache-server-port }}
 
     steps:
       - name: Checkout caller repository
@@ -100,6 +117,7 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" --version
 
       - name: Restore immutable build-client bundle
+        if: ${{ !github.event.repository.private }}
         id: build-clients-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -107,7 +125,7 @@ jobs:
           key: shared-build-clients-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_RELEASE_SHA256 }}
 
       - name: Populate immutable build-client bundle
-        if: steps.build-clients-cache.outputs.cache-hit != 'true'
+        if: ${{ !github.event.repository.private && steps.build-clients-cache.outputs.cache-hit != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -120,7 +138,7 @@ jobs:
           chmod 0755 "$bundle/sccache"
 
       - name: Save immutable build-client bundle
-        if: steps.build-clients-cache.outputs.cache-hit != 'true'
+        if: ${{ !github.event.repository.private && steps.build-clients-cache.outputs.cache-hit != 'true' }}
         continue-on-error: true
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -128,6 +146,7 @@ jobs:
           key: ${{ steps.build-clients-cache.outputs.cache-primary-key }}
 
       - name: Install sccache client
+        if: ${{ !github.event.repository.private }}
         shell: bash
         run: |
           set -euo pipefail
@@ -136,6 +155,7 @@ jobs:
           "$HOME/.local/bin/sccache" --version
 
       - name: Compute persistent compiler-cache key
+        if: ${{ !github.event.repository.private }}
         id: compiler-cache-key
         shell: bash
         run: |
@@ -166,6 +186,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore persistent compiler cache
+        if: ${{ !github.event.repository.private }}
         id: compiler-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -183,6 +204,7 @@ jobs:
           echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
 
       - name: Configure persistent sccache
+        if: ${{ !github.event.repository.private }}
         shell: bash
         run: |
           set -euo pipefail
@@ -191,16 +213,50 @@ jobs:
           {
             echo "PATH=$HOME/.local/bin:$PATH"
             echo "RUSTC_WRAPPER=$HOME/.local/bin/sccache"
+            echo "SCCACHE_BIN=$HOME/.local/bin/sccache"
             echo "SCCACHE_DIR=$sccache_dir"
             echo "SCCACHE_CACHE_SIZE=${SCCACHE_CACHE_SIZE_MIB}M"
           } >> "$GITHUB_ENV"
 
-      - name: Start sccache
+      - name: Configure system sccache
+        if: ${{ github.event.repository.private }}
         shell: bash
         run: |
           set -euo pipefail
-          "$HOME/.local/bin/sccache" --start-server
-          "$HOME/.local/bin/sccache" --zero-stats
+          if [[ ! -x "$PRIVATE_SCCACHE_CLIENT" ]]; then
+            echo "private self-hosted runner is missing system sccache client: $PRIVATE_SCCACHE_CLIENT" >&2
+            exit 1
+          fi
+          case "$PRIVATE_SCCACHE_SERVER_PORT" in
+            *[!0-9]*|'')
+              echo "invalid private sccache server port: $PRIVATE_SCCACHE_SERVER_PORT" >&2
+              exit 1
+              ;;
+          esac
+          if (( PRIVATE_SCCACHE_SERVER_PORT < 1 || PRIVATE_SCCACHE_SERVER_PORT > 65535 )); then
+            echo "private sccache server port out of range: $PRIVATE_SCCACHE_SERVER_PORT" >&2
+            exit 1
+          fi
+
+          export SCCACHE_SERVER_PORT="$PRIVATE_SCCACHE_SERVER_PORT"
+          export SCCACHE_START_SERVER=0
+          "$PRIVATE_SCCACHE_CLIENT" --version
+          "$PRIVATE_SCCACHE_CLIENT" --show-stats >/dev/null
+
+          {
+            echo "RUSTC_WRAPPER=$PRIVATE_SCCACHE_CLIENT"
+            echo "SCCACHE_BIN=$PRIVATE_SCCACHE_CLIENT"
+            echo "SCCACHE_SERVER_PORT=$PRIVATE_SCCACHE_SERVER_PORT"
+            echo "SCCACHE_START_SERVER=0"
+          } >> "$GITHUB_ENV"
+
+      - name: Start sccache
+        if: ${{ !github.event.repository.private }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$SCCACHE_BIN" --start-server
+          "$SCCACHE_BIN" --zero-stats
 
       - name: Run caller command
         shell: bash
@@ -212,13 +268,13 @@ jobs:
           fi
           ${{ inputs.command }}
 
-      - name: Check sccache stats
-        if: always()
+      - name: Check hosted sccache stats
+        if: ${{ always() && !github.event.repository.private }}
         shell: bash
         run: |
           set -euo pipefail
-          stats_json="$("$HOME/.local/bin/sccache" --show-stats --stats-format json)"
-          "$HOME/.local/bin/sccache" --show-stats
+          stats_json="$("$SCCACHE_BIN" --show-stats --stats-format json)"
+          "$SCCACHE_BIN" --show-stats
           read_errors="$(jq -r '.stats.cache_read_errors' <<< "$stats_json")"
           write_errors="$(jq -r '.stats.cache_write_errors' <<< "$stats_json")"
           if (( read_errors != 0 || write_errors != 0 )); then
@@ -226,14 +282,21 @@ jobs:
             exit 1
           fi
 
-      - name: Stop sccache
-        if: always()
+      - name: Check system sccache connection
+        if: ${{ always() && github.event.repository.private }}
         shell: bash
         run: |
-          "$HOME/.local/bin/sccache" --stop-server || true
+          set -euo pipefail
+          "$SCCACHE_BIN" --show-stats
+
+      - name: Stop sccache
+        if: ${{ always() && !github.event.repository.private }}
+        shell: bash
+        run: |
+          "$SCCACHE_BIN" --stop-server || true
 
       - name: Save persistent compiler cache
-        if: success() && steps.compiler-cache.outputs.cache-hit != 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch))
+        if: ${{ success() && !github.event.repository.private && steps.compiler-cache.outputs.cache-hit != 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)) }}
         continue-on-error: true
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
