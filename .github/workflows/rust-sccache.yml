@@ -1,4 +1,4 @@
-name: Rust shared sccache
+name: Rust runner-local sccache
 
 on:
   workflow_call:
@@ -33,16 +33,6 @@ on:
         required: false
         default: "ubuntu-24.04"
         type: string
-      ephemeral-cargo:
-        description: Use the maintained Cargo client for registry-source normalization
-        required: false
-        default: true
-        type: boolean
-      canonical-rust:
-        description: Canonicalize Rust build/source paths for cache-key reuse across runners
-        required: false
-        default: true
-        type: boolean
       timeout-minutes:
         description: Job timeout
         required: false
@@ -52,14 +42,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  ACTIONS_CACHE_SERVICE_V2: on
   SCCACHE_FORK_REV: "d1d0d542d3775a190c84d4cf051e0ebe6c52f0cb"
   SCCACHE_RELEASE_TAG: "sccache-ci-d1d0d542d3775a190c84d4cf051e0ebe6c52f0cb"
   SCCACHE_RELEASE_SHA256: "24641b86265eb84f90911a40507356e45673d1c1c338b853909ee8659f657a5b"
-  SCCACHE_CACHE_LAYOUT_ID: "rust-v7-layout2"
-  CARGO_EPHEMERAL_REV: "3e2509217ce5865c0fbe2b26534cb2cddcb8a48c"
-  CARGO_EPHEMERAL_TAG: "cargo-ephemeral-ci-3e2509217-u22"
-  CARGO_EPHEMERAL_SHA256: "3317623dfc56cb59fd69d66781a6cb4a75a2725472df730b1731fe0e121ae9ce"
 
 jobs:
   rust:
@@ -72,7 +57,6 @@ jobs:
       RUST_COMPONENTS: ${{ inputs.rust-components }}
       RUST_TARGETS: ${{ inputs.rust-targets }}
       RUSTFLAGS: ${{ inputs.rustflags }}
-      ENABLE_CANONICAL_RUST: ${{ inputs.canonical-rust }}
 
     steps:
       - name: Checkout caller repository
@@ -113,7 +97,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}/shared-build-clients
-          key: shared-build-clients-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_RELEASE_SHA256 }}-${{ env.CARGO_EPHEMERAL_SHA256 }}
+          key: shared-build-clients-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_RELEASE_SHA256 }}
 
       - name: Populate immutable build-client bundle
         if: steps.build-clients-cache.outputs.cache-hit != 'true'
@@ -122,16 +106,11 @@ jobs:
           set -euo pipefail
           bundle="$RUNNER_TEMP/shared-build-clients"
           mkdir -p "$bundle"
-
-          curl --fail --location --silent --show-error             "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2"             --output "$bundle/sccache" &
-          p1=$!
-          curl --fail --location --silent --show-error             "https://github.com/codeandsolder/cargo-ephemeral/releases/download/$CARGO_EPHEMERAL_TAG/cargo-ephemeral-linux-x86_64"             --output "$bundle/cargo-ephemeral" &
-          p2=$!
-          wait "$p1" "$p2"
-
+          curl --fail --location --silent --show-error \
+            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2" \
+            --output "$bundle/sccache"
           printf '%s  %s\n' "$SCCACHE_RELEASE_SHA256" "$bundle/sccache" | sha256sum --check
-          printf '%s  %s\n' "$CARGO_EPHEMERAL_SHA256" "$bundle/cargo-ephemeral" | sha256sum --check
-          chmod 0755 "$bundle/sccache" "$bundle/cargo-ephemeral"
+          chmod 0755 "$bundle/sccache"
 
       - name: Save immutable build-client bundle
         if: steps.build-clients-cache.outputs.cache-hit != 'true'
@@ -141,101 +120,32 @@ jobs:
           path: ${{ runner.temp }}/shared-build-clients
           key: ${{ steps.build-clients-cache.outputs.cache-primary-key }}
 
-      - name: Install canonical sccache client
+      - name: Install sccache client
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          sccache_bin="$HOME/.local/bin/sccache"
-          install -m 0755 "$RUNNER_TEMP/shared-build-clients/sccache" "$sccache_bin"
-
-          if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
-            if [[ ! -x /usr/bin/bwrap ]]; then
-              sudo apt-get update
-              sudo apt-get install --yes bubblewrap
-            fi
-
-            if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]                && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
-              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-            fi
-
-            /usr/bin/bwrap --ro-bind / / /bin/true
-          fi
-
-          "$sccache_bin" --version
-
-      - name: Install maintained Cargo client
-        if: inputs.ephemeral-cargo
-        shell: bash
-        run: |
-          set -euo pipefail
-          install_dir="$HOME/.local/libexec"
-          wrapper_dir="$HOME/.local/bin"
-          mkdir -p             "$install_dir"             "$wrapper_dir"             "$RUNNER_TEMP/cargo-source"             "$HOME/.cargo/registry/src"
-
-          cargo_bin="$install_dir/cargo-ephemeral"
-          install -m 0755 "$RUNNER_TEMP/shared-build-clients/cargo-ephemeral" "$cargo_bin"
-
-          cat > "$wrapper_dir/cargo" <<'EOF'
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          if [[ "${1:-}" == +* ]]; then
-            export RUSTUP_TOOLCHAIN="${1#+}"
-            shift
-          fi
-
-          export EPHEMERAL_CARGO_REGISTRY_SRC="${EPHEMERAL_CARGO_REGISTRY_SRC:-${RUNNER_TEMP:?}/cargo-source}"
-          export EPHEMERAL_CARGO_WRAPPER="$0"
-
-          exec "$HOME/.local/libexec/cargo-ephemeral" "$@"
-          EOF
-          chmod 0755 "$wrapper_dir/cargo"
-
-          {
-            echo "PATH=$wrapper_dir:$PATH"
-            echo "EPHEMERAL_CARGO_REGISTRY_SRC=$RUNNER_TEMP/cargo-source"
-            echo "EPHEMERAL_CARGO_WRAPPER=$wrapper_dir/cargo"
-          } >> "$GITHUB_ENV"
-
-          version="$("$wrapper_dir/cargo" --version)"
-          echo "$version"
-          [[ "$version" == *"${CARGO_EPHEMERAL_REV:0:9}"* ]]
+          install -m 0755 "$RUNNER_TEMP/shared-build-clients/sccache" "$HOME/.local/bin/sccache"
+          "$HOME/.local/bin/sccache" --version
 
       - name: Configure runner-local Cargo target
         shell: bash
         run: |
           set -euo pipefail
           target_dir="$RUNNER_TEMP/cargo-target"
-          target_tmp="$target_dir/.tmp"
-          mkdir -p "$target_dir" "$target_tmp"
-          {
-            echo "CARGO_TARGET_DIR=$target_dir"
-            echo "CARGO_TARGET_TMPDIR=$target_tmp"
-            echo "SCCACHE_CANONICAL_TARGET_ROOT=$target_dir"
-          } >> "$GITHUB_ENV"
+          mkdir -p "$target_dir"
+          echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
 
-      - name: Expose GitHub Actions cache runtime
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        with:
-          script: |
-            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
-      - name: Configure GitHub Actions sccache backend
+      - name: Configure runner-local sccache
         shell: bash
         run: |
           set -euo pipefail
-          [[ -n "${ACTIONS_RESULTS_URL:-}" ]]
-          [[ -n "${ACTIONS_RUNTIME_TOKEN:-}" ]]
+          sccache_dir="$RUNNER_TEMP/sccache"
+          mkdir -p "$sccache_dir"
           {
             echo "PATH=$HOME/.local/bin:$PATH"
             echo "RUSTC_WRAPPER=$HOME/.local/bin/sccache"
-            echo "SCCACHE_GHA_ENABLED=on"
-            echo "SCCACHE_GHA_VERSION=$SCCACHE_CACHE_LAYOUT_ID"
-            if [[ "$ENABLE_CANONICAL_RUST" == "true" ]]; then
-              echo "SCCACHE_EXPERIMENTAL_CANONICAL_RUST=1"
-            fi
+            echo "SCCACHE_DIR=$sccache_dir"
           } >> "$GITHUB_ENV"
 
       - name: Start sccache

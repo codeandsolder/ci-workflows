@@ -17,8 +17,3 @@ jobs:
     uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@ca8e5368b41e5699095dd0458a3849ecb8db7712
     with:
       working-directory: smoke-cache
-
-  strict-rust-smoke-generated-path:
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@ca8e5368b41e5699095dd0458a3849ecb8db7712
-    with:
-      working-directory: smoke-generated-path
