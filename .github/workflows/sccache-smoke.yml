@@ -1,4 +1,4 @@
-name: Runner-local sccache smoke
+name: Persistent Actions sccache smoke
 
 on:
   pull_request:
@@ -19,11 +19,27 @@ permissions:
   contents: read
 
 jobs:
-  smoke:
+  prime:
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: >-
         cargo +1.99.0 test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
+      rust-toolchain: "1.99.0"
+      rustflags: "-C target-cpu=x86-64-v2"
+      runner: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-24.04' }}
+
+  restore:
+    if: github.event_name != 'pull_request'
+    needs: prime
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      command: |
+        cargo +1.99.0 test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
+        rust_hits="$(sccache --show-stats --stats-format json | jq -r '.stats.cache_hits.counts.Rust // 0')"
+        if (( rust_hits < 1 )); then
+          echo "expected restored compiler cache to produce at least one Rust hit" >&2
+          exit 1
+        fi
       rust-toolchain: "1.99.0"
       rustflags: "-C target-cpu=x86-64-v2"
       runner: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-24.04' }}
