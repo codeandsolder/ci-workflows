@@ -1,0 +1,51 @@
+name: Cargo release-age quarantine
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: JSON-encoded runs-on selector.
+        required: false
+        type: string
+        default: '"ubuntu-24.04"'
+      hours:
+        description: Minimum crates.io release age in hours.
+        required: false
+        type: number
+        default: 72
+      lockfile:
+        description: Repository-relative Cargo lockfile path.
+        required: false
+        type: string
+        default: Cargo.lock
+
+permissions:
+  contents: read
+
+jobs:
+  quarantine:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 10
+    steps:
+      - name: Check out caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out pinned quarantine implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-workflows-quarantine
+          persist-credentials: false
+          sparse-checkout: .github/actions/cargo-release-quarantine
+          sparse-checkout-cone-mode: true
+
+      - name: Enforce crates.io release-age quarantine
+        uses: ./.ci-workflows-quarantine/.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          hours: ${{ inputs.hours }}
+          lockfile: ${{ inputs.lockfile }}

@@ -25,3 +25,9 @@ Private repositories run on the trusted self-hosted runner labelled `local-ci` b
 The default system client is `/usr/local/libexec/sccache-client` and the existing daemon is expected on port `4228`. The workflow sets `SCCACHE_START_SERVER=0`, so a missing daemon fails closed instead of silently starting an isolated cache. `private-runner`, `private-sccache-client`, and `private-sccache-server-port` can override those defaults when needed.
 
 The caller still controls the Rust toolchain, components, targets, `RUSTFLAGS`, timeout, and command. Public callers may also choose the hosted runner label and public cache-size bound. Cargo writes build outputs to a runner-local target directory in both modes.
+
+## Cargo release-age quarantine
+
+`.github/workflows/cargo-release-quarantine.yml` rejects crates.io package versions newly introduced by a pull request until they are at least 72 hours old by default. The caller keeps only a tiny trigger workflow; the implementation lives here and is checked out at the exact reusable-workflow SHA via `job.workflow_sha`.
+
+The underlying `.github/actions/cargo-release-quarantine` composite also supports non-failing eligibility probes (`fail-on-blocked: "false"`) for automation that needs to wait for a frozen lockfile snapshot to age without modifying it.
