@@ -1,0 +1,83 @@
+name: Cargo release-age quarantine smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/cargo-release-quarantine/**"
+      - ".github/workflows/cargo-release-quarantine.yml"
+      - ".github/workflows/cargo-release-quarantine-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/actions/cargo-release-quarantine/**"
+      - ".github/workflows/cargo-release-quarantine.yml"
+      - ".github/workflows/cargo-release-quarantine-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create synthetic introduced crates.io entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .quarantine-smoke
+          cat > .quarantine-smoke/Cargo.lock <<'LOCK'
+          version = 4
+
+          [[package]]
+          name = "serde"
+          version = "1.0.228"
+          source = "registry+https://github.com/rust-lang/crates.io-index"
+          checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
+          LOCK
+
+      - name: Old release passes a zero-hour quarantine
+        id: eligible
+        uses: ./.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ github.sha }}
+          hours: "0"
+          lockfile: .quarantine-smoke/Cargo.lock
+
+      - name: Assert eligible output
+        if: ${{ steps.eligible.outputs.eligible != 'true' }}
+        shell: bash
+        run: exit 1
+
+      - name: Soft probe reports blocked without failing
+        id: soft-blocked
+        uses: ./.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ github.sha }}
+          hours: "1000000"
+          lockfile: .quarantine-smoke/Cargo.lock
+          fail-on-blocked: "false"
+
+      - name: Assert soft-probe output
+        if: ${{ steps.soft-blocked.outputs.eligible != 'false' }}
+        shell: bash
+        run: exit 1
+
+      - name: Hard quarantine fails
+        id: hard-blocked
+        continue-on-error: true
+        uses: ./.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ github.sha }}
+          hours: "1000000"
+          lockfile: .quarantine-smoke/Cargo.lock
+
+      - name: Assert hard quarantine failed
+        if: ${{ steps.hard-blocked.outcome != 'failure' }}
+        shell: bash
+        run: exit 1
