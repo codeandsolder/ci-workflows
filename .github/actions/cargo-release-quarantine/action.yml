@@ -1,0 +1,66 @@
+name: Cargo release-age quarantine
+description: Reject newly introduced crates.io package versions younger than a configured age.
+inputs:
+  base-ref:
+    description: Commit/ref whose lockfile is the comparison baseline.
+    required: true
+  hours:
+    description: Minimum release age in hours.
+    required: false
+    default: "72"
+  lockfile:
+    description: Repository-relative Cargo lockfile path.
+    required: false
+    default: Cargo.lock
+  fail-on-blocked:
+    description: Fail the action when quarantine is still active; set false for eligibility probes.
+    required: false
+    default: "true"
+outputs:
+  eligible:
+    description: true when all newly introduced crates.io versions have cleared quarantine.
+    value: ${{ steps.quarantine.outputs.eligible }}
+runs:
+  using: composite
+  steps:
+    - name: Fetch quarantine baseline
+      shell: bash
+      env:
+        BASE_REF: ${{ inputs.base-ref }}
+      run: |
+        set -euo pipefail
+        git fetch --no-tags origin "${BASE_REF}"
+
+    - name: Check release ages
+      id: quarantine
+      shell: bash
+      env:
+        BASE_REF: ${{ inputs.base-ref }}
+        HOURS: ${{ inputs.hours }}
+        LOCKFILE: ${{ inputs.lockfile }}
+        FAIL_ON_BLOCKED: ${{ inputs.fail-on-blocked }}
+      run: |
+        set -euo pipefail
+        set +e
+        python3 "${GITHUB_ACTION_PATH}/cargo_release_quarantine.py" \
+          --base-ref "${BASE_REF}" \
+          --hours "${HOURS}" \
+          --lockfile "${LOCKFILE}"
+        status=$?
+        set -e
+
+        case "${status}" in
+          0)
+            echo "eligible=true" >>"${GITHUB_OUTPUT}"
+            ;;
+          10)
+            echo "eligible=false" >>"${GITHUB_OUTPUT}"
+            if [[ "${FAIL_ON_BLOCKED}" == "true" ]]; then
+              exit 1
+            fi
+            ;;
+          *)
+            echo "Quarantine helper failed unexpectedly with status ${status}." >&2
+            exit "${status}"
+            ;;
+        esac

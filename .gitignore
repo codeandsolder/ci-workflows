@@ -1,1 +1,4 @@
 /smoke-cache/target/
+
+__pycache__/
+*.py[cod]
