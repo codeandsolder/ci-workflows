@@ -2,6 +2,12 @@
 
 Centrally managed reusable GitHub Actions workflows for `codeandsolder` repositories.
 
+## Renovate-tracked reusable workflow pins
+
+Consumers should call reusable workflows with an immutable full commit SHA plus the tracked branch comment, for example `@<full-commit-sha> # main`. Renovate's GitHub Actions manager can then advance the SHA as `main` moves while every individual CI run still executes immutable code. Bare SHAs are intentionally avoided because they do not tell Renovate which branch or tag to follow; floating `@main` is avoided because the executed workflow can change without a caller commit.
+
+The repository Renovate configuration already enables GitHub Actions dependency management and digest pinning, so the same convention is used for this repository's own `rust-skills2` reusable-workflow dependency.
+
 ## Rust sccache policy
 
 `.github/workflows/rust-sccache.yml` chooses the execution/cache path from the caller repository visibility.
