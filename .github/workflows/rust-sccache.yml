@@ -74,6 +74,7 @@ jobs:
       contents: read
     env:
       RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+      RUSTUP_TOOLCHAIN: ${{ inputs.rust-toolchain }}
       RUST_COMPONENTS: ${{ inputs.rust-components }}
       RUST_TARGETS: ${{ inputs.rust-targets }}
       RUSTFLAGS: ${{ inputs.rustflags }}
