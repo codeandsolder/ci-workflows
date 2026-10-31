@@ -36,7 +36,7 @@ on:
       private-runner:
         description: Self-hosted runner label used for private repositories
         required: false
-        default: "local-ci"
+        default: "local-ubuntu-24.04"
         type: string
       private-sccache-client:
         description: System sccache client used on private self-hosted runners
