@@ -5,32 +5,31 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      runner:
-        description: GitHub-hosted runner label
-        required: true
-        default: ubuntu-22.04
-        type: choice
-        options:
-          - ubuntu-22.04
-          - ubuntu-24.04
 
 permissions:
   contents: read
 
 jobs:
   prime:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15, windows-2025]
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: >-
         cargo +1.99.0 test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
       rust-toolchain: "1.99.0"
       rustflags: "-C target-cpu=x86-64-v2"
-      runner: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-24.04' }}
+      runner: ${{ matrix.runner }}
 
   restore:
     if: github.event_name != 'pull_request'
     needs: prime
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15, windows-2025]
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: |
@@ -42,4 +41,4 @@ jobs:
         fi
       rust-toolchain: "1.99.0"
       rustflags: "-C target-cpu=x86-64-v2"
-      runner: ${{ github.event_name == 'workflow_dispatch' && inputs.runner || 'ubuntu-24.04' }}
+      runner: ${{ matrix.runner }}

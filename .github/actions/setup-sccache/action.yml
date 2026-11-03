@@ -2,11 +2,11 @@ name: Setup canonical sccache
 description: Configure the mandatory compiler cache for codeandsolder CI.
 inputs:
   rust-toolchain:
-    description: Rust toolchain identity included in the public cache key.
+    description: Optional Rust toolchain identity override for the public cache key; normally detected from rustc.
     required: false
-    default: unknown
+    default: ""
   rustflags:
-    description: Effective RUSTFLAGS included in the public cache key.
+    description: Optional RUSTFLAGS override for the public cache key; normally inherited from the job environment.
     required: false
     default: ""
   cache-size-mib:
@@ -70,18 +70,30 @@ runs:
             ':(glob)**/Cargo.lock' \
             ':(glob)**/.cargo/config' \
             ':(glob)**/.cargo/config.toml' \
-            | sha256sum | cut -d' ' -f1
+            | git hash-object --stdin
         )"
+        toolchain_identity="$CACHE_RUST_TOOLCHAIN"
+        if [[ -z "$toolchain_identity" ]]; then
+          if command -v rustc >/dev/null 2>&1; then
+            toolchain_identity="$(rustc -vV)"
+          else
+            toolchain_identity="${RUSTUP_TOOLCHAIN:-rustc-unavailable}"
+          fi
+        fi
+        effective_rustflags="$CACHE_RUSTFLAGS"
+        if [[ -z "$effective_rustflags" ]]; then
+          effective_rustflags="${RUSTFLAGS:-}"
+        fi
         semantic_hash="$(
           printf '%s\0' \
             "$RUNNER_OS" \
             "$RUNNER_ARCH" \
             "${ImageOS:-$RUNNER_OS}" \
-            "$CACHE_RUST_TOOLCHAIN" \
-            "$CACHE_RUSTFLAGS" \
+            "$toolchain_identity" \
+            "$effective_rustflags" \
             'sccache-v0.18.0' \
             "$CACHE_SIZE_MIB" \
-            | sha256sum | cut -d' ' -f1
+            | git hash-object --stdin
         )"
         prefix="rust-sccache-v2-${semantic_hash}-"
         key="${prefix}${graph_hash}"
@@ -120,12 +132,15 @@ runs:
         fi
         cache_dir="$RUNNER_TEMP/sccache"
         mkdir -p "$cache_dir"
+        export SCCACHE_DIR="$cache_dir"
+        export SCCACHE_CACHE_SIZE="${CACHE_SIZE_MIB}M"
         {
           echo "RUSTC_WRAPPER=$sccache_bin"
           echo "SCCACHE_BIN=$sccache_bin"
-          echo "SCCACHE_DIR=$cache_dir"
-          echo "SCCACHE_CACHE_SIZE=${CACHE_SIZE_MIB}M"
+          echo "SCCACHE_DIR=$SCCACHE_DIR"
+          echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
           echo "CODEANDSOLDER_SCCACHE_CACHE_HIT=${CACHE_HIT:-false}"
+          echo "CARGO_INCREMENTAL=0"
         } >> "$GITHUB_ENV"
         "$sccache_bin" --start-server
         "$sccache_bin" --zero-stats
@@ -169,4 +184,5 @@ runs:
           echo "SCCACHE_BIN=$shim_dir/sccache"
           echo "CODEANDSOLDER_SCCACHE_MODE=private-asus-garage"
           echo "CODEANDSOLDER_SCCACHE_CACHE_HIT=system"
+          echo "CARGO_INCREMENTAL=0"
         } >> "$GITHUB_ENV"
