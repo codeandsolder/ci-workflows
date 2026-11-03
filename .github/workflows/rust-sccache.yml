@@ -1,12 +1,11 @@
-name: Rust persistent Actions sccache
+name: Rust CI with mandatory sccache
 
 on:
   workflow_call:
     inputs:
       command:
         description: Rust/Cargo command to run in the caller repository
-        required: false
-        default: ""
+        required: true
         type: string
       rust-toolchain:
         description: Rust toolchain used for the caller command
@@ -29,24 +28,9 @@ on:
         default: "-C target-cpu=x86-64-v2"
         type: string
       runner:
-        description: GitHub-hosted runner label used for public repositories
+        description: GitHub-hosted runner used by public repositories
         required: false
         default: "ubuntu-24.04"
-        type: string
-      private-runner:
-        description: Self-hosted runner label used for private repositories
-        required: false
-        default: "local-ubuntu-24.04"
-        type: string
-      private-sccache-client:
-        description: System sccache client used on private self-hosted runners
-        required: false
-        default: "/usr/local/libexec/sccache-client"
-        type: string
-      private-sccache-server-port:
-        description: Existing system sccache daemon port on private self-hosted runners
-        required: false
-        default: "4228"
         type: string
       timeout-minutes:
         description: Job timeout
@@ -62,13 +46,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  SCCACHE_FORK_REV: "d1d0d542d3775a190c84d4cf051e0ebe6c52f0cb"
-  SCCACHE_RELEASE_TAG: "sccache-ci-d1d0d542d3775a190c84d4cf051e0ebe6c52f0cb"
-  SCCACHE_RELEASE_SHA256: "24641b86265eb84f90911a40507356e45673d1c1c338b853909ee8659f657a5b"
 
 jobs:
   rust:
-    runs-on: ${{ github.event.repository.private && inputs.private-runner || inputs.runner }}
+    runs-on: ${{ github.event.repository.private && 'asus' || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -78,14 +59,22 @@ jobs:
       RUST_COMPONENTS: ${{ inputs.rust-components }}
       RUST_TARGETS: ${{ inputs.rust-targets }}
       RUSTFLAGS: ${{ inputs.rustflags }}
-      RUNNER_LABEL: ${{ inputs.runner }}
-      SCCACHE_CACHE_SIZE_MIB: ${{ inputs.sccache-cache-size-mib }}
-      PRIVATE_SCCACHE_CLIENT: ${{ inputs.private-sccache-client }}
-      PRIVATE_SCCACHE_SERVER_PORT: ${{ inputs.private-sccache-server-port }}
 
     steps:
       - name: Checkout caller repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout shared CI implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-workflows
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/setup-sccache
+            .github/actions/finalize-sccache
+          sparse-checkout-cone-mode: true
 
       - name: Install Rust toolchain
         shell: bash
@@ -117,84 +106,12 @@ jobs:
           "$rustc_path" --version
           cargo +"$RUST_TOOLCHAIN" --version
 
-      - name: Restore immutable build-client bundle
-        if: ${{ !github.event.repository.private }}
-        id: build-clients-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Setup mandatory sccache
+        uses: ./.ci-workflows/.github/actions/setup-sccache
         with:
-          path: ${{ runner.temp }}/shared-build-clients
-          key: shared-build-clients-${{ runner.os }}-${{ runner.arch }}-${{ env.SCCACHE_RELEASE_SHA256 }}
-
-      - name: Populate immutable build-client bundle
-        if: ${{ !github.event.repository.private && steps.build-clients-cache.outputs.cache-hit != 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          bundle="$RUNNER_TEMP/shared-build-clients"
-          mkdir -p "$bundle"
-          curl --fail --location --silent --show-error \
-            "https://github.com/codeandsolder/sccache-deduplicated/releases/download/$SCCACHE_RELEASE_TAG/sccache-linux-x86_64-v2" \
-            --output "$bundle/sccache"
-          printf '%s  %s\n' "$SCCACHE_RELEASE_SHA256" "$bundle/sccache" | sha256sum --check
-          chmod 0755 "$bundle/sccache"
-
-      - name: Save immutable build-client bundle
-        if: ${{ !github.event.repository.private && steps.build-clients-cache.outputs.cache-hit != 'true' }}
-        continue-on-error: true
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ${{ runner.temp }}/shared-build-clients
-          key: ${{ steps.build-clients-cache.outputs.cache-primary-key }}
-
-      - name: Install sccache client
-        if: ${{ !github.event.repository.private }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.local/bin"
-          install -m 0755 "$RUNNER_TEMP/shared-build-clients/sccache" "$HOME/.local/bin/sccache"
-          "$HOME/.local/bin/sccache" --version
-
-      - name: Compute persistent compiler-cache key
-        if: ${{ !github.event.repository.private }}
-        id: compiler-cache-key
-        shell: bash
-        run: |
-          set -euo pipefail
-          graph_hash="$(
-            git ls-files -s -- \
-              'Cargo.toml' \
-              'Cargo.lock' \
-              ':(glob)**/Cargo.toml' \
-              ':(glob)**/Cargo.lock' \
-              ':(glob)**/.cargo/config' \
-              ':(glob)**/.cargo/config.toml' \
-              | sha256sum | cut -d' ' -f1
-          )"
-          semantic_hash="$(
-            printf '%s\0' \
-              "$RUST_TOOLCHAIN" \
-              "$RUSTFLAGS" \
-              "$RUNNER_LABEL" \
-              "$SCCACHE_RELEASE_SHA256" \
-              "$SCCACHE_CACHE_SIZE_MIB" \
-              | sha256sum | cut -d' ' -f1
-          )"
-          prefix="rust-sccache-v1-${RUNNER_OS}-${RUNNER_ARCH}-${semantic_hash}-"
-          {
-            echo "key=${prefix}${graph_hash}"
-            echo "restore-prefix=$prefix"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Restore persistent compiler cache
-        if: ${{ !github.event.repository.private }}
-        id: compiler-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ${{ runner.temp }}/sccache
-          key: ${{ steps.compiler-cache-key.outputs.key }}
-          restore-keys: |
-            ${{ steps.compiler-cache-key.outputs.restore-prefix }}
+          rust-toolchain: ${{ inputs.rust-toolchain }}
+          rustflags: ${{ inputs.rustflags }}
+          cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
 
       - name: Configure runner-local Cargo target
         shell: bash
@@ -204,102 +121,20 @@ jobs:
           mkdir -p "$target_dir"
           echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
 
-      - name: Configure persistent sccache
-        if: ${{ !github.event.repository.private }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          sccache_dir="$RUNNER_TEMP/sccache"
-          mkdir -p "$sccache_dir"
-          {
-            echo "PATH=$HOME/.local/bin:$PATH"
-            echo "RUSTC_WRAPPER=$HOME/.local/bin/sccache"
-            echo "SCCACHE_BIN=$HOME/.local/bin/sccache"
-            echo "SCCACHE_DIR=$sccache_dir"
-            echo "SCCACHE_CACHE_SIZE=${SCCACHE_CACHE_SIZE_MIB}M"
-          } >> "$GITHUB_ENV"
-
-      - name: Configure system sccache
-        if: ${{ github.event.repository.private }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ ! -x "$PRIVATE_SCCACHE_CLIENT" ]]; then
-            echo "private self-hosted runner is missing system sccache client: $PRIVATE_SCCACHE_CLIENT" >&2
-            exit 1
-          fi
-          case "$PRIVATE_SCCACHE_SERVER_PORT" in
-            *[!0-9]*|'')
-              echo "invalid private sccache server port: $PRIVATE_SCCACHE_SERVER_PORT" >&2
-              exit 1
-              ;;
-          esac
-          if (( PRIVATE_SCCACHE_SERVER_PORT < 1 || PRIVATE_SCCACHE_SERVER_PORT > 65535 )); then
-            echo "private sccache server port out of range: $PRIVATE_SCCACHE_SERVER_PORT" >&2
-            exit 1
-          fi
-
-          export SCCACHE_SERVER_PORT="$PRIVATE_SCCACHE_SERVER_PORT"
-          export SCCACHE_START_SERVER=0
-          "$PRIVATE_SCCACHE_CLIENT" --version
-          "$PRIVATE_SCCACHE_CLIENT" --show-stats >/dev/null
-
-          {
-            echo "RUSTC_WRAPPER=$PRIVATE_SCCACHE_CLIENT"
-            echo "SCCACHE_BIN=$PRIVATE_SCCACHE_CLIENT"
-            echo "SCCACHE_SERVER_PORT=$PRIVATE_SCCACHE_SERVER_PORT"
-            echo "SCCACHE_START_SERVER=0"
-          } >> "$GITHUB_ENV"
-
-      - name: Start sccache
-        if: ${{ !github.event.repository.private }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$SCCACHE_BIN" --start-server
-          "$SCCACHE_BIN" --zero-stats
-
       - name: Run caller command
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ inputs.command != '' }}" != "true" ]]; then
-            echo "command is required" >&2
-            exit 1
-          fi
           ${{ inputs.command }}
 
-      - name: Check hosted sccache stats
-        if: ${{ always() && !github.event.repository.private }}
+      - name: Allow trusted public cache save
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)
+        id: cache-save-policy
         shell: bash
-        run: |
-          set -euo pipefail
-          stats_json="$("$SCCACHE_BIN" --show-stats --stats-format json)"
-          "$SCCACHE_BIN" --show-stats
-          read_errors="$(jq -r '.stats.cache_read_errors' <<< "$stats_json")"
-          write_errors="$(jq -r '.stats.cache_write_errors' <<< "$stats_json")"
-          if (( read_errors != 0 || write_errors != 0 )); then
-            echo "sccache backend errors: read=$read_errors write=$write_errors" >&2
-            exit 1
-          fi
+        run: echo "save=true" >> "$GITHUB_OUTPUT"
 
-      - name: Check system sccache connection
-        if: ${{ always() && github.event.repository.private }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$SCCACHE_BIN" --show-stats
-
-      - name: Stop sccache
-        if: ${{ always() && !github.event.repository.private }}
-        shell: bash
-        run: |
-          "$SCCACHE_BIN" --stop-server || true
-
-      - name: Save persistent compiler cache
-        if: ${{ success() && !github.event.repository.private && steps.compiler-cache.outputs.cache-hit != 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)) }}
-        continue-on-error: true
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Finalize mandatory sccache
+        if: always()
+        uses: ./.ci-workflows/.github/actions/finalize-sccache
         with:
-          path: ${{ runner.temp }}/sccache
-          key: ${{ steps.compiler-cache-key.outputs.key }}
+          save-cache: ${{ steps.cache-save-policy.outputs.save == 'true' }}
