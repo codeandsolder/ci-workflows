@@ -1,0 +1,172 @@
+name: Setup canonical sccache
+description: Configure the mandatory compiler cache for codeandsolder CI.
+inputs:
+  rust-toolchain:
+    description: Rust toolchain identity included in the public cache key.
+    required: false
+    default: unknown
+  rustflags:
+    description: Effective RUSTFLAGS included in the public cache key.
+    required: false
+    default: ""
+  cache-size-mib:
+    description: Maximum public GitHub-hosted sccache size in MiB.
+    required: false
+    default: "6144"
+outputs:
+  mode:
+    description: public-actions or private-asus-garage
+    value: ${{ steps.mode.outputs.mode }}
+  cache-hit:
+    description: Exact public compiler-cache key hit.
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-key:
+    description: Exact public compiler-cache key.
+    value: ${{ steps.key.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - name: Select canonical cache backend
+      id: mode
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "${{ github.event.repository.private }}" == "true" ]]; then
+          echo "mode=private-asus-garage" >> "$GITHUB_OUTPUT"
+        else
+          echo "mode=public-actions" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Install public sccache client
+      if: steps.mode.outputs.mode == 'public-actions'
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      with:
+        version: v0.18.0
+        disable_annotations: true
+
+    - name: Compute public compiler-cache key
+      if: steps.mode.outputs.mode == 'public-actions'
+      id: key
+      shell: bash
+      env:
+        CACHE_SIZE_MIB: ${{ inputs.cache-size-mib }}
+        CACHE_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
+        CACHE_RUSTFLAGS: ${{ inputs.rustflags }}
+      run: |
+        set -euo pipefail
+        case "$CACHE_SIZE_MIB" in
+          *[!0-9]*|'') echo "cache-size-mib must be an integer" >&2; exit 2 ;;
+        esac
+        if (( CACHE_SIZE_MIB < 1 )); then
+          echo "cache-size-mib must be positive" >&2
+          exit 2
+        fi
+
+        graph_hash="$(
+          git ls-files -s -- \
+            'Cargo.toml' \
+            'Cargo.lock' \
+            ':(glob)**/Cargo.toml' \
+            ':(glob)**/Cargo.lock' \
+            ':(glob)**/.cargo/config' \
+            ':(glob)**/.cargo/config.toml' \
+            | sha256sum | cut -d' ' -f1
+        )"
+        semantic_hash="$(
+          printf '%s\0' \
+            "$RUNNER_OS" \
+            "$RUNNER_ARCH" \
+            "${ImageOS:-$RUNNER_OS}" \
+            "$CACHE_RUST_TOOLCHAIN" \
+            "$CACHE_RUSTFLAGS" \
+            'sccache-v0.18.0' \
+            "$CACHE_SIZE_MIB" \
+            | sha256sum | cut -d' ' -f1
+        )"
+        prefix="rust-sccache-v2-${semantic_hash}-"
+        key="${prefix}${graph_hash}"
+        {
+          echo "key=$key"
+          echo "restore-prefix=$prefix"
+        } >> "$GITHUB_OUTPUT"
+        {
+          echo "CODEANDSOLDER_SCCACHE_MODE=public-actions"
+          echo "CODEANDSOLDER_SCCACHE_CACHE_KEY=$key"
+          echo "CODEANDSOLDER_SCCACHE_CACHE_SIZE_MIB=$CACHE_SIZE_MIB"
+        } >> "$GITHUB_ENV"
+
+    - name: Restore public compiler cache
+      if: steps.mode.outputs.mode == 'public-actions'
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ runner.temp }}/sccache
+        key: ${{ steps.key.outputs.key }}
+        restore-keys: |
+          ${{ steps.key.outputs.restore-prefix }}
+
+    - name: Configure public runner-local sccache
+      if: steps.mode.outputs.mode == 'public-actions'
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+        CACHE_SIZE_MIB: ${{ inputs.cache-size-mib }}
+      run: |
+        set -euo pipefail
+        sccache_bin="${SCCACHE_PATH:-$(command -v sccache)}"
+        if [[ -z "$sccache_bin" || ! -x "$sccache_bin" ]]; then
+          echo "public sccache client is unavailable" >&2
+          exit 1
+        fi
+        cache_dir="$RUNNER_TEMP/sccache"
+        mkdir -p "$cache_dir"
+        {
+          echo "RUSTC_WRAPPER=$sccache_bin"
+          echo "SCCACHE_BIN=$sccache_bin"
+          echo "SCCACHE_DIR=$cache_dir"
+          echo "SCCACHE_CACHE_SIZE=${CACHE_SIZE_MIB}M"
+          echo "CODEANDSOLDER_SCCACHE_CACHE_HIT=${CACHE_HIT:-false}"
+        } >> "$GITHUB_ENV"
+        "$sccache_bin" --start-server
+        "$sccache_bin" --zero-stats
+        "$sccache_bin" --version
+
+    - name: Configure private Asus Garage sccache
+      if: steps.mode.outputs.mode == 'private-asus-garage'
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${RUNNER_NAME,,}" in
+          *asus*) ;;
+          *)
+            echo "private Rust CI must run on the Asus runner; got RUNNER_NAME=$RUNNER_NAME" >&2
+            exit 1
+            ;;
+        esac
+
+        client=/usr/local/libexec/sccache-client
+        if [[ ! -x "$client" ]]; then
+          echo "Asus is missing canonical sccache client: $client" >&2
+          exit 1
+        fi
+
+        shim_dir="$RUNNER_TEMP/codeandsolder-sccache"
+        mkdir -p "$shim_dir"
+        printf '%s\n' \
+          '#!/usr/bin/env bash' \
+          'set -euo pipefail' \
+          'exec env -u SCCACHE_SERVER_UDS SCCACHE_SERVER_PORT=4228 SCCACHE_START_SERVER=0 /usr/local/libexec/sccache-client "$@"' \
+          > "$shim_dir/sccache"
+        chmod 0755 "$shim_dir/sccache"
+
+        "$shim_dir/sccache" --version
+        "$shim_dir/sccache" --show-stats >/dev/null
+        {
+          echo "$shim_dir"
+        } >> "$GITHUB_PATH"
+        {
+          echo "RUSTC_WRAPPER=$shim_dir/sccache"
+          echo "SCCACHE_BIN=$shim_dir/sccache"
+          echo "CODEANDSOLDER_SCCACHE_MODE=private-asus-garage"
+          echo "CODEANDSOLDER_SCCACHE_CACHE_HIT=system"
+        } >> "$GITHUB_ENV"

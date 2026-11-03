@@ -1,0 +1,49 @@
+name: Finalize canonical sccache
+description: Verify the mandatory CI cache backend and persist trusted public caches.
+inputs:
+  save-cache:
+    description: Save a public compiler cache after a successful trusted run.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Verify public sccache and stop daemon
+      if: env.CODEANDSOLDER_SCCACHE_MODE == 'public-actions'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -z "${SCCACHE_BIN:-}" ]]; then
+          echo "SCCACHE_BIN is missing; setup-sccache did not run" >&2
+          exit 1
+        fi
+        stats_json="$("$SCCACHE_BIN" --show-stats --stats-format json)"
+        "$SCCACHE_BIN" --show-stats
+        read_errors="$(jq -r '.stats.cache_read_errors // 0' <<< "$stats_json")"
+        write_errors="$(jq -r '.stats.cache_write_errors // 0' <<< "$stats_json")"
+        "$SCCACHE_BIN" --stop-server || true
+        if (( read_errors != 0 || write_errors != 0 )); then
+          echo "sccache backend errors: read=$read_errors write=$write_errors" >&2
+          exit 1
+        fi
+
+    - name: Verify private Asus Garage connection
+      if: env.CODEANDSOLDER_SCCACHE_MODE == 'private-asus-garage'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -z "${SCCACHE_BIN:-}" ]]; then
+          echo "SCCACHE_BIN is missing; setup-sccache did not run" >&2
+          exit 1
+        fi
+        "$SCCACHE_BIN" --show-stats
+
+    - name: Save trusted public compiler cache
+      if: >-
+        env.CODEANDSOLDER_SCCACHE_MODE == 'public-actions' &&
+        inputs.save-cache == 'true' &&
+        env.CODEANDSOLDER_SCCACHE_CACHE_HIT != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ runner.temp }}/sccache
+        key: ${{ env.CODEANDSOLDER_SCCACHE_CACHE_KEY }}
