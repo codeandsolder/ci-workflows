@@ -127,14 +127,6 @@ jobs:
           set -euo pipefail
           ${{ inputs.command }}
 
-      - name: Allow trusted public cache save
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)
-        id: cache-save-policy
-        shell: bash
-        run: echo "save=true" >> "$GITHUB_OUTPUT"
-
       - name: Finalize mandatory sccache
         if: always()
         uses: ./.ci-workflows/.github/actions/finalize-sccache
-        with:
-          save-cache: ${{ steps.cache-save-policy.outputs.save == 'true' }}
