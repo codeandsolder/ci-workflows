@@ -6,21 +6,43 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 jobs:
+  release-tier-skipped:
+    # This test itself is scheduled on PR/main, not on a release tag.
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      validation-tier: release
+      rust-toolchain: "1.99.1"
+      command: cargo +1.99.1 check --manifest-path smoke-cache/Cargo.toml
+
+  assert-release-tier-skipped:
+    needs: release-tier-skipped
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Non-release events must not execute compatibility lane
+        env:
+          RESULT: ${{ needs.release-tier-skipped.result }}
+        run: test "$RESULT" = skipped
+
   prime:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-15, windows-2025]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: >-
         cargo +1.99.0 test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
       rust-toolchain: "1.99.0"
-      rustflags: "-C target-cpu=x86-64-v2"
+      rustflags: "auto"
       runner: ${{ matrix.runner }}
 
   restore:
@@ -29,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-15, windows-2025]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: |
@@ -40,5 +62,5 @@ jobs:
           exit 1
         fi
       rust-toolchain: "1.99.0"
-      rustflags: "-C target-cpu=x86-64-v2"
+      rustflags: "auto"
       runner: ${{ matrix.runner }}

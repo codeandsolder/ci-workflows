@@ -16,9 +16,24 @@
   "packageRules": [
     {
       "description": "Keep central GitHub Actions tooling current as one reviewed trust-root change",
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "GitHub Actions tooling",
       "groupSlug": "github-actions-tooling",
+      "automerge": false
+    },
+    {
+      "description": "Shared CI and strict-lint trust roots must update immediately, independent of ordinary action-age and grouping policies",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "/^codeandsolder\\/(?:ci-workflows|rust-skills2)(?:\\/|$)/"
+      ],
+      "minimumReleaseAge": null,
+      "groupName": "Shared CI trust roots",
+      "groupSlug": "shared-ci-trust-roots",
       "automerge": false
     }
   ]

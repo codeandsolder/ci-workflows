@@ -39,7 +39,33 @@ runs:
           echo "SCCACHE_BIN is missing; setup-sccache did not run" >&2
           exit 1
         fi
+        stats_json="$("$SCCACHE_BIN" --show-stats --stats-format json)"
         "$SCCACHE_BIN" --show-stats
+        errors="$(printf '%s' "$stats_json" | node -e '
+          let input = "";
+          process.stdin.on("data", chunk => input += chunk);
+          process.stdin.on("end", () => {
+            const stats = JSON.parse(input).stats ?? {};
+            process.stdout.write(`${stats.cache_read_errors ?? 0} ${stats.cache_write_errors ?? 0}`);
+          });
+        ')"
+        read -r read_errors write_errors <<< "$errors"
+        base_read="${CODEANDSOLDER_SCCACHE_BASE_READ_ERRORS:-}"
+        base_write="${CODEANDSOLDER_SCCACHE_BASE_WRITE_ERRORS:-}"
+        for value in "$base_read" "$base_write" "$read_errors" "$write_errors"; do
+          if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+            echo "Missing or invalid private sccache error counter: $value" >&2
+            exit 1
+          fi
+        done
+        if (( read_errors < base_read || write_errors < base_write )); then
+          echo "Private sccache statistics reset unexpectedly during the job" >&2
+          exit 1
+        fi
+        if (( read_errors > base_read || write_errors > base_write )); then
+          echo "Private Garage cache errors increased: reads $base_read->$read_errors, writes $base_write->$write_errors" >&2
+          exit 1
+        fi
 
     - name: Save trusted public compiler cache
       if: >-

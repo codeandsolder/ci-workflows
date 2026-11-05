@@ -175,11 +175,22 @@ runs:
         chmod 0755 "$shim_dir/sccache"
 
         "$shim_dir/sccache" --version
-        "$shim_dir/sccache" --show-stats >/dev/null
+        stats_json="$("$shim_dir/sccache" --show-stats --stats-format json)"
+        baseline="$(printf '%s' "$stats_json" | node -e '
+          let input = "";
+          process.stdin.on("data", chunk => input += chunk);
+          process.stdin.on("end", () => {
+            const stats = JSON.parse(input).stats ?? {};
+            process.stdout.write(`${stats.cache_read_errors ?? 0} ${stats.cache_write_errors ?? 0}`);
+          });
+        ')"
+        read -r baseline_read baseline_write <<< "$baseline"
         {
           echo "$shim_dir"
         } >> "$GITHUB_PATH"
         {
+          echo "CODEANDSOLDER_SCCACHE_BASE_READ_ERRORS=$baseline_read"
+          echo "CODEANDSOLDER_SCCACHE_BASE_WRITE_ERRORS=$baseline_write"
           echo "RUSTC_WRAPPER=$shim_dir/sccache"
           echo "SCCACHE_BIN=$shim_dir/sccache"
           echo "CODEANDSOLDER_SCCACHE_MODE=private-asus-garage"

@@ -10,7 +10,12 @@ on:
       rust-toolchain:
         description: Rust toolchain used for the caller command
         required: false
-        default: "1.99.0"
+        default: "1.99.1"
+        type: string
+      validation-tier:
+        description: "routine (each PR/main) or release (only release tags); use release for MSRV and nonprimary OS/targets"
+        required: false
+        default: "routine"
         type: string
       rust-components:
         description: Space-separated rustup components to install
@@ -23,9 +28,9 @@ on:
         default: ""
         type: string
       rustflags:
-        description: RUSTFLAGS for the caller command
+        description: "RUSTFLAGS for the caller; auto uses x86-64-v2 on X64 runners and no target-cpu override elsewhere"
         required: false
-        default: "-C target-cpu=x86-64-v2"
+        default: "auto"
         type: string
       runner:
         description: GitHub-hosted runner used by public repositories
@@ -49,6 +54,8 @@ env:
 
 jobs:
   rust:
+    # Unknown values run into the validation step instead of silently skipping CI.
+    if: ${{ inputs.validation-tier != 'release' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ${{ github.event.repository.private && 'asus' || inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
@@ -61,6 +68,16 @@ jobs:
       RUSTFLAGS: ${{ inputs.rustflags }}
 
     steps:
+      - name: Validate requested CI tier
+        shell: bash
+        env:
+          VALIDATION_TIER: ${{ inputs.validation-tier }}
+        run: |
+          case "$VALIDATION_TIER" in
+            routine|release) ;;
+            *) echo "Unknown validation-tier: $VALIDATION_TIER" >&2; exit 2 ;;
+          esac
+
       - name: Checkout caller repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -75,6 +92,21 @@ jobs:
             .github/actions/setup-sccache
             .github/actions/finalize-sccache
           sparse-checkout-cone-mode: true
+
+      - name: Resolve portable RUSTFLAGS
+        shell: bash
+        env:
+          REQUESTED_RUSTFLAGS: ${{ inputs.rustflags }}
+        run: |
+          set -euo pipefail
+          effective="$REQUESTED_RUSTFLAGS"
+          if [[ "$effective" == "auto" ]]; then
+            case "$RUNNER_ARCH" in
+              X64) effective="-C target-cpu=x86-64-v2" ;;
+              *) effective="" ;;
+            esac
+          fi
+          echo "RUSTFLAGS=$effective" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         shell: bash
@@ -110,7 +142,8 @@ jobs:
         uses: ./.ci-workflows/.github/actions/setup-sccache
         with:
           rust-toolchain: ${{ inputs.rust-toolchain }}
-          rustflags: ${{ inputs.rustflags }}
+          # Let setup derive its key from the resolved effective RUSTFLAGS.
+          rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
 
       - name: Configure runner-local Cargo target
