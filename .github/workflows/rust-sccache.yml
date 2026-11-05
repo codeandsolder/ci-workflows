@@ -106,7 +106,7 @@ jobs:
           # Without a local exclude, cargo package --locked rejects otherwise
           # clean repositories due to the injected untracked .ci-workflows/.
           # .git/info/exclude is local to this CI clone and never committed.
-          printf '\\n/.ci-workflows/\\n' >> "$GITHUB_WORKSPACE/.git/info/exclude"
+          printf '\n/.ci-workflows/\n' >> "$GITHUB_WORKSPACE/.git/info/exclude"
           if [[ -n "$(git -C "$GITHUB_WORKSPACE" ls-files --others --exclude-standard -- .ci-workflows)" ]]; then
             echo "Injected CI checkout is still visible as untracked source" >&2
             exit 1
