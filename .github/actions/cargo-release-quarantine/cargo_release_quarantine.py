@@ -89,17 +89,32 @@ def main() -> int:
 
     lockfile = Path(args.lockfile)
     try:
-        before = {key(pkg) for pkg in load_lock(git_show(args.base_ref, args.lockfile))}
+        previous_lock = git_show(args.base_ref, args.lockfile)
     except subprocess.CalledProcessError:
-        before = set()
+        # A missing file is legitimate, but an invalid/inaccessible baseline is not.
+        subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"{args.base_ref}^{{commit}}"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        previous_lock = None
 
-    # An Actions-only update (including shared CI pins) introduces no crates.
-    # Do not turn a missing Cargo.lock into an unrelated quarantine failure.
+    # An Actions-only update introduces no crates, unless it has *removed* an
+    # existing lockfile. That is never a valid way to bypass quarantine.
     if not lockfile.is_file():
+        if previous_lock is not None:
+            print(
+                f"Cargo release-age quarantine failed: {args.lockfile} existed "
+                "in the baseline but is missing in this revision.",
+                file=sys.stderr,
+            )
+            return QUARANTINED_EXIT
         print(
-            "Cargo release-age quarantine passed: no lockfile, no newly introduced crates.io versions."
+            "Cargo release-age quarantine passed: no lockfile in either revision."
         )
         return 0
+
+    before = {key(pkg) for pkg in load_lock(previous_lock)} if previous_lock else set()
 
     after = load_lock(lockfile.read_bytes())
     changed = [pkg for pkg in after if key(pkg) not in before and is_crates_io(pkg)]
