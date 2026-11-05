@@ -41,6 +41,19 @@ jobs:
           checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
           LOCK
 
+      - name: Workflow-only update with no Cargo.lock passes immediately
+        id: no-lockfile
+        uses: ./.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ github.sha }}
+          hours: "1000000"
+          lockfile: .quarantine-smoke/not-present.lock
+
+      - name: Assert missing lockfile is not quarantined
+        if: ${{ steps.no-lockfile.outputs.eligible != 'true' }}
+        shell: bash
+        run: exit 1
+
       - name: Old release passes a zero-hour quarantine
         id: eligible
         uses: ./.github/actions/cargo-release-quarantine
