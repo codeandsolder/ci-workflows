@@ -10,6 +10,24 @@ permissions:
   contents: read
 
 jobs:
+  release-tier-skipped:
+    # This test itself is scheduled on PR/main, not on a release tag.
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      validation-tier: release
+      rust-toolchain: "1.99.1"
+      command: cargo +1.99.1 check --manifest-path smoke-cache/Cargo.toml
+
+  assert-release-tier-skipped:
+    needs: release-tier-skipped
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Non-release events must not execute compatibility lane
+        env:
+          RESULT: ${{ needs.release-tier-skipped.result }}
+        run: test "$RESULT" = skipped
+
   prime:
     strategy:
       fail-fast: false
