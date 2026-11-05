@@ -14,6 +14,18 @@ permissions:
   contents: read
 
 jobs:
+  isolated-daemon:
+    # Regression for Rust integration suites that start/stop their own sccache.
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      rust-toolchain: "1.99.1"
+      isolate-public-sccache-server: true
+      command: |
+        test -S "$SCCACHE_SERVER_UDS"
+        cargo +1.99.1 test --locked --offline --manifest-path smoke-cache/Cargo.toml
+        sccache --show-stats >/dev/null
+        test -S "$SCCACHE_SERVER_UDS"
+
   release-tier-skipped:
     # This test itself is scheduled on PR/main, not on a release tag.
     uses: ./.github/workflows/rust-sccache.yml

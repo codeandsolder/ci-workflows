@@ -47,6 +47,11 @@ on:
         required: false
         default: 6144
         type: number
+      isolate-public-sccache-server:
+        description: Give the public CI compiler cache an isolated Unix socket so test suites managing their own sccache daemon cannot stop it.
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -137,6 +142,17 @@ jobs:
 
           "$rustc_path" --version
           cargo +"$RUST_TOOLCHAIN" --version
+
+      - name: Isolate compiler cache daemon from test-managed sccache daemons
+        if: ${{ inputs.isolate-public-sccache-server && !github.event.repository.private }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            echo "An isolated Unix sccache socket is unavailable on Windows" >&2
+            exit 2
+          fi
+          echo "SCCACHE_SERVER_UDS=$RUNNER_TEMP/ci-compiler-sccache.sock" >> "$GITHUB_ENV"
 
       - name: Setup mandatory sccache
         uses: ./.ci-workflows/.github/actions/setup-sccache
