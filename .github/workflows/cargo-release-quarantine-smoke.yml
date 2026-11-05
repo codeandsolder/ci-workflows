@@ -54,6 +54,29 @@ jobs:
         shell: bash
         run: exit 1
 
+      - name: Remove a tracked baseline file to simulate lockfile deletion
+        shell: bash
+        run: rm README.md
+
+      - name: Reject removal of a baseline lockfile
+        id: removed-lockfile
+        continue-on-error: true
+        uses: ./.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ github.sha }}
+          hours: "0"
+          lockfile: README.md
+
+      - name: Assert lockfile removal was rejected
+        if: ${{ steps.removed-lockfile.outcome != 'failure' }}
+        shell: bash
+        run: exit 1
+
+      - name: Restore tracked file
+        if: always()
+        shell: bash
+        run: git restore -- README.md
+
       - name: Old release passes a zero-hour quarantine
         id: eligible
         uses: ./.github/actions/cargo-release-quarantine
