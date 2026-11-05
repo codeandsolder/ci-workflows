@@ -1,5 +1,33 @@
 # ci-workflows
 
+## Two-tier Rust CI and stale-run cancellation
+
+The standard lane uses `rust-sccache.yml` with the current project Rust toolchain (default `1.99.1`) and Linux (`ubuntu-24.04` for public repos, the existing Asus Linux runner for private repos) on every PR and default-branch push.
+
+Additional MSRV, older/newer toolchain, alternative OS/architecture, sanitizer and compatibility lanes are optional **release-tier** jobs. Call the same reusable workflow with `validation-tier: release`. These jobs are skipped unless the caller is running on a release tag (`refs/tags/*`). For example, the caller may define separate jobs invoking this workflow with distinct `rust-toolchain`, `runner` and `rust-targets` inputs. A release tag must be included in the caller's `on.push.tags` trigger (and not excluded by other conditions); `workflow_dispatch` is not a release trigger.
+
+**Cancel obsolete PR runs in the caller**. GitHub does not let a reusable workflow set the caller's workflow-level concurrency, and using `github.workflow` at both levels risks a called job canceling its own caller. Every consumer workflow should include:
+
+```yaml
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+
+This cancels the prior revision of the **same** PR and workflow, without canceling another workflow, release-tag run, schedule or merge-group verification. Do not add a second conflicting concurrency group inside the reusable workflow. Pinned old workflows and their existing runs are not retroactively canceled when callers update.
+
+## Renovate: keep shared CI up to date without the dependency-age wait
+
+Each consumer should extend `github>codeandsolder/ci-workflows:renovate-ci-trust-root` in `renovate.json`, and reference shared workflows with immutable SHA plus `# main` so Renovate can track upstream main:
+
+```yaml
+uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> # main
+```
+
+The preset exempts only the trusted `codeandsolder/ci-workflows` and `codeandsolder/rust-skills2` GitHub Actions references from `minimumReleaseAge`. It leaves ordinary Cargo dependencies in quarantine and keeps CI trust-root updates reviewable (`automerge: false`). Broad local GitHub Actions grouping rules should exclude these two dependencies or be ordered before the specific trust-root rule, otherwise an unrelated young action can hold back a grouped shared-CI update.
+
+The Cargo release-age quarantine already checks only **new crates.io versions in Cargo.lock**, not GitHub Actions SHAs. A CI-only PR must pass with zero new crates; a mixed PR introducing young crates must still fail. Consumer quarantine workflows should trigger for all PRs rather than path-filtering `Cargo.lock` if the check is branch-protection-required, so a CI-only PR gets an explicit pass instead of an indefinitely expected status.
+
 Centrally managed reusable GitHub Actions workflows for `codeandsolder` repositories.
 
 ## Renovate-tracked reusable workflow pins
