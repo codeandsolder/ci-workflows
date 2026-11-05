@@ -168,14 +168,14 @@ runs:
         # Select exactly one by verified local filesystem capabilities.
         if [[ -S /run/host-sccache/sccache.sock && -x /usr/local/bin/sccache ]]; then
           transport=asus-container-uds
-          printf '%s\\n' \
+          printf '%s\n' \
             '#!/usr/bin/env bash' \
             'set -euo pipefail' \
             'exec env -u SCCACHE_SERVER_PORT SCCACHE_SERVER_UDS=/run/host-sccache/sccache.sock SCCACHE_START_SERVER=0 SCCACHE_NO_AUTO_START_SERVER=1 /usr/local/bin/sccache "$@"' \
             > "$shim_dir/sccache"
         elif [[ -x /usr/local/libexec/sccache-client ]]; then
           transport=asus-host-tcp
-          printf '%s\\n' \
+          printf '%s\n' \
             '#!/usr/bin/env bash' \
             'set -euo pipefail' \
             'exec env -u SCCACHE_SERVER_UDS SCCACHE_SERVER_PORT=4228 SCCACHE_START_SERVER=0 SCCACHE_NO_AUTO_START_SERVER=1 /usr/local/libexec/sccache-client "$@"' \
