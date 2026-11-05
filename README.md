@@ -62,6 +62,10 @@ The mandatory system client is `/usr/local/libexec/sccache-client` and the exist
 
 The caller still controls the Rust toolchain, components, targets, `RUSTFLAGS`, timeout, command and validation tier. Public callers may also choose the hosted runner label and public cache-size bound. The private runner and cache backend cannot be overridden by the caller. Cargo writes build outputs to a runner-local target directory in both modes.
 
+### Test suites that manage sccache daemons
+
+`isolate-public-sccache-server: true` places the hosted Linux/macOS compiler-cache daemon on a dedicated Unix-domain socket, distinct from the default TCP endpoint used by the program's integration tests. This is designed for repositories such as `sccache-deduplicated` whose tests deliberately start/stop their own sccache instance. The compiler and finalizer retain the dedicated socket; the caller should launch **only the test executables** with `SCCACHE_SERVER_UDS` unset using Cargo's target runner, preserving the compiler's mandatory cache. This option is public-Unix only and explicitly rejects Windows instead of silently failing to isolate. Do not use it on the private Asus/Garage runner; the root-managed daemon there remains unchanged.
+
 ## Cargo release-age quarantine
 
 `.github/workflows/cargo-release-quarantine.yml` rejects crates.io package versions newly introduced by a pull request until they are at least 72 hours old by default. The caller keeps only a tiny trigger workflow; the implementation lives here and is checked out at the exact reusable-workflow SHA via `job.workflow_sha`.
