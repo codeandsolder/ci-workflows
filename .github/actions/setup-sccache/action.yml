@@ -159,21 +159,34 @@ runs:
             ;;
         esac
 
-        client=/usr/local/libexec/sccache-client
-        if [[ ! -x "$client" ]]; then
-          echo "Asus is missing canonical sccache client: $client" >&2
-          exit 1
-        fi
-
         shim_dir="$RUNNER_TEMP/codeandsolder-sccache"
         mkdir -p "$shim_dir"
-        printf '%s\n' \
-          '#!/usr/bin/env bash' \
-          'set -euo pipefail' \
-          'exec env -u SCCACHE_SERVER_UDS SCCACHE_SERVER_PORT=4228 SCCACHE_START_SERVER=0 /usr/local/libexec/sccache-client "$@"' \
-          > "$shim_dir/sccache"
+
+        # The Asus host has a TCP-connected client. Containerized Actions
+        # runners on that same host instead receive a mounted Unix socket and
+        # client. These are two active deployment layouts, not a cache fallback.
+        # Select exactly one by verified local filesystem capabilities.
+        if [[ -S /run/host-sccache/sccache.sock && -x /usr/local/bin/sccache ]]; then
+          transport=asus-container-uds
+          printf '%s\\n' \
+            '#!/usr/bin/env bash' \
+            'set -euo pipefail' \
+            'exec env -u SCCACHE_SERVER_PORT SCCACHE_SERVER_UDS=/run/host-sccache/sccache.sock SCCACHE_START_SERVER=0 SCCACHE_NO_AUTO_START_SERVER=1 /usr/local/bin/sccache "$@"' \
+            > "$shim_dir/sccache"
+        elif [[ -x /usr/local/libexec/sccache-client ]]; then
+          transport=asus-host-tcp
+          printf '%s\\n' \
+            '#!/usr/bin/env bash' \
+            'set -euo pipefail' \
+            'exec env -u SCCACHE_SERVER_UDS SCCACHE_SERVER_PORT=4228 SCCACHE_START_SERVER=0 SCCACHE_NO_AUTO_START_SERVER=1 /usr/local/libexec/sccache-client "$@"' \
+            > "$shim_dir/sccache"
+        else
+          echo "Asus runner has neither the canonical mounted sccache socket/client nor the host TCP client" >&2
+          exit 1
+        fi
         chmod 0755 "$shim_dir/sccache"
 
+        echo "Using canonical private cache transport: $transport"
         "$shim_dir/sccache" --version
         stats_json="$("$shim_dir/sccache" --show-stats --stats-format json)"
         baseline="$(printf '%s' "$stats_json" | node -e '
@@ -194,6 +207,7 @@ runs:
           echo "RUSTC_WRAPPER=$shim_dir/sccache"
           echo "SCCACHE_BIN=$shim_dir/sccache"
           echo "CODEANDSOLDER_SCCACHE_MODE=private-asus-garage"
+          echo "CODEANDSOLDER_SCCACHE_TRANSPORT=$transport"
           echo "CODEANDSOLDER_SCCACHE_CACHE_HIT=system"
           echo "CARGO_INCREMENTAL=0"
         } >> "$GITHUB_ENV"
