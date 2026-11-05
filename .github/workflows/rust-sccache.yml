@@ -28,9 +28,9 @@ on:
         default: ""
         type: string
       rustflags:
-        description: RUSTFLAGS for the caller command
+        description: "RUSTFLAGS for the caller; auto uses x86-64-v2 on X64 runners and no target-cpu override elsewhere"
         required: false
-        default: "-C target-cpu=x86-64-v2"
+        default: "auto"
         type: string
       runner:
         description: GitHub-hosted runner used by public repositories
@@ -93,6 +93,21 @@ jobs:
             .github/actions/finalize-sccache
           sparse-checkout-cone-mode: true
 
+      - name: Resolve portable RUSTFLAGS
+        shell: bash
+        env:
+          REQUESTED_RUSTFLAGS: ${{ inputs.rustflags }}
+        run: |
+          set -euo pipefail
+          effective="$REQUESTED_RUSTFLAGS"
+          if [[ "$effective" == "auto" ]]; then
+            case "$RUNNER_ARCH" in
+              X64) effective="-C target-cpu=x86-64-v2" ;;
+              *) effective="" ;;
+            esac
+          fi
+          echo "RUSTFLAGS=$effective" >> "$GITHUB_ENV"
+
       - name: Install Rust toolchain
         shell: bash
         run: |
@@ -127,7 +142,8 @@ jobs:
         uses: ./.ci-workflows/.github/actions/setup-sccache
         with:
           rust-toolchain: ${{ inputs.rust-toolchain }}
-          rustflags: ${{ inputs.rustflags }}
+          # Let setup derive its key from the resolved effective RUSTFLAGS.
+          rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
 
       - name: Configure runner-local Cargo target
