@@ -21,6 +21,10 @@ jobs:
       rust-toolchain: "1.99.1"
       isolate-public-sccache-server: true
       command: |
+        # A nested checkout inside the caller must never appear as untracked
+        # packaging input (cargo package rejects dirty source trees).
+        test -z "$(git ls-files --others --exclude-standard -- .ci-workflows)"
+        git check-ignore -q .ci-workflows/README.md
         test -S "$SCCACHE_SERVER_UDS"
         cargo +1.99.1 test --locked --offline --manifest-path smoke-cache/Cargo.toml
         sccache --show-stats >/dev/null
