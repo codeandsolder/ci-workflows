@@ -96,7 +96,9 @@ def main() -> int:
     # An Actions-only update (including shared CI pins) introduces no crates.
     # Do not turn a missing Cargo.lock into an unrelated quarantine failure.
     if not lockfile.is_file():
-        print("Cargo release-age quarantine passed: no lockfile, no newly introduced crates.io versions.")
+        print(
+            "Cargo release-age quarantine passed: no lockfile, no newly introduced crates.io versions."
+        )
         return 0
 
     after = load_lock(lockfile.read_bytes())
