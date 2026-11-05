@@ -42,7 +42,7 @@ The repository Renovate configuration already enables GitHub Actions dependency 
 
 ### Public repositories
 
-Public repositories run on the requested GitHub-hosted runner using the maintained `codeandsolder/sccache-deduplicated` client.
+Public repositories run on the requested GitHub-hosted runner using the pinned `mozilla-actions/sccache-action` installer with sccache v0.18.0. The hosted job starts a runner-local daemon; it never reaches the private Garage service.
 
 Compiler outputs live in a bounded local sccache directory and are persisted between compatible GitHub-hosted jobs with ordinary `actions/cache`. The primary cache key is immutable and derived from the runner image label and platform, Rust toolchain, `RUSTFLAGS`, sccache release, cache-size policy, and tracked Cargo manifests/lockfiles. When the Cargo graph changes, the workflow restores the newest semantically compatible snapshot and saves one new graph-specific snapshot after the sccache daemon has stopped.
 
@@ -54,11 +54,11 @@ This deliberately does **not** use sccache's native GHA object backend: that bac
 
 ### Private repositories
 
-Private repositories run on the trusted self-hosted runner labelled `local-ci` by default and use the runner's existing system sccache daemon directly. They do not download the GitHub-hosted helper binary and do not restore or save compiler caches with `actions/cache`.
+Private repositories run on the trusted self-hosted Asus runner labelled `asus`; the provider selects it from the caller repository's visibility and verifies `RUNNER_NAME` contains `asus`. They use the runner's existing system sccache daemon directly. They do not download the GitHub-hosted helper binary and do not restore or save compiler caches with `actions/cache`.
 
-The default system client is `/usr/local/libexec/sccache-client` and the existing daemon is expected on port `4228`. The workflow sets `SCCACHE_START_SERVER=0`, so a missing daemon fails closed instead of silently starting an isolated cache. `private-runner`, `private-sccache-client`, and `private-sccache-server-port` can override those defaults when needed.
+The mandatory system client is `/usr/local/libexec/sccache-client` and the existing daemon is expected on port `4228`. The workflow sets `SCCACHE_START_SERVER=0`, so a missing daemon fails closed instead of silently starting an isolated cache. These infrastructure settings are deliberately not configurable through reusable-workflow inputs.
 
-The caller still controls the Rust toolchain, components, targets, `RUSTFLAGS`, timeout, and command. Public callers may also choose the hosted runner label and public cache-size bound. Cargo writes build outputs to a runner-local target directory in both modes.
+The caller still controls the Rust toolchain, components, targets, `RUSTFLAGS`, timeout, command and validation tier. Public callers may also choose the hosted runner label and public cache-size bound. The private runner and cache backend cannot be overridden by the caller. Cargo writes build outputs to a runner-local target directory in both modes.
 
 ## Cargo release-age quarantine
 
