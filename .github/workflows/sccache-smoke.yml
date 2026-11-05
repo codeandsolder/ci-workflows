@@ -36,13 +36,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-15, windows-2025]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: >-
         cargo +1.99.0 test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
       rust-toolchain: "1.99.0"
-      rustflags: "-C target-cpu=x86-64-v2"
+      rustflags: "auto"
       runner: ${{ matrix.runner }}
 
   restore:
@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-15, windows-2025]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: |
@@ -62,5 +62,5 @@ jobs:
           exit 1
         fi
       rust-toolchain: "1.99.0"
-      rustflags: "-C target-cpu=x86-64-v2"
+      rustflags: "auto"
       runner: ${{ matrix.runner }}
