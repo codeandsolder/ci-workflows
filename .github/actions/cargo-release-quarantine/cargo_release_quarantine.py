@@ -109,9 +109,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return QUARANTINED_EXIT
-        print(
-            "Cargo release-age quarantine passed: no lockfile in either revision."
-        )
+        print("Cargo release-age quarantine passed: no lockfile in either revision.")
         return 0
 
     before = {key(pkg) for pkg in load_lock(previous_lock)} if previous_lock else set()
