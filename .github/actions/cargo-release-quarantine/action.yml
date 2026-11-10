@@ -29,6 +29,10 @@ runs:
         BASE_REF: ${{ inputs.base-ref }}
       run: |
         set -euo pipefail
+        if git cat-file -e "${BASE_REF}^{commit}" 2>/dev/null; then
+          echo "Cargo quarantine baseline is present locally; no network fetch needed"
+          exit 0
+        fi
         git fetch --no-tags origin "${BASE_REF}"
 
     - name: Check release ages
