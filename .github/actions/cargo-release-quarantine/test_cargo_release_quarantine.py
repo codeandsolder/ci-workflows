@@ -56,7 +56,7 @@ class QuarantineTest(unittest.TestCase):
     def write(path: str, content: str) -> None:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
+        p.write_text(content, encoding="utf-8")
 
     def baseline(self) -> str:
         self.git("add", "-A")
@@ -66,14 +66,23 @@ class QuarantineTest(unittest.TestCase):
     def test_autodiscovers_root_and_nested_workspaces(self) -> None:
         self.write("Cargo.toml", "[workspace]\nmembers=[]\n")
         self.write("Cargo.lock", make_lock(("serde", "1.0.0")))
-        self.write("workloads/foo/Cargo.toml", "[package]\nname='foo'\nversion='0.1.0'\n")
+        self.write(
+            "workloads/foo/Cargo.toml", "[package]\nname='foo'\nversion='0.1.0'\n"
+        )
         self.write("workloads/foo/Cargo.lock", make_lock(("flate2", "1.0.0")))
         ref = self.baseline()
-        self.write("workloads/foo/Cargo.lock", make_lock(("flate2", "1.0.0"), ("zstd", "0.9.2")))
-        self.write("workloads/bar/Cargo.lock", make_lock(("zstd", "0.9.2"), ("serde", "1.0.0")))
+        self.write(
+            "workloads/foo/Cargo.lock",
+            make_lock(("flate2", "1.0.0"), ("zstd", "0.9.2")),
+        )
+        self.write(
+            "workloads/bar/Cargo.lock", make_lock(("zstd", "0.9.2"), ("serde", "1.0.0"))
+        )
         self.git("add", "-A")
         changed = quarantine.compare_lockfiles(ref, "auto")
-        self.assertEqual([(p["name"], p["version"]) for p in changed], [("zstd", "0.9.2")])
+        self.assertEqual(
+            [(p["name"], p["version"]) for p in changed], [("zstd", "0.9.2")]
+        )
 
     def test_moved_lockfile_does_not_requarantine_same_version(self) -> None:
         self.write("a/Cargo.toml", "[workspace]\n")
@@ -133,8 +142,12 @@ class QuarantineTest(unittest.TestCase):
         self.write("Cargo.lock", make_lock(("serde", "1.0.1")))
         now = dt.datetime.now(dt.UTC)
         with patch.object(quarantine, "publication_time", return_value=now):
-            self.assertEqual(quarantine.quarantine(ref, "auto", 72), quarantine.QUARANTINED_EXIT)
-        with patch.object(quarantine, "publication_time", return_value=now-dt.timedelta(days=8)):
+            self.assertEqual(
+                quarantine.quarantine(ref, "auto", 72), quarantine.QUARANTINED_EXIT
+            )
+        with patch.object(
+            quarantine, "publication_time", return_value=now - dt.timedelta(days=8)
+        ):
             self.assertEqual(quarantine.quarantine(ref, "auto", 72), 0)
 
     def test_missing_metadata_fails_closed(self) -> None:
@@ -143,9 +156,15 @@ class QuarantineTest(unittest.TestCase):
         ref = self.baseline()
         self.write("Cargo.lock", make_lock(("serde", "1.0.1")))
         with patch.object(quarantine, "publication_time", return_value=None):
-            self.assertEqual(quarantine.quarantine(ref, "auto", 72), quarantine.QUARANTINED_EXIT)
-        with patch.object(quarantine, "publication_time", side_effect=OSError("unreachable")):
-            self.assertEqual(quarantine.quarantine(ref, "auto", 72), quarantine.QUARANTINED_EXIT)
+            self.assertEqual(
+                quarantine.quarantine(ref, "auto", 72), quarantine.QUARANTINED_EXIT
+            )
+        with patch.object(
+            quarantine, "publication_time", side_effect=OSError("unreachable")
+        ):
+            self.assertEqual(
+                quarantine.quarantine(ref, "auto", 72), quarantine.QUARANTINED_EXIT
+            )
 
 
 if __name__ == "__main__":

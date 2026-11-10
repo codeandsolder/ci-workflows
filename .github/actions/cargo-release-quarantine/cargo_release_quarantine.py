@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import operator
 import subprocess
 import sys
 import tomllib
@@ -105,10 +106,10 @@ def selected_lockfiles(ref: str, selector: str) -> tuple[set[str], set[str]]:
         try:
             git_show(ref, selector)
         except subprocess.CalledProcessError:
-            before = set()
+            before: set[str] = set()
         else:
             before = {selector}
-        after = {selector} if Path(selector).is_file() else set()
+        after: set[str] = {selector} if Path(selector).is_file() else set()
         return before, after
 
     before = list_tracked_lockfiles(ref)
@@ -152,7 +153,7 @@ def compare_lockfiles(ref: str, selector: str) -> list[LockPackage]:
             if is_crates_io(pkg):
                 after[key(pkg)] = pkg
     changed = [pkg for k, pkg in after.items() if k not in before]
-    return sorted(changed, key=lambda pkg: (pkg["name"], pkg["version"]))
+    return sorted(changed, key=operator.itemgetter("name", "version"))
 
 
 def quarantine(ref: str, selector: str, hours: int) -> int:
@@ -209,7 +210,10 @@ def main() -> int:
     try:
         return quarantine(args.base_ref, args.lockfile, args.hours)
     except (ValueError, subprocess.CalledProcessError, tomllib.TOMLDecodeError) as err:
-        print(f"Cargo release-age quarantine cannot validate lockfiles: {err}", file=sys.stderr)
+        print(
+            f"Cargo release-age quarantine cannot validate lockfiles: {err}",
+            file=sys.stderr,
+        )
         return 1
 
 
