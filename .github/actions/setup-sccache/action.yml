@@ -15,7 +15,7 @@ inputs:
     default: "6144"
 outputs:
   mode:
-    description: public-actions or private-asus-garage
+    description: public-actions or private-local-garage
     value: ${{ steps.mode.outputs.mode }}
   cache-hit:
     description: Exact public compiler-cache key hit.
@@ -32,7 +32,7 @@ runs:
       run: |
         set -euo pipefail
         if [[ "${{ github.event.repository.private }}" == "true" ]]; then
-          echo "mode=private-asus-garage" >> "$GITHUB_OUTPUT"
+          echo "mode=private-local-garage" >> "$GITHUB_OUTPUT"
         else
           echo "mode=public-actions" >> "$GITHUB_OUTPUT"
         fi
@@ -146,34 +146,39 @@ runs:
         "$sccache_bin" --zero-stats
         "$sccache_bin" --version
 
-    - name: Configure private Asus Garage sccache
-      if: steps.mode.outputs.mode == 'private-asus-garage'
+    - name: Configure private managed Garage sccache
+      if: steps.mode.outputs.mode == 'private-local-garage'
       shell: bash
       run: |
         set -euo pipefail
-        case "${RUNNER_NAME,,}" in
-          *asus*) ;;
-          *)
-            echo "private Rust CI must run on the Asus runner; got RUNNER_NAME=$RUNNER_NAME" >&2
-            exit 1
-            ;;
-        esac
-
-        client=/usr/local/libexec/sccache-client
-        if [[ ! -x "$client" ]]; then
-          echo "Asus is missing canonical sccache client: $client" >&2
-          exit 1
-        fi
-
+        # Repository-specific runner registrations may live on Acer or Asus.
+        # Select the existing managed sccache client by filesystem capability,
+        # not a runner-name convention. Never spawn an unconfigured daemon.
         shim_dir="$RUNNER_TEMP/codeandsolder-sccache"
         mkdir -p "$shim_dir"
-        printf '%s\n' \
-          '#!/usr/bin/env bash' \
-          'set -euo pipefail' \
-          'exec env -u SCCACHE_SERVER_UDS SCCACHE_SERVER_PORT=4228 SCCACHE_START_SERVER=0 /usr/local/libexec/sccache-client "$@"' \
-          > "$shim_dir/sccache"
+        if [[ -S /run/host-sccache/sccache.sock && -x /usr/local/bin/sccache ]]; then
+          # The container's mounted client must be compatible with the host
+          # daemon protocol. Connection errors are fatal, not cache misses.
+          transport=container-managed-uds
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'set -euo pipefail' \
+            'exec env -u SCCACHE_SERVER_PORT SCCACHE_SERVER_UDS=/run/host-sccache/sccache.sock SCCACHE_START_SERVER=0 SCCACHE_NO_AUTO_START_SERVER=1 /usr/local/bin/sccache "$@"' \
+            > "$shim_dir/sccache"
+        elif [[ -x /usr/local/libexec/sccache-client ]]; then
+          transport=host-managed-client
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'set -euo pipefail' \
+            'exec env -u SCCACHE_SERVER_UDS -u SCCACHE_SERVER_PORT SCCACHE_START_SERVER=0 SCCACHE_NO_AUTO_START_SERVER=1 /usr/local/libexec/sccache-client "$@"' \
+            > "$shim_dir/sccache"
+        else
+          echo "Private runner lacks a canonical managed sccache client/endpoint (RUNNER_NAME=$RUNNER_NAME)" >&2
+          exit 1
+        fi
         chmod 0755 "$shim_dir/sccache"
 
+        echo "Using managed private sccache transport: $transport"
         "$shim_dir/sccache" --version
         stats_json="$("$shim_dir/sccache" --show-stats --stats-format json)"
         baseline="$(printf '%s' "$stats_json" | node -e '
@@ -193,7 +198,8 @@ runs:
           echo "CODEANDSOLDER_SCCACHE_BASE_WRITE_ERRORS=$baseline_write"
           echo "RUSTC_WRAPPER=$shim_dir/sccache"
           echo "SCCACHE_BIN=$shim_dir/sccache"
-          echo "CODEANDSOLDER_SCCACHE_MODE=private-asus-garage"
+          echo "CODEANDSOLDER_SCCACHE_MODE=private-local-garage"
+          echo "CODEANDSOLDER_SCCACHE_TRANSPORT=$transport"
           echo "CODEANDSOLDER_SCCACHE_CACHE_HIT=system"
           echo "CARGO_INCREMENTAL=0"
         } >> "$GITHUB_ENV"

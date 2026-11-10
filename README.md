@@ -2,7 +2,7 @@
 
 ## Two-tier Rust CI and stale-run cancellation
 
-The standard lane uses `rust-sccache.yml` with the current project Rust toolchain (default `1.99.1`) and Linux (`ubuntu-24.04` for public repos, the existing Asus Linux runner for private repos) on every PR and default-branch push.
+The standard lane uses `rust-sccache.yml` with the current project Rust toolchain (default `1.99.1`) and Linux (`ubuntu-24.04` for public repos, an existing registered local Linux x64 runner for private repos) on every PR and default-branch push.
 
 The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners; other architectures get no CPU override. Explicit `rustflags` are passed through unchanged. Cross-compilation from an X64 runner to another architecture must explicitly set `rustflags: ""` or its own target-appropriate flags. sccache keys use the resolved effective flags, not the `auto` placeholder.
 
@@ -48,7 +48,7 @@ uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> #
 
 Central changes do **not** override project-specific `packageRules` applied later. Remove old local `automerge: false` GitHub Actions and first-party trust-root copies when migrating. Changes to the shared CI's callable workflow inputs may break consumers; those PR checks must be repaired, not bypassed. Do not manually merge ordinary green PRs seconds after they appear: Renovate merges on later runs and insists that the head be up-to-date.
 
-These rules intentionally do not force common runner labels, compiler/target choices, or release artifacts across project boundaries. The reusable `rust-sccache.yml`, shared setup/finalize actions, and Cargo quarantine implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
+These rules standardize execution by repository visibility, not by a host's name or incompatible repository-specific runner labels. They do not force a common compiler/target choice or release artifact across project boundaries. The reusable `rust-sccache.yml`, shared setup/finalize actions, and Cargo quarantine implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
 
 
 
@@ -91,15 +91,17 @@ This deliberately does **not** use sccache's native GHA object backend: that bac
 
 ### Private repositories
 
-Private repositories run on the trusted self-hosted Asus runner labelled `asus`; the provider selects it from the caller repository's visibility and verifies `RUNNER_NAME` contains `asus`. They use the runner's existing system sccache daemon directly. They do not download the GitHub-hosted helper binary and do not restore or save compiler caches with `actions/cache`.
+Private repositories automatically select a registered self-hosted Linux x64 runner using the built-in GitHub labels `[self-hosted, Linux, X64]`. The caller's `runner` input is **public-only**, so private repositories cannot accidentally be dispatched to GitHub-hosted runners. GitHub schedules an eligible existing local runner (Acer or Asus); the shared workflow does not assume a machine name, `local-ci`, `codeandsolder-private`, or `asus` labels.
 
-The mandatory system client is `/usr/local/libexec/sccache-client` and the existing daemon is expected on port `4228`. The workflow sets `SCCACHE_START_SERVER=0`, so a missing daemon fails closed instead of silently starting an isolated cache. These infrastructure settings are deliberately not configurable through reusable-workflow inputs.
+A runner registration remains **repository-scoped** in our current deployment. The repository must have an online registered local runner to execute private jobs; changing a workflow cannot create registrations on another machine. The root-managed `/srv/ci/github-actions/bin/register-repo-runner` on the existing hosts is the standard provisioning mechanism; it defaults to the optional `local-ci` label. Do not add per-repository physical machines.
 
-The caller still controls the Rust toolchain, components, targets, `RUSTFLAGS`, timeout, command and validation tier. Public callers may also choose the hosted runner label and public cache-size bound. The private runner and cache backend cannot be overridden by the caller. Cargo writes build outputs to a runner-local target directory in both modes.
+Private builds use the existing managed sccache backend (Garage) and never create their own sccache daemon or an Actions-backed compiler-cache snapshot. When `/usr/local/libexec/sccache-client` exists, the workflow calls that canonical host wrapper **without overriding its managed UDS/TCP selection**. It is already configured for the correct daemon on Acer and Asus. For containerized runners with a mounted `/run/host-sccache/sccache.sock` and matching `/usr/local/bin/sccache` client, the workflow uses the mounted socket instead. The client must be compatible with the host daemon; otherwise the job fails rather than silently falling back or spawning a second cache. Both use `SCCACHE_START_SERVER=0` and `SCCACHE_NO_AUTO_START_SERVER=1`, and the finalizer requires backend error counters not to increase.
+
+The caller still controls toolchain, components, targets, `RUSTFLAGS`, timeout, command, and validation tier. Public callers may choose the GitHub-hosted runner label and Actions cache size. Private executor selection and compiler-cache backend are centralized. Existing direct-workflow jobs that hardcode `asus` must migrate to these shared workflows or update their own `runs-on` labels; a shared workflow cannot rewrite a separate caller's direct jobs.
 
 ### Test suites that manage sccache daemons
 
-`isolate-public-sccache-server: true` places the hosted Linux/macOS compiler-cache daemon on a dedicated Unix-domain socket, distinct from the default TCP endpoint used by the program's integration tests. This is designed for repositories such as `sccache-deduplicated` whose tests deliberately start/stop their own sccache instance. The compiler and finalizer retain the dedicated socket; the caller should launch **only the test executables** with `SCCACHE_SERVER_UDS` unset using Cargo's target runner, preserving the compiler's mandatory cache. This option is public-Unix only and explicitly rejects Windows instead of silently failing to isolate. Do not use it on the private Asus/Garage runner; the root-managed daemon there remains unchanged.
+`isolate-public-sccache-server: true` places the hosted Linux/macOS compiler-cache daemon on a dedicated Unix-domain socket, distinct from the default TCP endpoint used by the program's integration tests. This is designed for repositories such as `sccache-deduplicated` whose tests deliberately start/stop their own sccache instance. The compiler and finalizer retain the dedicated socket; the caller should launch **only the test executables** with `SCCACHE_SERVER_UDS` unset using Cargo's target runner, preserving the compiler's mandatory cache. This option is public-Unix only and explicitly rejects Windows instead of silently failing to isolate. Do not use it on a private local/Garage runner; the root-managed daemon there remains unchanged.
 
 ## Cargo release-age quarantine
 
