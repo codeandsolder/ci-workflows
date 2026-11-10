@@ -1,19 +1,26 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Immediately track pinned, reviewed codeandsolder reusable CI workflows and strict Rust policy without the Cargo/dependency age hold.",
+  "description": "Immediately automerge first-party CI and strict Rust workflow SHA updates only after their required CI checks succeed; external dependencies retain normal release-age and quarantine.",
   "packageRules": [
     {
-      "description": "Shared CI and strict-lint trust roots: digest changes are reviewed immediately, independent of the ordinary minimum-release-age quarantine",
+      "description": "SHA-pinned first-party shared CI trust roots, validated by consumer CI",
       "matchManagers": [
         "github-actions"
       ],
       "matchPackageNames": [
         "/^codeandsolder\\/(?:ci-workflows|rust-skills2)(?:\\/|$)/"
       ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
       "minimumReleaseAge": null,
       "groupName": "Shared CI trust roots",
       "groupSlug": "shared-ci-trust-roots",
-      "automerge": false
+      "automerge": true,
+      "automergeType": "pr"
     }
-  ]
+  ],
+  "platformAutomerge": false,
+  "ignoreTests": false
 }

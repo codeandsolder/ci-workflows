@@ -1,0 +1,27 @@
+name: Shared Renovate policy invariants
+on:
+  pull_request:
+    paths:
+      - renovate.json
+      - renovate-ci-trust-root.json
+      - renovate-fleet.json
+      - scripts/check-renovate-policy.cjs
+      - .github/workflows/renovate-policy-check.yml
+  push:
+    branches: [main]
+    paths:
+      - renovate.json
+      - renovate-ci-trust-root.json
+      - renovate-fleet.json
+      - scripts/check-renovate-policy.cjs
+      - .github/workflows/renovate-policy-check.yml
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out central policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify shared Renovate invariants
+        run: node scripts/check-renovate-policy.cjs
