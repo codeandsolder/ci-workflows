@@ -18,25 +18,38 @@ concurrency:
 
 This cancels the prior revision of the **same** PR and workflow, without canceling another workflow, release-tag run, schedule or merge-group verification. Do not add a second conflicting concurrency group inside the reusable workflow. Pinned old workflows and their existing runs are not retroactively canceled when callers update.
 
-## Renovate: keep shared CI up to date without the dependency-age wait
+## Renovate: one fleet policy, small consumer exceptions
 
-Each consumer should extend `github>codeandsolder/ci-workflows:renovate-ci-trust-root` in `renovate.json`, and reference shared workflows with immutable SHA plus `# main` so Renovate can track upstream main:
+Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate.json`. Keep only project-specific constraints there (e.g. pinned ABI/toolchain floors, incompatible dependency pairs, genuinely exceptional grouping). The shared preset includes `config:recommended`, pinned GitHub Actions, the [first-party CI trust-root preset](renovate-ci-trust-root.json), and the common update lifecycle.
+
+```json
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>codeandsolder/ci-workflows:renovate-fleet"]
+}
+```
+
+| Update | Central behavior |
+| --- | --- |
+| Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks and three-day release age; compatible Cargo minor/patch updates are grouped |
+| Pre-1.0 patch | PR automerge after green checks and three-day release age |
+| Pre-1.0 minor, major, replacement | PR for review |
+| Third-party GitHub Actions digest/pinning | PR automerge after age-gated green checks |
+| `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped, exempt from the package-age hold; PR automerge after consumer CI succeeds |
+| Lockfile maintenance | Weekly, PR automerge only after checks and any configured release-age quarantine clear |
+
+Use immutable SHA references to shared workflows and actions with a tracking `# main` suffix:
 
 ```yaml
 uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> # main
 ```
 
-The preset exempts only the trusted `codeandsolder/ci-workflows` and `codeandsolder/rust-skills2` GitHub Actions references from `minimumReleaseAge`. It leaves ordinary Cargo dependencies in quarantine and keeps CI trust-root updates reviewable (`automerge: false`). Broad local GitHub Actions grouping rules should exclude these two dependencies or be ordered before the specific trust-root rule, otherwise an unrelated young action can hold back a grouped shared-CI update.
+`platformAutomerge: false` and `ignoreTests: false` deliberately require Renovate itself to observe passing branch checks; this matters for repositories without GitHub required-check protection. A repository without checks **does not automatically merge**. The central age gate and the independent [Cargo release-age quarantine](.github/workflows/cargo-release-quarantine.yml) are complementary: newly introduced crates may not bypass either; the quarantine still blocks for 72 hours. Unrelated failed, pending, or unknown checks also block automerge.
 
-The Cargo release-age quarantine already checks only **new crates.io versions in Cargo.lock**, not GitHub Actions SHAs. A CI-only PR must pass with zero new crates; a mixed PR introducing young crates must still fail. Consumer quarantine workflows should trigger for all PRs rather than path-filtering `Cargo.lock` if the check is branch-protection-required, so a CI-only PR gets an explicit pass instead of an indefinitely expected status.
+Central changes do **not** override project-specific `packageRules` applied later. Remove old local `automerge: false` GitHub Actions and first-party trust-root copies when migrating. Changes to the shared CI's callable workflow inputs may break consumers; those PR checks must be repaired, not bypassed. Do not manually merge ordinary green PRs seconds after they appear: Renovate merges on later runs and insists that the head be up-to-date.
 
-Centrally managed reusable GitHub Actions workflows for `codeandsolder` repositories.
+These rules intentionally do not force common runner labels, compiler/target choices, or release artifacts across project boundaries. The reusable `rust-sccache.yml`, shared setup/finalize actions, and Cargo quarantine implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
 
-## Renovate-tracked reusable workflow pins
-
-Consumers should call reusable workflows with an immutable full commit SHA plus the tracked branch comment, for example `@<full-commit-sha> # main`. Renovate's GitHub Actions manager can then advance the SHA as `main` moves while every individual CI run still executes immutable code. Bare SHAs are intentionally avoided because they do not tell Renovate which branch or tag to follow; floating `@main` is avoided because the executed workflow can change without a caller commit.
-
-The repository Renovate configuration already enables GitHub Actions dependency management and digest pinning, so the same convention is used for this repository's own `rust-skills2` reusable-workflow dependency.
 
 ## Rust sccache policy
 
