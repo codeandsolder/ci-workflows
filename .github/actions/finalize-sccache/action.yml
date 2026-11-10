@@ -30,8 +30,8 @@ runs:
           exit 1
         fi
 
-    - name: Verify private Asus Garage connection
-      if: env.CODEANDSOLDER_SCCACHE_MODE == 'private-asus-garage'
+    - name: Verify managed private Garage connection
+      if: env.CODEANDSOLDER_SCCACHE_MODE == 'private-local-garage'
       shell: bash
       run: |
         set -euo pipefail
