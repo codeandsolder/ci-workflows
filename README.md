@@ -51,6 +51,28 @@ Central changes do **not** override project-specific `packageRules` applied late
 These rules intentionally do not force common runner labels, compiler/target choices, or release artifacts across project boundaries. The reusable `rust-sccache.yml`, shared setup/finalize actions, and Cargo quarantine implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
 
 
+
+### Validating Renovate-only changes without rebuilding the product
+
+The reusable [`renovate-config.yml`](.github/workflows/renovate-config.yml) uses the official, version-pinned Renovate CLI to validate the caller's root `renovate.json`. A consumer can give Renovate-only pull requests one genuine, inexpensive config test:
+
+```yaml
+name: Renovate configuration
+on:
+  pull_request:
+    paths: [renovate.json]
+permissions:
+  contents: read
+jobs:
+  validate:
+    uses: codeandsolder/ci-workflows/.github/workflows/renovate-config.yml@<full-sha> # main
+```
+
+The root config is the only file expected by this contract. Keep the normal product build, lint, test, cross-platform and release gates for PRs that change source, Cargo manifests/lockfiles, CI workflows or release configuration. For workflows without required check names, `pull_request.paths-ignore: [renovate.json]` can avoid launching an expensive product matrix on an exclusively config-only PR; any other modified file still causes it to run. If a required GitHub check would be skipped and left pending, use a job-level detection/skip strategy instead of filtering away that required workflow. Never use an empty JSON syntax check as a substitute for the actual Renovate validator.
+
+The provider's own [`sccache-smoke.yml`](.github/workflows/sccache-smoke.yml) runs its full Linux/ARM/macOS/Windows matrix only when shared sccache implementation, smoke fixtures, or the smoke workflow itself change; manual dispatch remains available. Renovate preset edits run the dedicated policy-invariants and upstream validator checks, without exercising unrelated cache platforms.
+
+
 ## Rust sccache policy
 
 `.github/workflows/rust-sccache.yml` chooses the execution/cache path from the caller repository visibility.
