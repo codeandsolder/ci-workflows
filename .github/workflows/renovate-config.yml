@@ -1,0 +1,25 @@
+name: Validate Renovate configuration
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  renovate-config:
+    name: Validate Renovate configuration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate Renovate configuration with the upstream CLI
+        shell: bash
+        env:
+          npm_config_cache: ${{ runner.temp }}/renovate-validator-npm
+        run: |
+          set -euo pipefail
+          test -f renovate.json
+          npx --yes --package=renovate@44.222.5 renovate-config-validator renovate.json
