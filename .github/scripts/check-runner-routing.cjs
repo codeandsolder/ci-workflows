@@ -9,7 +9,7 @@ const finalize = fs.readFileSync('.github/actions/finalize-sccache/action.yml', 
 const selector = workflow.split('\n').find(line => line.trimStart().startsWith('runs-on:'));
 assert.equal(
   selector.trim(),
-  `runs-on: ${'\x24'}{{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64"]') || inputs.runner }}`
+  `runs-on: ${'\x24'}{{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || inputs.runner }}`
 );
 assert.match(workflow, /default: "ubuntu-24\.04"/);
 assert.match(setup, /if \[\[ "\$\{\{ github\.event\.repository\.private \}\}" == "true" \]\]/);
@@ -21,4 +21,4 @@ assert.match(setup, /SCCACHE_START_SERVER=0 SCCACHE_NO_AUTO_START_SERVER=1/);
 assert.doesNotMatch(setup, /RUNNER_NAME,,|SCCACHE_SERVER_PORT=4228|private-asus-garage/);
 assert.match(finalize, /private-local-garage/);
 assert.doesNotMatch(finalize, /private-asus-garage/);
-console.log('Visibility policy: public -> hosted Ubuntu; private -> any registered Linux x64 self-hosted runner, managed Garage only');
+console.log('Visibility policy: public -> hosted Ubuntu; private -> any trusted locally managed Linux x64 runner (local-ci label), managed Garage only');
