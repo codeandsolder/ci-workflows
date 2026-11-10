@@ -2,8 +2,20 @@ name: Persistent Actions sccache smoke
 
 on:
   pull_request:
+    paths:
+      - .github/workflows/rust-sccache.yml
+      - .github/workflows/sccache-smoke.yml
+      - .github/actions/setup-sccache/**
+      - .github/actions/finalize-sccache/**
+      - smoke-cache/**
   push:
     branches: [main]
+    paths:
+      - .github/workflows/rust-sccache.yml
+      - .github/workflows/sccache-smoke.yml
+      - .github/actions/setup-sccache/**
+      - .github/actions/finalize-sccache/**
+      - smoke-cache/**
   workflow_dispatch:
 
 concurrency:
