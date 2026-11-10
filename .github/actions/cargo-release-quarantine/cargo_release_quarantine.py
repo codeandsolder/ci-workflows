@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce a minimum age for newly introduced crates.io lockfile entries."""
+"""Enforce minimum crates.io publication age across tracked Cargo lockfiles."""
 
 from __future__ import annotations
 
@@ -37,6 +37,27 @@ _cache: dict[str, dict[str, CrateVersion]] = {}
 
 def git_show(ref: str, path: str) -> bytes:
     return subprocess.check_output(["git", "show", f"{ref}:{path}"])
+
+
+def git_baseline_is_valid(ref: str) -> None:
+    subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+
+
+def list_tracked_lockfiles(ref: str | None = None) -> set[str]:
+    if ref is None:
+        cmd = ["git", "ls-files", "--cached", "-z"]
+    else:
+        cmd = ["git", "ls-tree", "-r", "--name-only", "-z", ref]
+    files = subprocess.check_output(cmd).decode("utf-8", errors="surrogateescape")
+    return {
+        path
+        for path in files.split("\0")
+        if path == "Cargo.lock" or path.endswith("/Cargo.lock")
+    }
 
 
 def load_lock(raw: bytes) -> list[LockPackage]:
@@ -77,50 +98,76 @@ def publication_time(pkg: LockPackage) -> dt.datetime | None:
     return dt.datetime.fromisoformat(value) if value else None
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--base-ref", required=True)
-    parser.add_argument("--hours", type=int, default=72)
-    parser.add_argument("--lockfile", default="Cargo.lock")
-    args = parser.parse_args()
+def selected_lockfiles(ref: str, selector: str) -> tuple[set[str], set[str]]:
+    if selector != "auto":
+        # Explicit path selection is useful for CI scripts that inspect a
+        # particular lockfile, including generated test fixtures.
+        try:
+            git_show(ref, selector)
+        except subprocess.CalledProcessError:
+            before = set()
+        else:
+            before = {selector}
+        after = {selector} if Path(selector).is_file() else set()
+        return before, after
 
-    if args.hours < 0:
-        parser.error("--hours must be non-negative")
+    before = list_tracked_lockfiles(ref)
+    tracked = list_tracked_lockfiles()
+    after = {path for path in tracked if Path(path).is_file()}
+    for path in sorted(tracked):
+        if Path(path).is_symlink():
+            raise ValueError(f"refusing symlinked tracked lockfile {path}")
 
-    lockfile = Path(args.lockfile)
-    try:
-        previous_lock = git_show(args.base_ref, args.lockfile)
-    except subprocess.CalledProcessError:
-        # A missing file is legitimate, but an invalid/inaccessible baseline is not.
-        subprocess.run(
-            ["git", "rev-parse", "--verify", "--quiet", f"{args.base_ref}^{{commit}}"],
-            check=True,
-            stdout=subprocess.DEVNULL,
+    return before, after
+
+
+def compare_lockfiles(ref: str, selector: str) -> list[LockPackage]:
+    """Return new crate versions across the union of all tracked lockfiles."""
+    before_files, after_files = selected_lockfiles(ref, selector)
+
+    if selector != "auto" and before_files - after_files:
+        raise ValueError(
+            f"explicitly selected lockfile {selector} was removed from this revision"
         )
-        previous_lock = None
 
-    # An Actions-only update introduces no crates, unless it has *removed* an
-    # existing lockfile. That is never a valid way to bypass quarantine.
-    if not lockfile.is_file():
-        if previous_lock is not None:
-            print(
-                f"Cargo release-age quarantine failed: {args.lockfile} existed "
-                "in the baseline but is missing in this revision.",
-                file=sys.stderr,
+    for removed in sorted(before_files - after_files):
+        manifest = Path(removed).with_name("Cargo.toml")
+        if manifest.is_file():
+            raise ValueError(
+                f"tracked lockfile {removed} was removed but workspace manifest "
+                f"{manifest} still exists; restore the lockfile or remove the "
+                "workspace explicitly"
             )
-            return QUARANTINED_EXIT
-        print("Cargo release-age quarantine passed: no lockfile in either revision.")
-        return 0
 
-    before = {key(pkg) for pkg in load_lock(previous_lock)} if previous_lock else set()
+    before = {
+        key(pkg)
+        for file in sorted(before_files)
+        for pkg in load_lock(git_show(ref, file))
+        if is_crates_io(pkg)
+    }
 
-    after = load_lock(lockfile.read_bytes())
-    changed = [pkg for pkg in after if key(pkg) not in before and is_crates_io(pkg)]
-    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(hours=args.hours)
+    after: dict[tuple[str, str, str | None], LockPackage] = {}
+    for file in sorted(after_files):
+        for pkg in load_lock(Path(file).read_bytes()):
+            if is_crates_io(pkg):
+                after[key(pkg)] = pkg
+    changed = [pkg for k, pkg in after.items() if k not in before]
+    return sorted(changed, key=lambda pkg: (pkg["name"], pkg["version"]))
 
+
+def quarantine(ref: str, selector: str, hours: int) -> int:
+    git_baseline_is_valid(ref)
+    changed = compare_lockfiles(ref, selector)
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(hours=hours)
     blocked: list[str] = []
     for pkg in changed:
-        when = publication_time(pkg)
+        try:
+            when = publication_time(pkg)
+        except (OSError, ValueError, KeyError) as err:
+            blocked.append(
+                f"{pkg['name']} {pkg['version']}: crates.io lookup failed: {err}"
+            )
+            continue
         if when is None:
             blocked.append(
                 f"{pkg['name']} {pkg['version']}: missing authoritative crates.io publication time"
@@ -128,7 +175,7 @@ def main() -> int:
         elif when > cutoff:
             blocked.append(
                 f"{pkg['name']} {pkg['version']}: published {when.isoformat()}, "
-                f"younger than {args.hours}h"
+                f"younger than {hours}h"
             )
 
     if blocked:
@@ -138,9 +185,32 @@ def main() -> int:
         return QUARANTINED_EXIT
 
     print(
-        f"Cargo release-age quarantine passed for {len(changed)} newly introduced crates.io package versions."
+        "Cargo release-age quarantine passed for "
+        f"{len(changed)} newly introduced crates.io package versions "
+        f"across {selector if selector != 'auto' else 'all tracked Cargo.lock files'}."
     )
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-ref", required=True)
+    parser.add_argument("--hours", type=int, default=72)
+    parser.add_argument(
+        "--lockfile",
+        default="auto",
+        help="'auto' scans all tracked Cargo.lock files; otherwise one repository-relative path",
+    )
+    args = parser.parse_args()
+
+    if args.hours < 0:
+        parser.error("--hours must be non-negative")
+
+    try:
+        return quarantine(args.base_ref, args.lockfile, args.hours)
+    except (ValueError, subprocess.CalledProcessError, tomllib.TOMLDecodeError) as err:
+        print(f"Cargo release-age quarantine cannot validate lockfiles: {err}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
