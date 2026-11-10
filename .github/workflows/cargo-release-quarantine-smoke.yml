@@ -23,11 +23,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 2
           persist-credentials: false
 
       - name: Check multi-workspace quarantine invariants
         run: python3 -m unittest discover -v -s .github/actions/cargo-release-quarantine -p 'test_*.py'
+
+      - name: Assert PR base is available without Git credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: git cat-file -e "${BASE_REF}^{commit}"
 
       - name: Create synthetic introduced crates.io entry
         shell: bash
@@ -48,7 +55,7 @@ jobs:
         id: no-lockfile
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.sha }}
+          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
           hours: "1000000"
           lockfile: .quarantine-smoke/not-present.lock
 
@@ -66,7 +73,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.sha }}
+          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
           hours: "0"
           lockfile: README.md
 
@@ -84,7 +91,7 @@ jobs:
         id: eligible
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.sha }}
+          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
           hours: "0"
           lockfile: .quarantine-smoke/Cargo.lock
 
@@ -97,7 +104,7 @@ jobs:
         id: soft-blocked
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.sha }}
+          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
           hours: "1000000"
           lockfile: .quarantine-smoke/Cargo.lock
           fail-on-blocked: "false"
@@ -112,7 +119,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.sha }}
+          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
           hours: "1000000"
           lockfile: .quarantine-smoke/Cargo.lock
 
