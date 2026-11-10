@@ -26,6 +26,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Check multi-workspace quarantine invariants
+        run: python3 -m unittest discover -v -s .github/actions/cargo-release-quarantine -p 'test_*.py'
+
       - name: Create synthetic introduced crates.io entry
         shell: bash
         run: |

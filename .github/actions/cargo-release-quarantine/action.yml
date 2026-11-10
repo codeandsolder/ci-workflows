@@ -9,9 +9,9 @@ inputs:
     required: false
     default: "72"
   lockfile:
-    description: Repository-relative Cargo lockfile path.
+    description: Repository-relative Cargo lockfile path, or auto for all tracked workspaces.
     required: false
-    default: Cargo.lock
+    default: auto
   fail-on-blocked:
     description: Fail the action when quarantine is still active; set false for eligibility probes.
     required: false

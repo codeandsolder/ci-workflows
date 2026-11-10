@@ -14,10 +14,10 @@ on:
         type: number
         default: 72
       lockfile:
-        description: Repository-relative Cargo lockfile path.
+        description: Repository-relative Cargo lockfile path, or auto for all tracked workspaces.
         required: false
         type: string
-        default: Cargo.lock
+        default: auto
 
 permissions:
   contents: read
