@@ -23,6 +23,24 @@
   },
   "packageRules": [
     {
+      "description": "Do not deadlock immutable pins, digests and lockfile-only updates on missing upstream release timestamps (Renovate #45236)",
+      "matchUpdateTypes": [
+        "pin",
+        "pinDigest",
+        "digest",
+        "lockFileMaintenance",
+        "lockfileUpdate"
+      ],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
+      "description": "GitHub-hosted runner labels have no release timestamps and major runner updates still require review",
+      "matchDepTypes": [
+        "github-runner"
+      ],
+      "minimumReleaseAge": null
+    },
+    {
       "description": "Automerge compatible 1.x+ minor and patch updates, pins and digests after required CI",
       "matchUpdateTypes": [
         "minor",

@@ -21,6 +21,18 @@ assert.equal(firstRule.automerge,true);
 assert.equal(firstRule.minimumReleaseAge,null);
 assert.deepEqual(firstRule.matchUpdateTypes,['digest','pinDigest']);
 assert.deepEqual(firstRule.matchManagers,['github-actions']);
+// Renovate #45236: branch-level stability status has no usable timestamp for these update classes.
+// The global 72h timestamp-required policy remains intact for normal releases.
+const timestampOptional=fleet.packageRules.find(r=>r.minimumReleaseAgeBehaviour==='timestamp-optional');
+assert(timestampOptional);
+assert.deepEqual(timestampOptional.matchUpdateTypes,['pin','pinDigest','digest','lockFileMaintenance','lockfileUpdate']);
+assert.equal(Object.hasOwn(timestampOptional,'minimumReleaseAge'),false);
+assert.equal(Object.hasOwn(timestampOptional,'automerge'),false);
+const runners=fleet.packageRules.find(r=>r.matchDepTypes?.includes('github-runner'));
+assert(runners);
+assert.deepEqual(runners.matchDepTypes,['github-runner']);
+assert.equal(runners.minimumReleaseAge,null);
+assert.equal(Object.hasOwn(runners,'automerge'),false);
 const stable=fleet.packageRules.find(r=>r.matchCurrentVersion==='!/^0\\./');
 assert.equal(stable.automerge,true);
 assert(stable.matchUpdateTypes.includes('patch'));
