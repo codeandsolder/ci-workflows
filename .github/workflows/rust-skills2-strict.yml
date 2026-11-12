@@ -14,6 +14,6 @@ permissions:
 
 jobs:
   strict-rust-smoke-cache:
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@a85199b5f3ff3a76c035b4412130038d8e831b45 # main
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@61c68880f8b068970dbc14bc7356d6101cd61cba # main
     with:
       working-directory: smoke-cache
