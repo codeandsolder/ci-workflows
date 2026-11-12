@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly check for expired Renovate Cargo quarantines
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+AccuracySec=1min
+Persistent=true
+Unit=renovate-quarantine-recheck.service
+
+[Install]
+WantedBy=timers.target
