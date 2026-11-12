@@ -8,11 +8,14 @@ Type=oneshot
 User=sentinelx
 Group=sentinelx
 WorkingDirectory=/srv/ci-workflows
+# Mint a scoped installation token via its existing root-owned systemd oneshot.
+ExecStartPre=+/usr/bin/systemctl start github-app-token.service
 ExecStartPre=/usr/bin/git -C /srv/ci-workflows pull --ff-only --quiet origin main
 ExecStart=/usr/bin/node /srv/ci-workflows/scripts/renovate-quarantine-recheck.mjs --apply --max=10 --grace-minutes=15
 TimeoutStartSec=20min
 Nice=10
 IOSchedulingClass=idle
+NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=/srv/ci-workflows

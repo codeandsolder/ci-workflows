@@ -35,7 +35,7 @@ is the merged ci-workflows main branch; the live checkout is under /srv.
 If /srv/ci-workflows already exists, pull --ff-only rather than re-cloning.
 The service updates its checkout before every run; a failed pull blocks retry.
 It uses the existing GitHub App helper, not an unscoped PAT.
-The helper may refresh tokens via its narrowly scoped sudo rule; do not use NoNewPrivileges=true on this unit.
+The privileged ExecStartPre invokes the existing root-owned token-minting oneshot, so the actual fleet scanner can run under NoNewPrivileges=true with a fresh scoped credential.
 
 ## Verification and operations
 
