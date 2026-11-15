@@ -33,6 +33,7 @@ Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate
 | --- | --- |
 | Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks and three-day release age; compatible Cargo minor/patch updates are grouped |
 | Pre-1.0 patch | PR automerge after green checks and three-day release age |
+| Rust toolchain (stable and nightly) | PR for review; do not silently change pinned compiler versions or project MSRV |
 | Pre-1.0 minor, major, replacement | PR for review |
 | Third-party GitHub Actions digest/pinning | PR automerge after age-gated green checks |
 | `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped, exempt from the package-age hold; PR automerge after consumer CI succeeds |
