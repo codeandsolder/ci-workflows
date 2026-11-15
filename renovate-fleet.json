@@ -102,6 +102,13 @@
         "replacement"
       ],
       "automerge": false
+    },
+    {
+      "description": "Rust toolchain updates change compiler/lint diagnostics and the default build toolchain, even when Renovate calls 1.99 to 1.100 a compatible minor. Propose PRs for human review rather than silently raising per-repository compiler pins/MSRV.",
+      "matchManagers": [
+        "rust-toolchain"
+      ],
+      "automerge": false
     }
   ],
   "platformAutomerge": false,

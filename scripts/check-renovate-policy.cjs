@@ -46,5 +46,11 @@ for (const type of ['major','replacement']) {
 const actions=fleet.packageRules.find(r=>r.matchManagers?.includes('github-actions'));
 assert.deepEqual(actions.matchUpdateTypes,['digest','pinDigest']);
 assert.equal(actions.automerge,true);
+const toolchain=fleet.packageRules.find(r=>r.matchManagers?.includes('rust-toolchain'));
+assert(toolchain,'missing Rust toolchain review-only rule');
+assert.deepEqual(toolchain.matchManagers,['rust-toolchain']);
+assert.equal(toolchain.automerge,false);
+assert.equal(toolchain.enabled,undefined);
+assert(fleet.packageRules.indexOf(toolchain)>fleet.packageRules.indexOf(stable),'toolchain rule must override generic stable minor automerge');
 assert.equal(fleet.lockFileMaintenance.automerge,true);
 console.log('Shared fleet Renovate configuration and trust-root precedence invariants: PASS');
