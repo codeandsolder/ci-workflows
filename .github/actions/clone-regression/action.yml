@@ -1,0 +1,8 @@
+name: "Detect new duplicated code"
+description: "Check a repository against its Git base with pinned doppelscan"
+runs:
+  using: composite
+  steps:
+    - name: Compare clones against base
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/run-clone-regression.sh"

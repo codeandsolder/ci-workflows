@@ -1,0 +1,37 @@
+name: Clone regression smoke
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/clone-regression.yml
+      - .github/workflows/clone-regression-smoke.yml
+      - .github/scripts/run-clone-regression.sh
+      - .github/scripts/test-clone-regression.sh
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/clone-regression.yml
+      - .github/workflows/clone-regression-smoke.yml
+      - .github/scripts/run-clone-regression.sh
+      - .github/scripts/test-clone-regression.sh
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    uses: ./.github/workflows/clone-regression.yml
+
+  integration:
+    name: Clone gate semantics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify exact, renamed, existing-edit, move and advisory clones
+        uses: ./.github/actions/clone-regression-test

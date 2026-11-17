@@ -113,3 +113,62 @@ By default, `lockfile: auto` scans **all git-tracked `Cargo.lock` files**, inclu
 Use `lockfile: path/to/Cargo.lock` only when a *single* explicit lockfile is desired, for example a synthetic CI fixture. Standard Rust CI should use the `auto` default. The action also supports `fail-on-blocked: "false"` when a maintenance process wants to probe eligibility without making CI red. The checker discovers tracked paths via Git, not untracked `target` or CI checkout folders; no code from lockfiles is executed. For private caller repositories, check out the PR merge ref with `fetch-depth: 2` before invoking the direct action: the exact PR base commit will already exist locally, so no network fetch (and no retained Git authentication) is required. The action verifies the SHA exists locally before attempting a fallback fetch; if GitHub did not supply that commit, a failed fetch is a hard CI failure, not a quarantine bypass.
 
 The underlying `.github/actions/cargo-release-quarantine` composite also supports non-failing eligibility probes (`fail-on-blocked: "false"`) for automation that needs to wait for a frozen lockfile snapshot to age without modifying it.
+
+## Duplicate-code regression gate
+
+Use the pinned reusable [clone-regression.yml](.github/workflows/clone-regression.yml)
+on pull requests and default-branch pushes. It runs `doppelscan` **v0.9.0** on
+all supported languages (or optional `languages`), reports newly introduced
+clones at **50 or more syntax tokens**, and **fails only for new clones of at
+least 80 tokens**. Existing clone groups in the Git base revision are
+grandfathered in; a benign edit to an accepted copy does not fail. The
+detector uses normalized Rust syntax matching, not just exact text.
+
+A consumer workflow can be as small as:
+
+```yaml
+name: Duplicate-code regression
+on:
+  pull_request:
+  push:
+    branches: [main] # adapt to the repository's default branch
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  duplicates:
+    uses: codeandsolder/ci-workflows/.github/workflows/clone-regression.yml@<full-commit-sha> # main
+```
+
+The gate fetches the PR base SHA (or `push.before`) without fetching full
+history and runs on `ubuntu-24.04` for public repositories or existing
+`local-ci` Linux X64 runners for private ones. It downloads a SHA256-verified
+release binary into the job's temporary directory; **no Rust toolchain or
+compiler cache is involved**. The `doppelscan-report.json` artifact retains
+all newly reported groups, and the GitHub job summary links their source
+locations. It never writes a suppression baseline to the repository.
+
+By default the reusable workflow excludes dedicated `tests/`, `examples/`,
+`benches/`, `vendor/`, `node_modules/`, `target/` directories and the injected
+`.ci-workflows/` implementation checkout. Inline `#[cfg(test)]` modules in
+Rust production files are still scanned. Caller-specific paths can be
+excluded with the newline-separated `exclude-globs` input; `scan-path` can
+scope exceptionally large repositories. Excluding paths suppresses *both*
+discovery and blocking there; avoid excluding ordinary production code.
+
+The workflow input defaults are `discovery-tokens: 50`,
+`blocking-tokens: 80`, `languages: ""` and `scan-path: "."`. Invalid
+thresholds or missing base commits fail the job rather than silently
+disabling the gate. A new repository's all-zero initial push has no baseline
+and is not supported by this differential gate. `merge_group` contexts are
+also supported when the caller subscribes to that event.
+
+The provider's [clone-regression-smoke.yml](.github/workflows/clone-regression-smoke.yml)
+executes the *real* reusable workflow plus an isolated Git fixture covering
+new exact and renamed clones, edits to accepted clones, moves, excluded tests,
+and advisory-only groups.
