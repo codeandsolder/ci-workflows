@@ -1,0 +1,91 @@
+name: Duplicate code regression
+
+on:
+  workflow_call:
+    inputs:
+      discovery-tokens:
+        description: Report new clone groups at or above this number of syntax tokens
+        type: number
+        default: 50
+      blocking-tokens:
+        description: Fail for new clone groups at or above this number of syntax tokens
+        type: number
+        default: 80
+      languages:
+        description: Optional comma-separated language names (empty means all supported)
+        type: string
+        default: ""
+      scan-path:
+        description: Path relative to the caller's repository to scan
+        type: string
+        default: "."
+      exclude-globs:
+        description: Optional newline-separated additional exclusion globs
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  clones:
+    name: New duplicated code
+    if: >-
+      ${{
+        github.event_name == 'pull_request' ||
+        github.event_name == 'push' ||
+        github.event_name == 'merge_group'
+      }}
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout pinned shared implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-workflows
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/clone-regression
+            .github/scripts/run-clone-regression.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Compare duplication against base revision
+        uses: ./.ci-workflows/.github/actions/clone-regression
+        env:
+          CLONE_GUARD_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          CLONE_GUARD_DISCOVERY_TOKENS: ${{ inputs.discovery-tokens }}
+          CLONE_GUARD_BLOCKING_TOKENS: ${{ inputs.blocking-tokens }}
+          CLONE_GUARD_LANGUAGES: ${{ inputs.languages }}
+          CLONE_GUARD_SCAN_PATH: ${{ inputs.scan-path }}
+          CLONE_GUARD_EXCLUDES: |
+            .ci-workflows/**
+            tests/**
+            **/tests/**
+            examples/**
+            **/examples/**
+            benches/**
+            **/benches/**
+            vendor/**
+            **/vendor/**
+            node_modules/**
+            **/node_modules/**
+            target/**
+            **/target/**
+            ${{ inputs.exclude-globs }}
+
+
+      - name: Upload full clone findings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: doppelscan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/doppelscan-report.json
+          retention-days: 7
+          if-no-files-found: ignore

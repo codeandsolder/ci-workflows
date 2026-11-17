@@ -1,0 +1,8 @@
+name: "Test clone regression policy"
+description: "Execute isolated Git-revision fixtures against the real duplication scanner"
+runs:
+  using: composite
+  steps:
+    - name: Verify new/existing/advisory clone cases
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/test-clone-regression.sh"
