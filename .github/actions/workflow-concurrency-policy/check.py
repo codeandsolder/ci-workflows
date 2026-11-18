@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Require safe PR supersession settings on every GitHub Actions workflow."""
 
 from __future__ import annotations
@@ -50,7 +49,11 @@ def cancels_all_prs(value: object, events: set[str]) -> bool:
 
 
 def validate(path: Path, doc: dict, events: dict[str, object]) -> list[str]:
-    relevant = {event for event, settings in events.items() if needs_pr_cancellation(event, settings)}
+    relevant = {
+        event
+        for event, settings in events.items()
+        if needs_pr_cancellation(event, settings)
+    }
     if not relevant:
         return []
     problems = []
@@ -112,10 +115,14 @@ def inspect_root(root: Path) -> list[str]:
             continue
         events = triggers(doc)
         problems.extend(validate(rel, doc, events))
-        if not any(needs_pr_cancellation(e, settings) for e, settings in events.items()):
+        if not any(
+            needs_pr_cancellation(e, settings) for e, settings in events.items()
+        ):
             continue
         concurrency = doc.get("concurrency")
-        if not isinstance(concurrency, dict) or not isinstance(concurrency.get("group"), str):
+        if not isinstance(concurrency, dict) or not isinstance(
+            concurrency.get("group"), str
+        ):
             continue
         # GitHub scopes groups to repository, *not* workflow. A group template
         # using github.workflow can still collide if two files share a name.

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Regression fixtures for the shared workflow supersession policy."""
 
 from __future__ import annotations
@@ -52,38 +51,79 @@ check({"ci.yml": workflow()})
 check({"ci.yaml": workflow()})
 check({"ci.yml": workflow(trigger="  pull_request:\n", cancel="true")})
 check({"ci.yml": workflow(trigger="  pull_request_target:\n", cancel="true")})
-check({"ci.yml": workflow(
-    trigger="  pull_request:\n",
-    group="${{ github.workflow }}-${{ github.event.pull_request.number }}",
-    cancel="true",
-)})
-check({"ci.yml": workflow(
-    trigger="  pull_request:\n",
-    group="${{ github.workflow }}-${{ github.ref }}",
-    cancel="true",
-)})
-check({"ci.yml": workflow(
-    trigger="  pull_request:\n  pull_request_target:\n",
-    cancel="${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}",
-)})
-check({"ci.yml": workflow(
-    trigger="  pull_request_target:\n",
-    group="ci-${{ github.event.pull_request.number }}",
-    cancel="${{ github.event_name == 'pull_request_target' }}",
-)})
-check({"ci.yml": workflow(trigger="  push:\n    branches: [main]\n", group="", cancel="false")})
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request:\n",
+            group="${{ github.workflow }}-${{ github.event.pull_request.number }}",
+            cancel="true",
+        )
+    }
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request:\n",
+            group="${{ github.workflow }}-${{ github.ref }}",
+            cancel="true",
+        )
+    }
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request:\n  pull_request_target:\n",
+            cancel="${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}",
+        )
+    }
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request_target:\n",
+            group="ci-${{ github.event.pull_request.number }}",
+            cancel="${{ github.event_name == 'pull_request_target' }}",
+        )
+    }
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  push:\n    branches: [main]\n", group="", cancel="false"
+        )
+    }
+)
 check({"ci.yml": workflow(trigger="  workflow_call:\n", group="", cancel="false")})
 check({"ci.yml": workflow(trigger="  workflow_dispatch:\n", group="", cancel="false")})
-check({"ci.yml": workflow(trigger="  pull_request:\n    types: [closed]\n", group="", cancel="false")})
-check({"ci.yml": workflow(
-    trigger="  pull_request:\n",
-    cancel="${{ (github.event_name == 'pull_request') }}",
-)})
-check({
-    "ci.yml": workflow(group="ci-${{ github.event.pull_request.number || github.ref }}", name="CI"),
-    "lint.yml": workflow(group="lint-${{ github.event.pull_request.number || github.ref }}", name="Lint"),
-})
-check({"ci.yml": """
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request:\n    types: [closed]\n", group="", cancel="false"
+        )
+    }
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request:\n",
+            cancel="${{ (github.event_name == 'pull_request') }}",
+        )
+    }
+)
+check(
+    {
+        "ci.yml": workflow(
+            group="ci-${{ github.event.pull_request.number || github.ref }}", name="CI"
+        ),
+        "lint.yml": workflow(
+            group="lint-${{ github.event.pull_request.number || github.ref }}",
+            name="Lint",
+        ),
+    }
+)
+check(
+    {
+        "ci.yml": """
 name: CI
 on:
   pull_request:
@@ -94,51 +134,99 @@ concurrency: *policy
 jobs:
   build:
     runs-on: ubuntu-24.04
-"""})
+"""
+    }
+)
 
 # Incorrect: workflow-level cancellation is absent, job-only is not enough;
 # absent uniqueness, cross-workflow group collision, incorrect PR target ref,
 # ignoring some PR events, collapsing all push events, unsupported YAML.
-check({"ci.yml": "on: pull_request\njobs:\n  test:\n    runs-on: ubuntu-latest\n"}, "requires top-level")
+check(
+    {"ci.yml": "on: pull_request\njobs:\n  test:\n    runs-on: ubuntu-latest\n"},
+    "requires top-level",
+)
 check({"ci.yml": workflow(group="test", cancel="true")}, "lacks a PR-unique key")
 check({"ci.yml": workflow(group="", cancel="true")}, "group must be nonempty")
 check({"ci.yml": workflow(cancel="false")}, "cancel-in-progress must cancel")
-check({"ci.yml": workflow(cancel="${{ github.event_name == 'push' }}")}, "cancel-in-progress must cancel")
-check({"ci.yml": workflow(
-    cancel="${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}"
-)}, "cancel-in-progress must cancel")
-check({"ci.yml": workflow(
-    group="${{ github.event.pull_request.number }}", cancel="true"
-)}, "requires non-PR fallback")
-check({"ci.yml": workflow(
-    trigger="  pull_request_target:\n",
-    group="${{ github.workflow }}-${{ github.ref }}", cancel="true"
-)}, "pull_request_target group")
-check({"ci.yml": workflow(
-    trigger="  pull_request:\n  workflow_call:\n"
-)}, "workflow_call mixed")
-check({"ci.yml": workflow(
-    trigger="  pull_request:\n  pull_request_target:\n",
-    group="${{ github.workflow }}-${{ github.event.pull_request.number }}",
-    cancel="true",
-)}, "separate event-specific groups")
-check({"ci.yml": workflow(
-    group="${{ github.workflow }}-${{ github.head_ref }}", cancel="true"
-)}, "lacks a PR-unique key")
-check({"ci.yml": workflow(
-    trigger="  pull_request:\n",
-    group="${{ github.workflow }}-${{ github.ref }}",
-    cancel="true",
-    name="Same Name",
-), "also.yml": workflow(
-    trigger="  pull_request:\n",
-    group="${{ github.workflow }}-${{ github.ref }}",
-    cancel="true",
-    name="Same Name",
-)}, "collides")
-check({"ci.yml": "on: [pull_request]\nconcurrency:\n  group: test\n  cancel-in-progress: false\n"}, "lacks a PR-unique key")
+check(
+    {"ci.yml": workflow(cancel="${{ github.event_name == 'push' }}")},
+    "cancel-in-progress must cancel",
+)
+check(
+    {
+        "ci.yml": workflow(
+            cancel="${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}"
+        )
+    },
+    "cancel-in-progress must cancel",
+)
+check(
+    {
+        "ci.yml": workflow(
+            group="${{ github.event.pull_request.number }}", cancel="true"
+        )
+    },
+    "requires non-PR fallback",
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request_target:\n",
+            group="${{ github.workflow }}-${{ github.ref }}",
+            cancel="true",
+        )
+    },
+    "pull_request_target group",
+)
+check(
+    {"ci.yml": workflow(trigger="  pull_request:\n  workflow_call:\n")},
+    "workflow_call mixed",
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request:\n  pull_request_target:\n",
+            group="${{ github.workflow }}-${{ github.event.pull_request.number }}",
+            cancel="true",
+        )
+    },
+    "separate event-specific groups",
+)
+check(
+    {
+        "ci.yml": workflow(
+            group="${{ github.workflow }}-${{ github.head_ref }}", cancel="true"
+        )
+    },
+    "lacks a PR-unique key",
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request:\n",
+            group="${{ github.workflow }}-${{ github.ref }}",
+            cancel="true",
+            name="Same Name",
+        ),
+        "also.yml": workflow(
+            trigger="  pull_request:\n",
+            group="${{ github.workflow }}-${{ github.ref }}",
+            cancel="true",
+            name="Same Name",
+        ),
+    },
+    "collides",
+)
+check(
+    {
+        "ci.yml": "on: [pull_request]\nconcurrency:\n  group: test\n  cancel-in-progress: false\n"
+    },
+    "lacks a PR-unique key",
+)
 check({"ci.yml": "on: [pull_request\n"}, "invalid YAML")
-check({"ci.yml": """
+check(
+    {
+        "ci.yml": """
 on: pull_request
 jobs:
   test:
@@ -146,10 +234,19 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
-"""}, "requires top-level")
-check({"ci.yml": workflow(
-    trigger="  pull_request:\n    types: [closed, synchronize]\n",
-    group="", cancel="false",
-)}, "group must be nonempty")
+"""
+    },
+    "requires top-level",
+)
+check(
+    {
+        "ci.yml": workflow(
+            trigger="  pull_request:\n    types: [closed, synchronize]\n",
+            group="",
+            cancel="false",
+        )
+    },
+    "group must be nonempty",
+)
 
 print("Shared CI: all workflow concurrency policy fixtures passed")
