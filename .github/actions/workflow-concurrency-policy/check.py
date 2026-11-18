@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import yaml
@@ -27,7 +28,9 @@ def needs_pr_cancellation(event: str, settings: object) -> bool:
     if not isinstance(settings, dict):
         return True
     types = settings.get("types")
-    return not (isinstance(types, list) and set(types) == {"closed"})
+    # An opened-only, one-shot workflow does not re-run on subsequent PR
+    # revisions, so there is no same-workflow supersession to configure.
+    return not (isinstance(types, list) and set(types) in ({"closed"}, {"opened"}))
 
 
 def cancels_all_prs(value: object, events: set[str]) -> bool:
@@ -45,7 +48,27 @@ def cancels_all_prs(value: object, events: set[str]) -> bool:
         for clause in expression.split("||")
     }
     expected = {f"github.event_name == '{event}'" for event in events}
-    return bool(clauses) and clauses == expected
+    if bool(clauses) and clauses == expected:
+        return True
+    # For pull_request (not pull_request_target), GitHub's ref_name is
+    # NUMBER/merge, never the name of the default branch. Upstream workflows
+    # often use this guard to preserve main and merge-queue checks.
+    return events == {"pull_request"} and bool(
+        re.fullmatch(r"github[.]ref_name[ ]*!=[ ]*['\"][^'\"]+['\"]", expression)
+    )
+
+
+def workflow_references(group: str) -> set[str]:
+    """Find real GitHub context references inside expressions, not literals."""
+    refs: set[str] = set()
+    pattern = re.escape("$" + "{{") + r"\s*(.*?)\s*" + re.escape("}}")
+    for body in re.findall(pattern, group, flags=re.DOTALL):
+        # Context strings inside quoted constants are not dynamic references.
+        unquoted = re.sub(r"\x27[^\x27]*\x27|\x22[^\x22]*\x22", "", body)
+        refs.update(
+            re.findall(r"(?<![A-Za-z0-9_.])github[.][A-Za-z_][A-Za-z0-9_.]*", unquoted)
+        )
+    return refs
 
 
 def validate(path: Path, doc: dict, events: dict[str, object]) -> list[str]:
@@ -64,22 +87,37 @@ def validate(path: Path, doc: dict, events: dict[str, object]) -> list[str]:
     if not isinstance(group, str) or not group.strip():
         problems.append(f"{path}: concurrency.group must be nonempty")
     else:
-        has_number = "github.event.pull_request.number" in group
+        refs = workflow_references(group)
+        has_number = "github.event.pull_request.number" in refs
+        has_pr_ref = "github.ref" in refs or "github.ref_name" in refs
         if "pull_request_target" in relevant and not has_number:
             problems.append(
                 f"{path}: pull_request_target group must include github.event.pull_request.number "
                 "(github.ref names the target branch)"
             )
-        elif not has_number and "github.ref" not in group:
+        elif not has_number and not has_pr_ref:
             problems.append(f"{path}: concurrency.group lacks a PR-unique key")
-        if len(relevant) > 1 and "github.event_name" not in group:
+        if len(relevant) > 1 and "github.event_name" not in refs:
             problems.append(
                 f"{path}: PR and PR-target events need separate event-specific groups"
             )
-        if set(events) - PR_EVENTS and not (
-            "github.ref" in group or "github.run_id" in group
-        ):
+        non_pr = set(events) - PR_EVENTS
+        fallback = {"github.ref", "github.ref_name", "github.sha", "github.run_id"}
+        if non_pr - {
+            "issue_comment",
+            "pull_request_review_comment",
+        } and not refs.intersection(fallback):
             problems.append(f"{path}: mixed-event group requires non-PR fallback")
+        if non_pr.intersection(
+            {"issue_comment", "pull_request_review_comment"}
+        ) and not refs.intersection(
+            {
+                "github.event.issue.number",
+                "github.event.pull_request.number",
+                "github.run_id",
+            }
+        ):
+            problems.append(f"{path}: comment-triggered group lacks issue/PR identity")
     if not cancels_all_prs(concurrency.get("cancel-in-progress"), relevant):
         problems.append(
             f"{path}: cancel-in-progress must cancel every PR revision "

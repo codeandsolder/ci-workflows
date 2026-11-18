@@ -250,3 +250,64 @@ check(
 )
 
 print("Shared CI: all workflow concurrency policy fixtures passed")
+
+# Proven-correct upstream semantics must be recognized, not force-migrated
+# just because their expressions differ from our recommended template.
+check(
+    {
+        "one-shot.yml": workflow(
+            trigger="  pull_request:\n    types: [opened]\n",
+            group="bonk-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}",
+            cancel="false",
+        )
+    }
+)
+check(
+    {
+        "oxc.yml": workflow(
+            trigger="  pull_request:\n  push:\n    branches: [main]\n  merge_group:\n",
+            group="${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.sha }}",
+            cancel="${{ github.ref_name != 'main' }}",
+        )
+    }
+)
+check(
+    {
+        "monitor.yml": workflow(
+            trigger="  pull_request:\n    types: [labeled]\n  issue_comment:\n    types: [created]\n",
+            group="monitor-${{ github.event.pull_request.number || github.event.issue.number }}",
+            cancel="true",
+        )
+    }
+)
+check(
+    {
+        "security.yml": workflow(
+            trigger="  pull_request:\n  push:\n",
+            group="security-${{ github.event.pull_request.number || github.sha }}",
+            cancel="${{ github.ref_name != 'main' }}",
+        )
+    }
+)
+check(
+    {
+        "wrong.yml": workflow(
+            trigger="  pull_request_target:\n",
+            group="security-${{ github.event.pull_request.number }}",
+            cancel="${{ github.ref_name != 'main' }}",
+        )
+    },
+    "cancel-in-progress must cancel",
+)
+check(
+    {
+        "fake.yml": workflow(
+            trigger="  pull_request:\n",
+            group="security-${{ 'github.ref' }}",
+            cancel="true",
+        )
+    },
+    "lacks a PR-unique key",
+)
+
+print("Shared CI: generalized upstream workflow cases PASS")
