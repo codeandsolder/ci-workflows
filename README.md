@@ -21,7 +21,7 @@ non-Rust tasks, and rejects missing/disabled cancellation, PR-key collisions,
 invalid PR-target group identity and unsafe mixed-event groups. Pure
 PR-close cleanup, workflow_call-only, release-only and non-PR workflows
 do not require PR supersession. Test fixtures and the provider's own hosted
-check are in scripts/test-workflow-concurrency.py and
+check are in .github/scripts/test-workflow-concurrency.py and
 .github/workflows/workflow-concurrency-policy.yml.
 
 A workflow whose every invocation recomputes a *global snapshot* (for

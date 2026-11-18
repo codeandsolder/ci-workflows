@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / ".github/actions/workflow-concurrency-policy/check.py"
 spec = importlib.util.spec_from_file_location("workflow_concurrency_check", SCRIPT)
 assert spec is not None and spec.loader is not None
