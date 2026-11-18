@@ -13,6 +13,10 @@ on:
       - ".github/workflows/cargo-release-quarantine.yml"
       - ".github/workflows/cargo-release-quarantine-smoke.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 

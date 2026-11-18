@@ -8,6 +8,41 @@ The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners
 
 Additional MSRV, older/newer toolchain, alternative OS/architecture, sanitizer and compatibility lanes are optional **release-tier** jobs. Call the same reusable workflow with `validation-tier: release`. These jobs are skipped unless the caller is running on a release tag (`refs/tags/*`). For example, the caller may define separate jobs invoking this workflow with distinct `rust-toolchain`, `runner` and `rust-targets` inputs. A release tag must be included in the caller's `on.push.tags` trigger (and not excluded by other conditions); `workflow_dispatch` is not a release trigger.
 
+## Enforced PR workflow supersession policy
+
+GitHub does **not** inherit workflow-level concurrency from a reusable workflow.
+Every workflow with actionable pull-request triggers must declare its own
+workflow-level group, scoped to the PR and ideally to the workflow/event type.
+This configuration is **verified centrally** rather than reimplemented as
+repository-specific tests: the canonical checker and its composite Action live
+in [.github/actions/workflow-concurrency-policy](.github/actions/workflow-concurrency-policy/).
+It checks *every* YAML workflow in the caller repository, including
+non-Rust tasks, and rejects missing/disabled cancellation, PR-key collisions,
+invalid PR-target group identity and unsafe mixed-event groups. Pure
+PR-close cleanup, workflow_call-only, release-only and non-PR workflows
+do not require PR supersession. Test fixtures and the provider's own hosted
+check are in scripts/test-workflow-concurrency.py and
+.github/workflows/workflow-concurrency-policy.yml.
+
+The rust-skills2 strict CI calls the same pinned action during its regular
+validation, so projects already consuming the shared strict gate acquire
+enforcement without a separate per-repository check. Non-Rust projects can call
+the provider's reusable validation workflow. This is enforcement of native
+GitHub Actions cancellation, not a custom polling daemon.
+
+Example validated workflow group (this declaration is necessarily local,
+because GitHub requires concurrency at the *caller* workflow level):
+
+~~~yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+~~~
+
+The previous host-side GitHub App fleet guard is a temporary migration aid
+until all maintained PR workflows pass the new policy; it is not the
+long-term enforcement mechanism.
+
 ## Centralized GitHub Actions PR supersession
 
 Stale-run cancellation is implemented once in **this repository**, not copied

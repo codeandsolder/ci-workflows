@@ -1,0 +1,12 @@
+name: Enforce PR workflow supersession
+description: Check all PR-triggered Actions workflows for correct workflow-level cancellation
+runs:
+  using: composite
+  steps:
+    - name: Validate every PR workflow
+      shell: bash
+      env:
+        POLICY_ACTION_DIR: ${{ github.action_path }}
+      run: >-
+        uv run --no-project --with pyyaml python
+        "$POLICY_ACTION_DIR/check.py" --root "$GITHUB_WORKSPACE"
