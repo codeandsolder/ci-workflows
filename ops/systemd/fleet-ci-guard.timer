@@ -1,0 +1,12 @@
+[Unit]
+Description=Check all active CI repositories for obsolete PR workflows
+
+[Timer]
+OnCalendar=*:0/10
+RandomizedDelaySec=30s
+AccuracySec=1min
+Persistent=true
+Unit=fleet-ci-guard.service
+
+[Install]
+WantedBy=timers.target
