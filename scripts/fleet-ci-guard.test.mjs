@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ACTIVE_STATUSES, GitHubApi, candidateForRun, confirmAndCancel,
+  ACTIVE_STATUSES, GitHubApi, GitHubHttpError, candidateForRun, confirmAndCancel,
   eligibleRepository, mapLimit, parseArgs, scanRepository,
 } from './fleet-ci-guard.mjs';
 
@@ -167,9 +167,55 @@ test('scan inspects every active workflow state and deduplicates run IDs', async
   const messages = [];
   const outcome = await scanRepository(api, repo,
     { apply: true }, { log: (message) => messages.push(message) });
-  assert.deepEqual(outcome, { runs: 1, candidates: 1, cancelled: 1 });
+  assert.deepEqual(outcome, { runs: 1, candidates: 1, cancelled: 1, errors: 0 });
   assert.equal(cancelCalls, 1);
   assert.equal(messages.length, 1);
+});
+
+test('run completion between GET and POST /cancel is a normal race', async () => {
+  const candidate = candidateForRun(run(), new Map([[8, pull(8, updated)]]));
+  let reads = 0;
+  const api = {
+    run: async () => (++reads === 1 ? run() : run('completed')),
+    pull: async () => pull(8, updated),
+    commit: async () => ({ parents: [{ sha: 'd'.repeat(40) }] }),
+    cancel: async () => { throw new GitHubHttpError(409, 'POST', '/cancel',
+      'Cannot cancel a workflow run that is completed'); },
+  };
+  assert.equal(await confirmAndCancel(api, repo.full_name, candidate, true),
+    'completed-before-cancel');
+  assert.equal(reads, 2);
+});
+
+test('409 is not silently ignored if cancellation is still required', async () => {
+  const candidate = candidateForRun(run(), new Map([[8, pull(8, updated)]]));
+  const api = {
+    run: async () => run(),
+    pull: async () => pull(8, updated),
+    commit: async () => ({ parents: [{ sha: 'd'.repeat(40) }] }),
+    cancel: async () => { throw new GitHubHttpError(409, 'POST', '/cancel',
+      'Cannot cancel an active run'); },
+  };
+  await assert.rejects(confirmAndCancel(api, repo.full_name, candidate, true),
+    (error) => error instanceof GitHubHttpError && error.status === 409);
+});
+
+test('one cancellation error does not discard other runs or metrics', async () => {
+  const first = run('queued', initial, { id: 17 });
+  const second = run('queued', initial, { id: 18 });
+  let errors = 0;
+  const api = {
+    runs: async (_repository, status) => status === 'queued' ? [first, second] : [],
+    pulls: async () => [pull(8, updated)],
+    run: async (_repository, id) => id === 17 ? first : second,
+    pull: async () => pull(8, updated),
+    commit: async () => ({ parents: [{ sha: 'd'.repeat(40) }] }),
+    cancel: async (_repository, id) => { if (id === 18) throw Error('HTTP 403'); },
+  };
+  const outcome = await scanRepository(api, repo, { apply: true },
+    { log: () => {}, error: () => { errors++; } });
+  assert.deepEqual(outcome, { runs: 2, candidates: 2, cancelled: 1, errors: 1 });
+  assert.equal(errors, 1);
 });
 
 test('REST client paginates and never leaks auth into result', async () => {
