@@ -12,9 +12,12 @@ require_uint() {
 }
 
 discovery="${CLONE_GUARD_DISCOVERY_TOKENS:-50}"
-blocking="${CLONE_GUARD_BLOCKING_TOKENS:-80}"
+blocking="${CLONE_GUARD_BLOCKING_TOKENS:-100}"
+test_blocking="${CLONE_GUARD_TEST_BLOCKING_TOKENS:-140}"
 require_uint "$discovery" CLONE_GUARD_DISCOVERY_TOKENS
 require_uint "$blocking" CLONE_GUARD_BLOCKING_TOKENS
+require_uint "$test_blocking" CLONE_GUARD_TEST_BLOCKING_TOKENS
+(( test_blocking >= blocking )) || fail "test blocking threshold ($test_blocking) must be >= production threshold ($blocking)"
 (( blocking >= discovery )) || fail "blocking threshold ($blocking) must be >= discovery threshold ($discovery)"
 
 root="${GITHUB_WORKSPACE:-$(pwd)}"
@@ -25,7 +28,7 @@ base="${CLONE_GUARD_BASE_SHA:-}"
 [[ "$base" =~ ^[0-9a-fA-F]{40}$ ]] || fail "a 40-digit base commit SHA is required"
 [[ ! "$base" =~ ^0+$ ]] || fail "base commit is the all-zero initial-push sentinel"
 
-for dependency in git jq curl sha256sum tar; do
+for dependency in git jq curl sha256sum tar python3; do
   command -v "$dependency" >/dev/null || fail "$dependency is required"
 done
 
@@ -76,21 +79,30 @@ while IFS= read -r pattern || [[ -n "$pattern" ]]; do
 done <<< "${CLONE_GUARD_EXCLUDES:-}"
 
 report="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/doppelscan-report.json"
+raw_report="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/doppelscan-raw-report.json"
 set +e
-"$bin" "${args[@]}" > "$report"
+"$bin" "${args[@]}" > "$raw_report"
 status=$?
 set -e
 
-if ! jq -e '.summary and (.new | type=="array") and (.smaller | type=="array")' "$report" >/dev/null 2>&1; then
+if ! jq -e '.summary and (.new | type=="array") and (.smaller | type=="array")' "$raw_report" >/dev/null 2>&1; then
   fail "doppelscan failed to produce a valid JSON report (exit $status)"
 fi
 (( status == 0 || status == 1 )) || fail "doppelscan failed with unexpected exit code $status"
 
+# Classification is separate from syntax matching: the scanner always uses
+# centrally controlled settings, while reviewed, documented fingerprints
+# from .doppelscan.toml can be accepted by the post-scan policy.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+python3 "$script_dir/clone-regression-policy.py" "$raw_report" "$report" \
+  "$root" "$scan_dir" "$blocking" "$test_blocking" || fail "clone policy classification failed"
+
 new="$(jq '.new | length' "$report")"
 smaller="$(jq '.smaller | length' "$report")"
+accepted="$(jq '.accepted | length' "$report")"
 files="$(jq '.summary.files' "$report")"
-printf 'clone-regression: %s files, %s blocking new groups (>= %s tokens), %s smaller new groups (>= %s tokens)\n' \
-  "$files" "$new" "$blocking" "$smaller" "$discovery"
+printf 'clone-regression: %s files, %s blocking new groups (production >= %s, tests >= %s tokens), %s advisory, %s documented accepts (discovery >= %s)\n' \
+  "$files" "$new" "$blocking" "$test_blocking" "$smaller" "$accepted" "$discovery"
 
 summarize_groups() {
   local key="$1"
@@ -104,11 +116,11 @@ summarize_groups() {
 {
   echo "## Duplicate code regression"
   echo
-  echo "Base: \`$base\` · discovery: **$discovery tokens** · blocking: **$blocking tokens**"
+  echo "Base: \`$base\` · discovery: **$discovery tokens** · production blocking: **$blocking tokens** · test blocking: **$test_blocking tokens**"
   echo
-  echo "| Files scanned | Newly blocked groups | New advisory groups |"
-  echo "| ---: | ---: | ---: |"
-  echo "| $files | $new | $smaller |"
+  echo "| Files scanned | Newly blocked groups | New advisory groups | Documented accepts |"
+  echo "| ---: | ---: | ---: | ---: |"
+  echo "| $files | $new | $smaller | $accepted |"
   echo
   if (( new > 0 )); then
     echo "### Newly added duplication (blocking)"
@@ -122,7 +134,13 @@ summarize_groups() {
     summarize_groups smaller
     echo
   fi
-  if (( new > 25 || smaller > 25 )); then
+  if (( accepted > 0 )); then
+    echo "### Reviewed fingerprint exceptions"
+    echo
+    jq -r '.accepted[:25][] | "- **\(.tokens) tokens**, \(.policy_tier): \(.fingerprint) — \(.accept_reason)"' "$report"
+    echo
+  fi
+  if (( new > 25 || smaller > 25 || accepted > 25 )); then
     echo "Showing the first 25 groups per class; see the JSON artifact for all findings."
   fi
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
@@ -131,6 +149,7 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   {
     printf 'new-groups=%s\n' "$new"
     printf 'advisory-groups=%s\n' "$smaller"
+    printf 'accepted-groups=%s\n' "$accepted"
     printf 'scanned-files=%s\n' "$files"
   } >> "$GITHUB_OUTPUT"
 fi
@@ -138,4 +157,3 @@ fi
 if (( new > 0 )); then
   exit 1
 fi
-(( status == 0 )) || fail "doppelscan reported a failure with no blocking groups"

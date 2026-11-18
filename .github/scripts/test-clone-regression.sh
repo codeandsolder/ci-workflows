@@ -2,6 +2,7 @@
 # Integration test with real Git baselines, real doppelscan and generated Rust.
 set -Eeuo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+python3 "$script_dir/test-clone-regression-policy.py"
 test_dir="$(mktemp -d)"
 trap 'rm -rf -- "$test_dir"' EXIT
 repo="$test_dir/repo"
@@ -156,4 +157,127 @@ check small-new-copy-passes 0
 jq -e '.smaller|length>0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null ||
   { echo "FAIL smaller copy is not in advisory report" >&2; exit 1; }
 reset_case
+# All copies are inside one explicitly annotated Rust unit-test module.
+# A medium clone should remain visible as advisory rather than fail.
+cat > "$repo/src/test_suite.rs" <<'RUST'
+#[cfg(test)]
+mod tests {
+    fn inspect_first(values: &[u32]) -> u32 {
+        let mut x = 7_u32;
+        let mut total = 0_u32;
+        for (index, item) in values.iter().copied().enumerate() {
+            x = x.wrapping_mul(1664525).wrapping_add(item);
+            x ^= x.rotate_left(13);
+            if (index & 1) == 0 {
+                total = total.wrapping_add(x);
+            } else {
+                total = total.wrapping_sub(x);
+            }
+        }
+        if total == 0 {
+            x.wrapping_mul(31)
+        } else {
+            x.wrapping_add(total)
+        }
+    }
+
+    fn inspect_second(values: &[u32]) -> u32 {
+        let mut x = 7_u32;
+        let mut total = 0_u32;
+        for (index, item) in values.iter().copied().enumerate() {
+            x = x.wrapping_mul(1664525).wrapping_add(item);
+            x ^= x.rotate_left(13);
+            if (index & 1) == 0 {
+                total = total.wrapping_add(x);
+            } else {
+                total = total.wrapping_sub(x);
+            }
+        }
+        if total == 0 {
+            x.wrapping_mul(31)
+        } else {
+            x.wrapping_add(total)
+        }
+    }
+}
+RUST
+check inline-rust-unit-test-advisory 0
+jq -e '.smaller|map(select(.policy_tier == "test" and .tokens >= 80))|length>0' \
+  "$RUNNER_TEMP/doppelscan-report.json" >/dev/null || {
+    echo 'FAIL inline Rust unit-test duplication was not classified as advisory' >&2
+    exit 1
+  }
+reset_case
+
+# A copy crossing the test/production boundary is still production duplication.
+{
+  printf '#[cfg(test)]\nmod tests {\n'
+  sed 's/pub fn fold_bytes(/fn fold_bytes_unit_case(/' "$repo/src/engine.rs"
+  printf '}\n'
+} > "$repo/src/mixed.rs"
+check mixed-production-test-clone-blocked 1
+jq -e '.new|map(select(.policy_tier == "production"))|length>0' \
+  "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
+reset_case
+
+# Longer test-only clones still block.
+cat > "$test_dir/long_test_fn" <<'RUST'
+    fn examine_first(values: &[u32]) -> u32 {
+        let mut x = 7_u32;
+        let mut total = 0_u32;
+        for (index, item) in values.iter().copied().enumerate() {
+            x = x.wrapping_mul(1664525).wrapping_add(item);
+            x ^= x.rotate_left(13);
+            if (index & 1) == 0 {
+                total = total.wrapping_add(x);
+            } else {
+                total = total.wrapping_sub(x);
+            }
+            x = x.wrapping_mul(1103515245).wrapping_add(12345);
+            total = total.rotate_left(9) ^ x;
+        }
+        for round in 0..32 {
+            x = x.wrapping_mul(7).wrapping_add(round);
+            if x & 0x4000 == 0 {
+                total = total.wrapping_add(x << 2);
+            } else {
+                total = total.wrapping_sub(x >> 2);
+            }
+        }
+        if total == 0 {
+            x.wrapping_mul(31)
+        } else {
+            x.wrapping_add(total)
+        }
+    }
+RUST
+{
+  printf '#[cfg(test)]\nmod tests {\n'
+  cat "$test_dir/long_test_fn"
+  sed 's/examine_first/examine_second/' "$test_dir/long_test_fn"
+  printf '}\n'
+} > "$repo/src/large_test.rs"
+check large-test-duplication-blocked 1
+jq -e '.new|map(select(.policy_tier == "test" and .tokens >= 140))|length>0' \
+  "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
+reset_case
+
+# Repo configuration may document explicit fingerprint accepts, but may
+# *never* override central discovery, thresholds or exclusions.
+sed 's/fn fold_bytes(/fn fold_bytes_copy(/' "$repo/src/engine.rs" > "$repo/src/copy.rs"
+cat > "$repo/.doppelscan.toml" <<'TOML'
+min-tokens = 999999
+exclude = ["src/**"]
+TOML
+check repository-config-cannot-disable-scanner 1
+{
+  printf 'min-tokens = 999999\nexclude = ["src/**"]\n'
+  jq -r '.new[] | "[[accept]]\nfingerprint = \"" + .fingerprint + "\"\nreason = \"Intentional public ABI duplication in this regression fixture.\""' \
+    "$RUNNER_TEMP/doppelscan-report.json"
+} > "$repo/.doppelscan.toml"
+check reviewed-fingerprint-accept-passes 0
+jq -e '.new|length==0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
+jq -e '.accepted|length>0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
+reset_case
+
 echo "All clone-regression integration cases passed."

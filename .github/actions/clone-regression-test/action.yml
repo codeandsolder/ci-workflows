@@ -3,6 +3,6 @@ description: "Execute isolated Git-revision fixtures against the real duplicatio
 runs:
   using: composite
   steps:
-    - name: Verify new/existing/advisory clone cases
+    - name: Verify baseline, production/test classification, and explicit accepts
       shell: bash
       run: bash "$GITHUB_ACTION_PATH/../../scripts/test-clone-regression.sh"
