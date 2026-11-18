@@ -69,6 +69,10 @@ def validate(path: Path, doc: dict, events: dict[str, object]) -> list[str]:
             )
         elif not has_number and "github.ref" not in group:
             problems.append(f"{path}: concurrency.group lacks a PR-unique key")
+        if len(relevant) > 1 and "github.event_name" not in group:
+            problems.append(
+                f"{path}: PR and PR-target events need separate event-specific groups"
+            )
         if set(events) - PR_EVENTS and not (
             "github.ref" in group or "github.run_id" in group
         ):

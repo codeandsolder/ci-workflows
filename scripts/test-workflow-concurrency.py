@@ -118,6 +118,11 @@ check({"ci.yml": workflow(
     trigger="  pull_request:\n  workflow_call:\n"
 )}, "workflow_call mixed")
 check({"ci.yml": workflow(
+    trigger="  pull_request:\n  pull_request_target:\n",
+    group="${{ github.workflow }}-${{ github.event.pull_request.number }}",
+    cancel="true",
+)}, "separate event-specific groups")
+check({"ci.yml": workflow(
     group="${{ github.workflow }}-${{ github.head_ref }}", cancel="true"
 )}, "lacks a PR-unique key")
 check({"ci.yml": workflow(
