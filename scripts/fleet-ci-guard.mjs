@@ -13,6 +13,13 @@ const ACCEPT = 'application/vnd.github+json';
 const API_ROOT = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
 
+export class GitHubHttpError extends Error {
+  constructor(status, method, path, body) {
+    super(method + ' ' + path + ': HTTP ' + status + ': ' + body);
+    this.status = status;
+  }
+}
+
 export class GitHubApi {
   constructor(token, transport = globalThis.fetch) {
     if (!token) throw new Error('GitHub App installation token is required');
@@ -45,7 +52,7 @@ export class GitHubApi {
       }
       if (!response.ok) {
         const body = (await response.text()).slice(0, 350);
-        throw new Error(method + ' ' + path + ': HTTP ' + response.status + ': ' + body);
+        throw new GitHubHttpError(response.status, method, path, body);
       }
       if (response.status === 204 || response.status === 202) return null;
       return response.json();
@@ -182,7 +189,18 @@ export async function confirmAndCancel(api, repo, candidate, apply) {
     }
   }
   if (!apply) return 'would-cancel';
-  await api.cancel(repo, candidate.id);
+  try {
+    await api.cancel(repo, candidate.id);
+  } catch (error) {
+    // The run can finish after the final GET but before POST /cancel.
+    // This is normal under load; only suppress a 404/409 when a fresh
+    // read confirms the run has actually finished.
+    if (error instanceof GitHubHttpError && [404, 409].includes(error.status)) {
+      const after = await api.run(repo, candidate.id);
+      if (!ACTIVE_STATUSES.includes(after.status)) return 'completed-before-cancel';
+    }
+    throw error;
+  }
   return 'cancellation-requested';
 }
 
@@ -208,17 +226,23 @@ export async function scanRepository(api, repo, options, report = console) {
   const runs = [...new Map(allRuns.flat().map((run) => [run.id, run])).values()];
   const relevant = runs.filter((run) => run.event === 'pull_request' &&
     ACTIVE_STATUSES.includes(run.status) && run.pull_requests?.length);
-  if (!relevant.length) return { runs: runs.length, candidates: 0, cancelled: 0 };
+  if (!relevant.length) return { runs: runs.length, candidates: 0, cancelled: 0, errors: 0 };
   const prs = new Map((await api.pulls(repo.full_name)).map((pr) => [pr.number, pr]));
   const candidates = relevant.map((run) => candidateForRun(run, prs)).filter(Boolean);
   let cancelled = 0;
+  let errors = 0;
   for (const candidate of candidates) {
-    const result = await confirmAndCancel(api, repo.full_name, candidate, options.apply);
-    if (result === 'cancellation-requested') cancelled++;
-    report.log(repo.full_name + ' #' + candidate.id + ' (' + candidate.name +
-      ', PR ' + candidate.numbers.join(',') + '): ' + result);
+    try {
+      const result = await confirmAndCancel(api, repo.full_name, candidate, options.apply);
+      if (result === 'cancellation-requested') cancelled++;
+      report.log(repo.full_name + ' #' + candidate.id + ' (' + candidate.name +
+        ', PR ' + candidate.numbers.join(',') + '): ' + result);
+    } catch (error) {
+      errors++;
+      report.error(repo.full_name + ' #' + candidate.id + ': ' + String(error));
+    }
   }
-  return { runs: runs.length, candidates: candidates.length, cancelled };
+  return { runs: runs.length, candidates: candidates.length, cancelled, errors };
 }
 
 export function parseArgs(argv) {
@@ -274,6 +298,7 @@ export async function main(argv, log = console) {
     inspected += result.value.runs;
     candidates += result.value.candidates;
     cancelled += result.value.cancelled;
+    errors += result.value.errors;
   }
   log.log('CI guard summary: ' + JSON.stringify({
     repos: repos.length, runs: inspected, obsolete: candidates,
