@@ -310,4 +310,59 @@ check(
     "lacks a PR-unique key",
 )
 
+
+# Global snapshots intentionally replace earlier work triggered by *any*
+# PR or main push: PommeClient merge-conflict labels rescan the whole stack.
+GLOBAL_REASON = (
+    "# ci-workflow-supersession: global-snapshot; "
+    "every run rescans all open PRs and recomputes all conflict labels"
+)
+global_workflow = workflow(
+    trigger="  push:\n    branches: [master]\n  pull_request_target:\n    types: [synchronize]\n",
+    group="${{ github.workflow }}",
+    cancel="true",
+)
+check(
+    {
+        "global.yml": global_workflow.replace(
+            "concurrency:", GLOBAL_REASON + "\nconcurrency:"
+        )
+    }
+)
+check({"global.yml": global_workflow}, "pull_request_target group")
+check(
+    {
+        "global.yml": global_workflow.replace(
+            "concurrency:", GLOBAL_REASON + "\nconcurrency:"
+        ).replace("cancel-in-progress: true", "cancel-in-progress: false")
+    },
+    "requires unconditional cancellation",
+)
+check(
+    {
+        "global.yml": global_workflow.replace(
+            "concurrency:", GLOBAL_REASON + "\nconcurrency:"
+        ).replace("  group: ${{ github.workflow }}", "  group: global-static")
+    },
+    "requires github.workflow group",
+)
+
+check(
+    {
+        "global.yml": global_workflow.replace(
+            "concurrency:",
+            GLOBAL_REASON + "\n# unrelated annotation break\nconcurrency:",
+        )
+    },
+    "pull_request_target group",
+)
+check(
+    {
+        "global.yml": global_workflow.replace(
+            "concurrency:", GLOBAL_REASON + "\nconcurrency:"
+        ).replace("  pull_request_target:", "  workflow_call:\n  pull_request_target:")
+    },
+    "global-snapshot cannot be combined with workflow_call",
+)
+
 print("Shared CI: generalized upstream workflow cases PASS")

@@ -9,6 +9,9 @@ from pathlib import Path
 import yaml
 
 PR_EVENTS = frozenset({"pull_request", "pull_request_target"})
+GLOBAL_SNAPSHOT_DIRECTIVE = re.compile(
+    r"(?m)^# ci-workflow-supersession: global-snapshot; ([^\n]{25,})\nconcurrency:[ \t]*$"
+)
 
 
 def triggers(doc: dict) -> dict[str, object]:
@@ -71,7 +74,9 @@ def workflow_references(group: str) -> set[str]:
     return refs
 
 
-def validate(path: Path, doc: dict, events: dict[str, object]) -> list[str]:
+def validate(
+    path: Path, doc: dict, events: dict[str, object], source: str
+) -> list[str]:
     relevant = {
         event
         for event, settings in events.items()
@@ -84,6 +89,23 @@ def validate(path: Path, doc: dict, events: dict[str, object]) -> list[str]:
     if not isinstance(concurrency, dict):
         return [f"{path}: PR-triggered workflow requires top-level concurrency"]
     group = concurrency.get("group")
+    global_mode = GLOBAL_SNAPSHOT_DIRECTIVE.search(source) is not None
+    if global_mode:
+        if "workflow_call" in events:
+            problems.append(
+                f"{path}: global-snapshot cannot be combined with workflow_call"
+            )
+        # A workflow rebuilding *all* open-PR state may legitimately cancel
+        # every prior run, including a run triggered by another PR or push.
+        # Require a documented opt-in and the precise repository-wide group:
+        # per-PR scoping would make concurrent rescan writers race each other.
+        if group != "${{ github.workflow }}":
+            problems.append(f"{path}: global-snapshot requires github.workflow group")
+        if concurrency.get("cancel-in-progress") != "true":
+            problems.append(
+                f"{path}: global-snapshot requires unconditional cancellation"
+            )
+        return problems
     if not isinstance(group, str) or not group.strip():
         problems.append(f"{path}: concurrency.group must be nonempty")
     else:
@@ -144,7 +166,8 @@ def inspect_root(root: Path) -> list[str]:
         try:
             # BaseLoader preserves the Actions 'on' key, which YAML 1.1's
             # default boolean resolver would otherwise convert to True.
-            doc = yaml.load(path.read_text(encoding="utf8"), Loader=yaml.BaseLoader)
+            source = path.read_text(encoding="utf8")
+            doc = yaml.load(source, Loader=yaml.BaseLoader)
         except yaml.YAMLError as exc:
             problems.append(f"{rel}: invalid YAML: {exc}")
             continue
@@ -152,7 +175,7 @@ def inspect_root(root: Path) -> list[str]:
             problems.append(f"{rel}: expected YAML mapping")
             continue
         events = triggers(doc)
-        problems.extend(validate(rel, doc, events))
+        problems.extend(validate(rel, doc, events, source))
         if not any(
             needs_pr_cancellation(e, settings) for e, settings in events.items()
         ):

@@ -24,6 +24,24 @@ do not require PR supersession. Test fixtures and the provider's own hosted
 check are in scripts/test-workflow-concurrency.py and
 .github/workflows/workflow-concurrency-policy.yml.
 
+A workflow whose every invocation recomputes a *global snapshot* (for
+example, all open pull-request conflict labels) deliberately uses one
+`${{ github.workflow }}` group with unconditional cancellation: the latest
+run supersedes all earlier writes, including runs initiated by another PR
+or a default-branch push. To express this exceptional but valid semantic,
+add a root-level source comment with an explicit rationale:
+
+~~~yaml
+# ci-workflow-supersession: global-snapshot; every run recalculates all open PR states
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+~~~
+
+The checker accepts this mode only with a documented rationale and that
+exact last-run-wins group. Ordinary PR validation must still use PR-keyed
+groups; never use global cancellation for independent PR builds.
+
 The rust-skills2 strict CI calls the same pinned action during its regular
 validation, so projects already consuming the shared strict gate acquire
 enforcement without a separate per-repository check. Non-Rust projects can call
