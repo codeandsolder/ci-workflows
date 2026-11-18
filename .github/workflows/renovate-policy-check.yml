@@ -17,6 +17,10 @@ on:
       - scripts/check-renovate-policy.cjs
       - .github/workflows/renovate-policy-check.yml
       - .github/workflows/renovate-config.yml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:

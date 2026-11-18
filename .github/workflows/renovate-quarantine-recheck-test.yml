@@ -11,6 +11,10 @@ on:
       - "scripts/renovate-quarantine-recheck*.mjs"
       - ".github/workflows/renovate-quarantine-recheck-test.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
