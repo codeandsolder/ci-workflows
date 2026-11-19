@@ -45,8 +45,13 @@ groups; never use global cancellation for independent PR builds.
 The rust-skills2 strict CI calls the same pinned action during its regular
 validation, so projects already consuming the shared strict gate acquire
 enforcement without a separate per-repository check. Non-Rust projects can call
-the provider's reusable validation workflow. This is enforcement of native
-GitHub Actions cancellation, not a custom polling daemon.
+the provider's reusable validation workflow. Its `runner: auto` default
+uses the registered `local-ci` runner for private callers and hosted Ubuntu
+for public callers. Static-only private repositories without registered
+`local-ci` runners may explicitly request a GitHub-hosted runner with
+`runner: '"ubuntu-24.04"'` and do not need host/runner provisioning merely
+to lint workflow YAML. This is enforcement of native GitHub Actions
+cancellation, not a custom polling daemon.
 
 Example validated workflow group (this declaration is necessarily local,
 because GitHub requires concurrency at the *caller* workflow level):
