@@ -21,6 +21,20 @@
     "automerge": true,
     "automergeType": "pr"
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\r?\\n)[ \\t]*rust-toolchain:[ \\t]*[\"']?(?<currentValue>nightly-[^\"'\\s]+)"
+      ],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "rust-version",
+      "versioningTemplate": "rust-release-channel"
+    }
+  ],
   "packageRules": [
     {
       "description": "Do not deadlock immutable pins, digests and lockfile-only updates on missing upstream release timestamps (Renovate #45236)",
@@ -109,6 +123,23 @@
         "rust-toolchain"
       ],
       "automerge": false
+    },
+    {
+      "description": "Group reusable-workflow Rust compiler inputs with the native rust-toolchain.toml pin; compiler upgrades remain review-only",
+      "matchDatasources": [
+        "rust-version"
+      ],
+      "matchDepNames": [
+        "rust"
+      ],
+      "groupName": "Pinned Rust nightly",
+      "groupSlug": "pinned-rust-nightly",
+      "automerge": false,
+      "matchManagers": [
+        "rust-toolchain",
+        "custom.regex"
+      ],
+      "matchCurrentVersion": "/^nightly-/"
     }
   ],
   "platformAutomerge": false,
