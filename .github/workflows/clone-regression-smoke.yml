@@ -6,6 +6,8 @@ on:
       - .github/workflows/clone-regression.yml
       - .github/workflows/clone-regression-smoke.yml
       - .github/scripts/run-clone-regression.sh
+      - .github/scripts/clone-regression-policy.py
+      - .github/scripts/test-clone-regression-policy.py
       - .github/scripts/test-clone-regression.sh
   push:
     branches: [main]
@@ -13,6 +15,8 @@ on:
       - .github/workflows/clone-regression.yml
       - .github/workflows/clone-regression-smoke.yml
       - .github/scripts/run-clone-regression.sh
+      - .github/scripts/clone-regression-policy.py
+      - .github/scripts/test-clone-regression-policy.py
       - .github/scripts/test-clone-regression.sh
   workflow_dispatch:
 

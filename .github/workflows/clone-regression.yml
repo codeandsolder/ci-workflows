@@ -8,9 +8,13 @@ on:
         type: number
         default: 50
       blocking-tokens:
-        description: Fail for new clone groups at or above this number of syntax tokens
+        description: Fail for production/mixed clone groups at or above this number of syntax tokens
         type: number
-        default: 80
+        default: 100
+      test-blocking-tokens:
+        description: Fail for test-only clone groups at or above this number of syntax tokens
+        type: number
+        default: 140
       languages:
         description: Optional comma-separated language names (empty means all supported)
         type: string
@@ -54,6 +58,7 @@ jobs:
           sparse-checkout: |
             .github/actions/clone-regression
             .github/scripts/run-clone-regression.sh
+            .github/scripts/clone-regression-policy.py
           sparse-checkout-cone-mode: false
 
       - name: Compare duplication against base revision
@@ -62,6 +67,7 @@ jobs:
           CLONE_GUARD_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           CLONE_GUARD_DISCOVERY_TOKENS: ${{ inputs.discovery-tokens }}
           CLONE_GUARD_BLOCKING_TOKENS: ${{ inputs.blocking-tokens }}
+          CLONE_GUARD_TEST_BLOCKING_TOKENS: ${{ inputs.test-blocking-tokens }}
           CLONE_GUARD_LANGUAGES: ${{ inputs.languages }}
           CLONE_GUARD_SCAN_PATH: ${{ inputs.scan-path }}
           CLONE_GUARD_EXCLUDES: |

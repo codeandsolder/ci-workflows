@@ -3,25 +3,29 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import re
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 PR_EVENTS = frozenset({"pull_request", "pull_request_target"})
 GLOBAL_SNAPSHOT_DIRECTIVE = re.compile(
-    r"(?m)^# ci-workflow-supersession: global-snapshot; ([^\n]{25,})\nconcurrency:[ \t]*$"
+    r"(?m)^# ci-workflow-supersession: global-snapshot; ([^\n]{25,})\nconcurrency:[ \t]*$",
 )
 
 
-def triggers(doc: dict) -> dict[str, object]:
+def triggers(doc: dict[str, Any]) -> dict[str, object]:
     value = doc.get("on")
     if isinstance(value, str):
         return {value: None}
     if isinstance(value, list):
         return {event: None for event in value if isinstance(event, str)}
     if isinstance(value, dict):
-        return value
+        return {
+            key: settings for key, settings in value.items() if isinstance(key, str)
+        }
     return {}
 
 
@@ -57,7 +61,7 @@ def cancels_all_prs(value: object, events: set[str]) -> bool:
     # NUMBER/merge, never the name of the default branch. Upstream workflows
     # often use this guard to preserve main and merge-queue checks.
     return events == {"pull_request"} and bool(
-        re.fullmatch(r"github[.]ref_name[ ]*!=[ ]*['\"][^'\"]+['\"]", expression)
+        re.fullmatch(r"github[.]ref_name[ ]*!=[ ]*['\"][^'\"]+['\"]", expression),
     )
 
 
@@ -69,13 +73,16 @@ def workflow_references(group: str) -> set[str]:
         # Context strings inside quoted constants are not dynamic references.
         unquoted = re.sub(r"\x27[^\x27]*\x27|\x22[^\x22]*\x22", "", body)
         refs.update(
-            re.findall(r"(?<![A-Za-z0-9_.])github[.][A-Za-z_][A-Za-z0-9_.]*", unquoted)
+            re.findall(r"(?<![A-Za-z0-9_.])github[.][A-Za-z_][A-Za-z0-9_.]*", unquoted),
         )
     return refs
 
 
 def validate(
-    path: Path, doc: dict, events: dict[str, object], source: str
+    path: Path,
+    doc: dict[str, Any],
+    events: dict[str, object],
+    source: str,
 ) -> list[str]:
     relevant = {
         event
@@ -93,7 +100,7 @@ def validate(
     if global_mode:
         if "workflow_call" in events:
             problems.append(
-                f"{path}: global-snapshot cannot be combined with workflow_call"
+                f"{path}: global-snapshot cannot be combined with workflow_call",
             )
         # A workflow rebuilding *all* open-PR state may legitimately cancel
         # every prior run, including a run triggered by another PR or push.
@@ -103,7 +110,7 @@ def validate(
             problems.append(f"{path}: global-snapshot requires github.workflow group")
         if concurrency.get("cancel-in-progress") != "true":
             problems.append(
-                f"{path}: global-snapshot requires unconditional cancellation"
+                f"{path}: global-snapshot requires unconditional cancellation",
             )
         return problems
     if not isinstance(group, str) or not group.strip():
@@ -115,13 +122,13 @@ def validate(
         if "pull_request_target" in relevant and not has_number:
             problems.append(
                 f"{path}: pull_request_target group must include github.event.pull_request.number "
-                "(github.ref names the target branch)"
+                "(github.ref names the target branch)",
             )
         elif not has_number and not has_pr_ref:
             problems.append(f"{path}: concurrency.group lacks a PR-unique key")
         if len(relevant) > 1 and "github.event_name" not in refs:
             problems.append(
-                f"{path}: PR and PR-target events need separate event-specific groups"
+                f"{path}: PR and PR-target events need separate event-specific groups",
             )
         non_pr = set(events) - PR_EVENTS
         fallback = {"github.ref", "github.ref_name", "github.sha", "github.run_id"}
@@ -131,24 +138,24 @@ def validate(
         } and not refs.intersection(fallback):
             problems.append(f"{path}: mixed-event group requires non-PR fallback")
         if non_pr.intersection(
-            {"issue_comment", "pull_request_review_comment"}
+            {"issue_comment", "pull_request_review_comment"},
         ) and not refs.intersection(
             {
                 "github.event.issue.number",
                 "github.event.pull_request.number",
                 "github.run_id",
-            }
+            },
         ):
             problems.append(f"{path}: comment-triggered group lacks issue/PR identity")
     if not cancels_all_prs(concurrency.get("cancel-in-progress"), relevant):
         problems.append(
             f"{path}: cancel-in-progress must cancel every PR revision "
-            "(true or event-name PR-only condition)"
+            "(true or event-name PR-only condition)",
         )
     if "workflow_call" in events:
         problems.append(
             f"{path}: workflow_call mixed with PR triggers risks cancelling its caller; "
-            "split reusable and event-triggered workflows"
+            "split reusable and event-triggered workflows",
         )
     return problems
 
@@ -176,13 +183,12 @@ def inspect_root(root: Path) -> list[str]:
             continue
         events = triggers(doc)
         problems.extend(validate(rel, doc, events, source))
-        if not any(
-            needs_pr_cancellation(e, settings) for e, settings in events.items()
-        ):
+        if not any(itertools.starmap(needs_pr_cancellation, events.items())):
             continue
         concurrency = doc.get("concurrency")
         if not isinstance(concurrency, dict) or not isinstance(
-            concurrency.get("group"), str
+            concurrency.get("group"),
+            str,
         ):
             continue
         # GitHub scopes groups to repository, *not* workflow. A group template
@@ -192,7 +198,7 @@ def inspect_root(root: Path) -> list[str]:
         evaluated = template.replace("${{ github.workflow }}", name)
         if evaluated in groups:
             problems.append(
-                f"{rel}: concurrency.group collides with {groups[evaluated]}"
+                f"{rel}: concurrency.group collides with {groups[evaluated]}",
             )
         else:
             groups[evaluated] = rel

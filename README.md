@@ -21,7 +21,7 @@ non-Rust tasks, and rejects missing/disabled cancellation, PR-key collisions,
 invalid PR-target group identity and unsafe mixed-event groups. Pure
 PR-close cleanup, workflow_call-only, release-only and non-PR workflows
 do not require PR supersession. Test fixtures and the provider's own hosted
-check are in scripts/test-workflow-concurrency.py and
+check are in .github/scripts/test-workflow-concurrency.py and
 .github/workflows/workflow-concurrency-policy.yml.
 
 A workflow whose every invocation recomputes a *global snapshot* (for
@@ -156,12 +156,12 @@ The underlying `.github/actions/cargo-release-quarantine` composite also support
 ## Duplicate-code regression gate
 
 Use the pinned reusable [clone-regression.yml](.github/workflows/clone-regression.yml)
-on pull requests and default-branch pushes. It runs `doppelscan` **v0.9.0** on
-all supported languages (or optional `languages`), reports newly introduced
-clones at **50 or more syntax tokens**, and **fails only for new clones of at
-least 80 tokens**. Existing clone groups in the Git base revision are
-grandfathered in; a benign edit to an accepted copy does not fail. The
-detector uses normalized Rust syntax matching, not just exact text.
+on pull requests and default-branch pushes. It runs `doppelscan` **v0.9.0**
+against the Git base, discovers new clones at **50 syntax tokens**, and applies
+different blocking thresholds to **production (100)** and **test-only (140)**
+code. All advisory findings remain in the JSON artifact. Existing clone groups
+in the Git base are grandfathered in; a benign edit or file move does not fail.
+The scanner matches normalized syntax, not just literal text.
 
 A consumer workflow can be as small as:
 
@@ -184,30 +184,59 @@ jobs:
     uses: codeandsolder/ci-workflows/.github/workflows/clone-regression.yml@<full-commit-sha> # main
 ```
 
-The gate fetches the PR base SHA (or `push.before`) without fetching full
-history and runs on `ubuntu-24.04` for public repositories or existing
-`local-ci` Linux X64 runners for private ones. It downloads a SHA256-verified
-release binary into the job's temporary directory; **no Rust toolchain or
-compiler cache is involved**. The `doppelscan-report.json` artifact retains
-all newly reported groups, and the GitHub job summary links their source
-locations. It never writes a suppression baseline to the repository.
+### Test classification
 
-By default the reusable workflow excludes dedicated `tests/`, `examples/`,
-`benches/`, `vendor/`, `node_modules/`, `target/` directories and the injected
-`.ci-workflows/` implementation checkout. Inline `#[cfg(test)]` modules in
-Rust production files are still scanned. Caller-specific paths can be
-excluded with the newline-separated `exclude-globs` input; `scan-path` can
-scope exceptionally large repositories. Excluding paths suppresses *both*
-discovery and blocking there; avoid excluding ordinary production code.
+Clone groups get the larger threshold **only when every occurrence is in test
+code**. Dedicated test files and `smoke-*.sh` fixtures count as tests, as do
+regions of Rust source inside `#[cfg(test)] mod ...` or directly annotated
+`#[test]` functions. Rust test ranges are matched by syntax-aware brace
+tracking that ignores nested comments, raw strings, ordinary string literals,
+and character literals; code after a test module is production. Any mixed
+production/test clone remains **production**. Missing, unreadable, or ambiguous
+source is classified as production, not silently exempted.
 
-The workflow input defaults are `discovery-tokens: 50`,
-`blocking-tokens: 80`, `languages: ""` and `scan-path: "."`. Invalid
-thresholds or missing base commits fail the job rather than silently
-disabling the gate. A new repository's all-zero initial push has no baseline
-and is not supported by this differential gate. `merge_group` contexts are
-also supported when the caller subscribes to that event.
+By default, dedicated `tests/`, `examples/`, `benches/`, `vendor/`,
+`node_modules/`, and `target/` directories, plus the injected shared-CI checkout,
+are excluded to avoid noise. Inline Rust unit tests remain scanned and reported.
+Caller-specific paths can still be excluded with the newline-separated
+`exclude-globs` input, but this suppresses both discovery and blocking.
 
-The provider's [clone-regression-smoke.yml](.github/workflows/clone-regression-smoke.yml)
-executes the *real* reusable workflow plus an isolated Git fixture covering
-new exact and renamed clones, edits to accepted clones, moves, excluded tests,
-and advisory-only groups.
+### Reviewed fingerprint exceptions
+
+For intentional duplication that **should be retained**, place a documented
+fingerprint in the *caller repository root's* `.doppelscan.toml`:
+
+```toml
+[[accept]]
+fingerprint = "b4a94232d76e"
+reason = "Independent physical oracles must not share the implementation being checked."
+```
+
+Every accepted fingerprint needs a meaningful reason. The full finding remains
+in `doppelscan-report.json` under `accepted` with that reason; it does not
+block CI. A changed clone fingerprint requires a fresh review. Only
+`[[accept]]` declarations are consumed: the central gate still runs the pinned
+scanner with `--no-config`. Settings such as `exclude`, `min-tokens`, `strict`,
+and `[check]` in the caller's config **cannot weaken the centralized policy**.
+
+### Operation and verification
+
+The gate fetches the PR base SHA (or `push.before`) without full history, using
+`ubuntu-24.04` for public repositories or existing `local-ci` Linux X64 runners
+for private ones. Its scanner is downloaded as a SHA256-verified pinned release
+into the job's temporary directory. No Rust compiler cache is involved. The
+policy classifier requires Python 3.11+ and only its standard library.
+
+Workflow inputs default to `discovery-tokens: 50`, `blocking-tokens: 100`
+(production), `test-blocking-tokens: 140`, `languages: ""`, and
+`scan-path: "."`. They can be adjusted centrally or explicitly by the caller.
+Malformed thresholds, missing Git bases, malformed acceptance entries, and
+source files escaping the scan root fail closed. An all-zero first-push baseline
+is unsupported by this differential check; `merge_group` is supported.
+
+The [clone-regression-smoke.yml](.github/workflows/clone-regression-smoke.yml)
+provider workflow tests the real binary and Git history, including exact and
+renamed clones, accepted changes, moves, test-only advisory findings, production
+copies inside tests, larger test clones, malformed configuration, and reviewed
+fingerprint accepts. The policy module has additional lexer and classification
+unit tests.
