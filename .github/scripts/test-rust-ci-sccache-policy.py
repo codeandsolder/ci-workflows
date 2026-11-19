@@ -136,7 +136,7 @@ assert_blocked(
     f"""
 jobs:
   strict:
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@{'3' * 40}
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@{"3" * 40}
 """,
     "executing gate",
     STRICT_SHA,

@@ -200,8 +200,9 @@ fn prod_after() { let x = "}"; }
             policy.apply(self.report(), self.root, 120, 100)
 
     def test_mandatory_gate_does_not_expose_weakening_inputs(self) -> None:
-        workflow = (Path(__file__).resolve().parents[1] / "workflows" /
-                    "clone-regression.yml").read_text()
+        workflow = (
+            Path(__file__).resolve().parents[1] / "workflows" / "clone-regression.yml"
+        ).read_text()
         mandatory = workflow.split("\npermissions:", 1)[0]
         self.assertIn("workflow_call:", mandatory)
         self.assertNotIn("inputs:", mandatory)
