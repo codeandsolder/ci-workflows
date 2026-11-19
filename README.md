@@ -157,6 +157,17 @@ The underlying `.github/actions/cargo-release-quarantine` composite also support
 
 ## Duplicate-code regression gate
 
+The mandatory reusable `.github/workflows/clone-regression.yml` has **no
+caller-adjustable thresholds, language filters, scan roots, or exclusion globs**.
+It discovers at 50 tokens, blocks production/mixed groups at 100 tokens and
+test-only groups at 140 tokens. The scanner always runs with `--no-config`;
+only reviewed `.doppelscan.toml` fingerprint accepts with meaningful reasons
+are honored. For exploratory custom scans, invoke the composite
+`.github/actions/clone-regression` in an explicitly advisory job, separate
+from the mandatory gate. This prevents routine callers from weakening the
+central regression contract via workflow inputs.
+
+
 Use the pinned reusable [clone-regression.yml](.github/workflows/clone-regression.yml)
 on pull requests and default-branch pushes. It runs `doppelscan` **v0.9.0**
 against the Git base, discovers new clones at **50 syntax tokens**, and applies
