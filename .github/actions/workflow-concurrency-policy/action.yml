@@ -7,6 +7,8 @@ runs:
       shell: bash
       env:
         POLICY_ACTION_DIR: ${{ github.action_path }}
+      # The provider owns the dependency lock, not the consuming repository.
+      # This action also works when referenced directly by immutable SHA.
       run: >-
-        uv run --no-project --with pyyaml python
+        uv run --project "$POLICY_ACTION_DIR/../.." --locked python
         "$POLICY_ACTION_DIR/check.py" --root "$GITHUB_WORKSPACE"
