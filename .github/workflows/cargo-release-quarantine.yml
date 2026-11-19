@@ -4,10 +4,10 @@ on:
   workflow_call:
     inputs:
       runner:
-        description: JSON-encoded runs-on selector.
+        description: "auto chooses hosted Ubuntu for public callers and the registered local-ci runner for private callers; otherwise use a JSON-encoded runs-on selector."
         required: false
         type: string
-        default: '"ubuntu-24.04"'
+        default: auto
       hours:
         description: Minimum crates.io release age in hours.
         required: false
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   quarantine:
-    runs-on: ${{ fromJSON(inputs.runner) }}
+    runs-on: ${{ inputs.runner == 'auto' && (github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04') || fromJSON(inputs.runner) }}
     timeout-minutes: 10
     steps:
       - name: Check out caller

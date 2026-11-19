@@ -48,6 +48,11 @@ enforcement without a separate per-repository check. Non-Rust projects can call
 the provider's reusable validation workflow. This is enforcement of native
 GitHub Actions cancellation, not a custom polling daemon.
 
+The concurrency checker uses the provider's committed `.github/uv.lock`,
+including when its reusable workflow checks out only the required action
+and lock files. Consumers do not duplicate Python package versions for this
+check.
+
 Example validated workflow group (this declaration is necessarily local,
 because GitHub requires concurrency at the *caller* workflow level):
 
@@ -91,6 +96,11 @@ uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> #
 Central changes do **not** override project-specific `packageRules` applied later. Remove old local `automerge: false` GitHub Actions and first-party trust-root copies when migrating. Changes to the shared CI's callable workflow inputs may break consumers; those PR checks must be repaired, not bypassed. Do not manually merge ordinary green PRs seconds after they appear: Renovate merges on later runs and insists that the head be up-to-date.
 
 These rules standardize execution by repository visibility, not by a host's name or incompatible repository-specific runner labels. They do not force a common compiler/target choice or release artifact across project boundaries. The reusable `rust-sccache.yml`, shared setup/finalize actions, and Cargo quarantine implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
+
+The Cargo release-age quarantine's `runner` input defaults to `auto`:
+public repositories use `ubuntu-24.04`, private repositories use the same
+registered `local-ci` pool as the shared Rust and strict workflows. Specialized
+callers may still supply an explicit JSON-encoded runner selector.
 
 
 
