@@ -83,6 +83,28 @@ const updatedFixture=nightlies.reduceRight(
      +updated.slice(m.index+m[0].length), inputFixture);
 assert.equal((updatedFixture.match(/nightly-2026-11-16/g)||[]).length,3);
 assert(updatedFixture.includes('rust-toolchain-unrelated: "nightly-2026-11-15"'));
+// A job that needs the same nightly for setup-sccache, rustup and cargo
+// declares one env value. The shared extractor must track that source pin.
+assert.equal(nightlyManager.matchStrings.length,2);
+const envPattern=new RegExp(nightlyManager.matchStrings[1],'g');
+const envFixture=[
+  'env:',
+  '  RUST_NIGHTLY_TOOLCHAIN: nightly-2026-11-15',
+  '  RUST_NIGHTLY_TOOLCHAIN_OTHER: nightly-2026-11-15',
+  "  RUST_NIGHTLY_TOOLCHAIN: 'nightly-2026-11-16' # review-only",
+  '  RUST_NIGHTLY_TOOLCHAIN: "nightly-2026-11-17"',
+  '  RUST_NIGHTLY_TOOLCHAIN: stable',
+].join('\r\n');
+const envPins=[...envFixture.matchAll(envPattern)];
+assert.deepEqual(envPins.map(m=>m.groups.currentValue),[
+  'nightly-2026-11-15', 'nightly-2026-11-16', 'nightly-2026-11-17',
+]);
+assert(envPins.every(m=>!m[0].includes('TOOLCHAIN_OTHER')));
+const envUpdated=envPins.reduceRight(
+ (updated,m)=>updated.slice(0,m.index)+m[0].replace(m.groups.currentValue,'nightly-2026-11-18')
+     +updated.slice(m.index+m[0].length), envFixture);
+assert.equal((envUpdated.match(/RUST_NIGHTLY_TOOLCHAIN: (?:"|'|)nightly-2026-11-18/g)||[]).length,3);
+assert(envUpdated.includes('RUST_NIGHTLY_TOOLCHAIN_OTHER: nightly-2026-11-15'));
 const nightlyGroup=fleet.packageRules.find(r=>r.groupSlug==='pinned-rust-nightly');
 assert(nightlyGroup,'missing nightly grouping policy');
 assert.deepEqual(nightlyGroup.matchDepNames,['rust']);

@@ -78,6 +78,8 @@ Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate
 | `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped, exempt from the package-age hold; PR automerge after consumer CI succeeds |
 | Lockfile maintenance | Weekly, PR automerge only after checks and any configured release-age quarantine clear |
 
+When a workflow uses one pinned Rust nightly for several steps (such as cache identity, `dtolnay/rust-toolchain` and `cargo +...`), declare `RUST_NIGHTLY_TOOLCHAIN: nightly-YYYY-MM-DD` once in the workflow `env`. Reference `${{ env.RUST_NIGHTLY_TOOLCHAIN }}` in action inputs and `"$RUST_NIGHTLY_TOOLCHAIN"` in shell commands. The fleet Renovate regex manager tracks that env declaration as the same review-only `rust`/`rust-version` dependency as explicit `rust-toolchain:` inputs; it prevents drift between the cache key, installed compiler and executed compiler.
+
 Use immutable SHA references to shared workflows and actions with a tracking `# main` suffix:
 
 ```yaml

@@ -28,7 +28,8 @@
         "/^\\.github\\/workflows\\/[^/]+\\.ya?ml$/"
       ],
       "matchStrings": [
-        "(?:^|\\r?\\n)[ \\t]*rust-toolchain:[ \\t]*[\"']?(?<currentValue>nightly-[^\"'\\s]+)"
+        "(?:^|\\r?\\n)[ \\t]*rust-toolchain:[ \\t]*[\"']?(?<currentValue>nightly-[^\"'\\s]+)",
+        "(?:^|\\r?\\n)[ \\t]*RUST_NIGHTLY_TOOLCHAIN:[ \\t]*[\"']?(?<currentValue>nightly-[^\"'\\s]+)"
       ],
       "depNameTemplate": "rust",
       "datasourceTemplate": "rust-version",
