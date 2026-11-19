@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Post-process the pinned clone scanner's *base-relative* report.
 
 Production clones retain the strict threshold. Independently identified test
@@ -6,6 +5,7 @@ clones use the more generous test threshold; mixed copies are production.
 Only [[accept]] fingerprints/reasons are loaded from repository config:
 scanner thresholds/exclusions cannot be overridden by caller settings.
 """
+
 from __future__ import annotations
 
 import bisect
@@ -14,15 +14,16 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+from typing import Any
 
 CFG_TEST_MODULE = re.compile(
     r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*"
-    r"(?:pub(?:\([^)]*\))?\s+)?mod\s+[a-zA-Z_]\w*\s*\{"
+    r"(?:pub(?:\([^)]*\))?\s+)?mod\s+[a-zA-Z_]\w*\s*\{",
 )
 TEST_FUNCTION = re.compile(
     r"#\s*\[\s*(?:(?:tokio|async_std)::)?test(?:\([^]]*\))?\s*\]\s*"
     r"(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+[a-zA-Z_]\w*"
-    r"[^{};]*\{"
+    r"[^{};]*\{",
 )
 RAW_STRING = re.compile(r"(?:br|rb|r)(#{0,32})\"")
 CHAR = re.compile(r"'(?:\\(?:u\{[a-fA-F0-9_]+\}|x[a-fA-F0-9]{2}|.)|[^\\'\n])'")
@@ -62,15 +63,19 @@ def rust_structure(source: str) -> str:
                 else:
                     i += 1
         else:
-            raw = RAW_STRING.match(source, i) if (
-                i == 0 or not (source[i - 1].isalnum() or source[i - 1] == "_")
-            ) else None
+            raw = (
+                RAW_STRING.match(source, i)
+                if (i == 0 or not (source[i - 1].isalnum() or source[i - 1] == "_"))
+                else None
+            )
             if raw is not None:
                 close = '"' + raw.group(1)
                 end = source.find(close, raw.end())
                 i = n if end < 0 else end + len(close)
             elif source[i] == '"' or (
-                source[i] in ("b", "c") and i + 1 < n and source[i + 1] == '"'
+                source[i] in ("b", "c")
+                and i + 1 < n
+                and source[i + 1] == '"'
                 and (i == 0 or not (source[i - 1].isalnum() or source[i - 1] == "_"))
             ):
                 i += 1 if source[i] == '"' else 2
@@ -97,7 +102,7 @@ def rust_structure(source: str) -> str:
 
 def rust_test_intervals(source: str) -> list[tuple[int, int]]:
     structural = rust_structure(source)
-    starts = [0] + [match.end() for match in re.finditer("\n", structural)]
+    starts = [0] + [match.end() for match in re.finditer(r"\n", structural)]
 
     def line(index: int) -> int:
         return bisect.bisect_right(starts, index)
@@ -123,20 +128,36 @@ def test_file(relative: str) -> bool:
     path = Path(relative)
     components = [part.lower() for part in path.parts]
     name = path.name.lower()
-    if any(part in {"test", "tests", "__tests__", "spec", "specs"} for part in components[:-1]):
+    if any(
+        part in {"test", "tests", "__tests__", "spec", "specs"}
+        for part in components[:-1]
+    ):
         return True
     if name in {"tests.rs", "test.rs", "conftest.py"}:
         return True
     if name.startswith(("test_", "test-", "smoke-", "spec_")):
         return True
-    if name.endswith(("_test.rs", "_test.py", ".test.js", ".test.ts", ".test.jsx",
-                      ".test.tsx", ".spec.js", ".spec.ts", ".spec.jsx", ".spec.tsx",
-                      ".spec.py", ".spec.sh")):
-        return True
-    return False
+    return name.endswith(
+        (
+            "_test.rs",
+            "_test.py",
+            ".test.js",
+            ".test.ts",
+            ".test.jsx",
+            ".test.tsx",
+            ".spec.js",
+            ".spec.ts",
+            ".spec.jsx",
+            ".spec.tsx",
+            ".spec.py",
+            ".spec.sh",
+        )
+    )
 
 
-def test_occurrence(root: Path, item: dict, cache: dict[str, list[tuple[int, int]]]) -> bool:
+def test_occurrence(
+    root: Path, item: dict[str, Any], cache: dict[str, list[tuple[int, int]]]
+) -> bool:
     relative = item["file"]
     file = (root / relative).resolve()
     try:
@@ -181,8 +202,12 @@ def accepted_fingerprints(root: Path) -> dict[str, str]:
 
 
 def apply(
-    raw: dict, root: Path, production: int, testing: int, scan_root: Path | None = None
-) -> dict:
+    raw: dict[str, Any],
+    root: Path,
+    production: int,
+    testing: int,
+    scan_root: Path | None = None,
+) -> dict[str, Any]:
     if production < 1 or testing < production:
         raise ValueError("test blocking threshold must be >= production threshold > 0")
     accepts = accepted_fingerprints(root)
@@ -191,7 +216,11 @@ def apply(
     result = {**raw, "new": [], "smaller": [], "accepted": []}
     for group in raw["new"] + raw["smaller"]:
         members = group["occurrences"]
-        tier = "test" if members and all(test_occurrence(scan_root, m, cache) for m in members) else "production"
+        tier = (
+            "test"
+            if members and all(test_occurrence(scan_root, m, cache) for m in members)
+            else "production"
+        )
         threshold = testing if tier == "test" else production
         classified = {**group, "policy_tier": tier, "policy_blocking_tokens": threshold}
         reason = accepts.get(group["fingerprint"].lower())
@@ -219,16 +248,20 @@ def apply(
 def main() -> None:
     if len(sys.argv) != 7:
         raise SystemExit(
-            "usage: clone-regression-policy.py RAW_REPORT OUTPUT_REPORT ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS"
+            "usage: clone-regression-policy.py RAW_REPORT OUTPUT_REPORT ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS",
         )
     raw_file, output_file, workspace, scan_path, prod, test = sys.argv[1:]
     root = Path(workspace).resolve()
     scan_root = Path(scan_path).resolve()
     scan_root.relative_to(root)  # fail closed if caller selected an escaping scan path
     report = apply(
-        json.loads(Path(raw_file).read_text()), root, int(prod), int(test), scan_root
+        json.loads(Path(raw_file).read_text(encoding="utf-8")),
+        root,
+        int(prod),
+        int(test),
+        scan_root,
     )
-    Path(output_file).write_text(json.dumps(report, indent=2) + "\n")
+    Path(output_file).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
