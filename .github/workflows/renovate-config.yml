@@ -22,4 +22,12 @@ jobs:
         run: |
           set -euo pipefail
           test -f renovate.json
-          npx --yes --package=renovate@44.222.5 renovate-config-validator renovate.json
+          configs=(renovate.json)
+          # Fleet presets live only in ci-workflows, not in consumer repos.
+          # Validate every present config without changing the shared caller contract.
+          for preset in renovate-fleet.json renovate-ci-trust-root.json; do
+            if [[ -f "$preset" ]]; then
+              configs+=("$preset")
+            fi
+          done
+          npx --yes --package=renovate@44.222.5 renovate-config-validator "${configs[@]}"

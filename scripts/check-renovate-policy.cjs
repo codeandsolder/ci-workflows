@@ -52,5 +52,44 @@ assert.deepEqual(toolchain.matchManagers,['rust-toolchain']);
 assert.equal(toolchain.automerge,false);
 assert.equal(toolchain.enabled,undefined);
 assert(fleet.packageRules.indexOf(toolchain)>fleet.packageRules.indexOf(stable),'toolchain rule must override generic stable minor automerge');
+// A pinned nightly in rust-toolchain.toml is extracted by the built-in
+// rust-toolchain manager; the regex manager must extract the same logical
+// rust-version/rust dependency from every reusable-workflow toolchain input.
+// Otherwise Renovate updates the manifest alone and the caller's CI fails.
+const nightlyManager=fleet.customManagers.find(m=>m.depNameTemplate==='rust'
+ && m.datasourceTemplate==='rust-version');
+assert(nightlyManager,'missing shared Rust nightly workflow extractor');
+assert.equal(nightlyManager.customType,'regex');
+assert.equal(nightlyManager.versioningTemplate,'rust-release-channel');
+assert(nightlyManager.managerFilePatterns.some(p=>new RegExp(p.slice(1,-1)).test('.github/workflows/ci.yml')));
+const nightlyPattern=new RegExp(nightlyManager.matchStrings[0],'g');
+const inputFixture=[
+  'jobs:',
+  '  rust:',
+  '    with:',
+  '      rust-toolchain: "nightly-2026-11-15"',
+  '      rust-components: "rustfmt clippy"',
+  '  wasm:',
+  '    with:',
+  "      rust-toolchain: 'nightly-2026-11-15' # comment",
+  '      rust-toolchain-unrelated: "nightly-2026-11-15"',
+  '      rust-toolchain: nightly-2026-11-15 # unquoted',
+].join('\r\n');
+const nightlies=[...inputFixture.matchAll(nightlyPattern)];
+assert.equal(nightlies.length,3,'extract every workflow compiler pin, including CRLF and YAML quoting variants');
+assert.deepEqual(nightlies.map(m=>m.groups.currentValue),Array(3).fill('nightly-2026-11-15'));
+const updatedFixture=nightlies.reduceRight(
+ (updated,m)=>updated.slice(0,m.index)+m[0].replace(m.groups.currentValue,'nightly-2026-11-16')
+     +updated.slice(m.index+m[0].length), inputFixture);
+assert.equal((updatedFixture.match(/nightly-2026-11-16/g)||[]).length,3);
+assert(updatedFixture.includes('rust-toolchain-unrelated: "nightly-2026-11-15"'));
+const nightlyGroup=fleet.packageRules.find(r=>r.groupSlug==='pinned-rust-nightly');
+assert(nightlyGroup,'missing nightly grouping policy');
+assert.deepEqual(nightlyGroup.matchDepNames,['rust']);
+assert.deepEqual(nightlyGroup.matchDatasources,['rust-version']);
+assert.deepEqual(nightlyGroup.matchManagers,['rust-toolchain','custom.regex']);
+assert.equal(nightlyGroup.matchCurrentVersion,'/^nightly-/');
+assert.equal(nightlyGroup.automerge,false);
+assert(fleet.packageRules.indexOf(nightlyGroup)>fleet.packageRules.indexOf(toolchain));
 assert.equal(fleet.lockFileMaintenance.automerge,true);
 console.log('Shared fleet Renovate configuration and trust-root precedence invariants: PASS');
