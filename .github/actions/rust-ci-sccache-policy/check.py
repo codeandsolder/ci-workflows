@@ -45,10 +45,7 @@ CARGO_NON_COMPILING = {
     "yank",
 }
 PROBE_ARGS = {"--help", "-h", "--version", "-V", "-vV"}
-RUST_COMPILE_ACTIONS = (
-    "houseabsolute/actions-rust-cross@",
-)
-
+RUST_COMPILE_ACTIONS = ("houseabsolute/actions-rust-cross@",)
 
 
 def external_ref(uses: str, prefix: str) -> str | None:
@@ -126,7 +123,11 @@ def shell_line_compiles(line: str) -> bool:
     except ValueError:
         # Fall back only for unmistakable compiler command spellings when shell
         # quoting is malformed.
-        return bool(re.search(r"(?:^|[;&|]\s*)(?:cargo|rustc|rustdoc|clippy-driver)(?:\s|\+)", line))
+        return bool(
+            re.search(
+                r"(?:^|[;&|]\s*)(?:cargo|rustc|rustdoc|clippy-driver)(?:\s|\+)", line
+            )
+        )
 
     segment: list[str] = []
     for token in [*tokens, ";"]:
@@ -161,10 +162,10 @@ def run_mentions_rust(run: str) -> bool:
     return False
 
 
-
 SHELL_INTERPRETERS = {"bash", "sh", "dash", "zsh", "ksh"}
 SCRIPT_CONTEXT = {"exec", "command", "time", "nohup"}
 DYNAMIC_PATH = re.compile(r"[$*?\x60]")
+
 
 def shell_commands(source: str) -> list[list[str]]:
     commands: list[list[str]] = []
@@ -233,7 +234,9 @@ def shell_commands(source: str) -> list[list[str]]:
 
 def normalized_command(tokens: list[str]) -> list[str]:
     tokens = tokens.copy()
-    while tokens and (tokens[0] in CONTROL_PREFIX | SCRIPT_CONTEXT or ASSIGNMENT_RE.match(tokens[0])):
+    while tokens and (
+        tokens[0] in CONTROL_PREFIX | SCRIPT_CONTEXT or ASSIGNMENT_RE.match(tokens[0])
+    ):
         tokens.pop(0)
     if tokens and tokens[0] == "env":
         tokens.pop(0)
@@ -295,7 +298,11 @@ def script_target(tokens: list[str]) -> tuple[str | None, str | None]:
         return (args[0], None) if args else (None, None)
     if command.startswith(("./", "../", "/")) or command.endswith((".sh", ".bash")):
         return command, None
-    if "/" in command and not any(ch in command for ch in ":*?[]()=$") and not any(ch.isspace() for ch in command):
+    if (
+        "/" in command
+        and not any(ch in command for ch in ":*?[]()=$")
+        and not any(ch.isspace() for ch in command)
+    ):
         return command, None
     return None, None
 
@@ -332,7 +339,11 @@ def inspect_shell_source(
             continue
         if tokens[0] == "cd" and len(tokens) >= 2:
             destination = repo_path(root, cwd, tokens[1])
-            cwd = destination if destination is not None and destination.is_dir() else root / "__unresolved_working_directory__"
+            cwd = (
+                destination
+                if destination is not None and destination.is_dir()
+                else root / "__unresolved_working_directory__"
+            )
             continue
         script, inline = script_target(tokens)
         if inline is not None:
@@ -366,14 +377,27 @@ def inspect_shell_source(
     return found, unresolved
 
 
-def working_directory(root: Path, job: dict[str, Any], step: dict[str, Any]) -> Path | None:
+def working_directory(
+    root: Path, job: dict[str, Any], step: dict[str, Any]
+) -> Path | None:
     defaults = job.get("defaults")
     run_defaults = defaults.get("run") if isinstance(defaults, dict) else None
-    default = run_defaults.get("working-directory") if isinstance(run_defaults, dict) else None
+    default = (
+        run_defaults.get("working-directory")
+        if isinstance(run_defaults, dict)
+        else None
+    )
     value = step.get("working-directory", default)
-    return root if value is None else repo_path(root, root, value) if isinstance(value, str) else None
+    return (
+        root
+        if value is None
+        else repo_path(root, root, value)
+        if isinstance(value, str)
+        else None
+    )
 
-def step_mentions_rust(step: Any) -> bool:
+
+def step_mentions_rust(step: object) -> bool:
     if not isinstance(step, dict):
         return False
     run = step.get("run")
@@ -386,10 +410,15 @@ def step_mentions_rust(step: Any) -> bool:
     if uses.startswith("./"):
         # Local Rust policy/actions are Rust work even if the actual Cargo call
         # is nested in the composite action.
-        return any(token in lowered for token in ("rust-strict", "cargo-build", "cargo-test", "clippy"))
+        return any(
+            token in lowered
+            for token in ("rust-strict", "cargo-build", "cargo-test", "clippy")
+        )
     if lowered.startswith("actions-rs/cargo@"):
         with_args = step.get("with")
-        command = str(with_args.get("command", "")) if isinstance(with_args, dict) else ""
+        command = (
+            str(with_args.get("command", "")) if isinstance(with_args, dict) else ""
+        )
         args = str(with_args.get("args", "")) if isinstance(with_args, dict) else ""
         try:
             tokens = [command, *shlex.split(args)] if command else []
@@ -410,7 +439,9 @@ def canonical_step_kind(uses: str) -> str | None:
     return None
 
 
-def inspect_job(path: Path, job_name: str, job: Any, strict_ref: str | None, root: Path) -> list[str]:
+def inspect_job(
+    path: Path, job_name: str, job: object, strict_ref: str | None, root: Path
+) -> list[str]:
     if not isinstance(job, dict):
         return []
     violations: list[str] = []
@@ -418,12 +449,16 @@ def inspect_job(path: Path, job_name: str, job: Any, strict_ref: str | None, roo
     if isinstance(job_uses, str):
         if job_uses.startswith(CANONICAL_WORKFLOW):
             if not is_full_sha_use(job_uses, CANONICAL_WORKFLOW):
-                violations.append(f"{path}:{job_name}: shared Rust CI ref must be a full commit SHA")
+                violations.append(
+                    f"{path}:{job_name}: shared Rust CI ref must be a full commit SHA"
+                )
             return violations
         if job_uses.startswith(STRICT_WORKFLOW):
             ref = external_ref(job_uses, STRICT_WORKFLOW)
             if ref is None or not FULL_SHA.fullmatch(ref):
-                violations.append(f"{path}:{job_name}: strict Rust workflow ref must be a full commit SHA")
+                violations.append(
+                    f"{path}:{job_name}: strict Rust workflow ref must be a full commit SHA"
+                )
             elif strict_ref is not None and ref != strict_ref:
                 violations.append(
                     f"{path}:{job_name}: strict Rust workflow uses {ref[:12]}, "
@@ -447,7 +482,9 @@ def inspect_job(path: Path, job_name: str, job: Any, strict_ref: str | None, roo
             cwd = working_directory(root, job, step)
             if cwd is None:
                 if "./" in run or ".sh" in run:
-                    unresolved_by_step[index] = {"dynamic working-directory for shell script invocation"}
+                    unresolved_by_step[index] = {
+                        "dynamic working-directory for shell script invocation"
+                    }
             else:
                 indirect, unresolved = inspect_shell_source(run, root, cwd, set())
                 known |= indirect
@@ -469,12 +506,16 @@ def inspect_job(path: Path, job_name: str, job: Any, strict_ref: str | None, roo
         elif kind == "finalize":
             finalize_indices.append(index)
         if uses.lower().startswith("swatinem/rust-cache@"):
-            violations.append(f"{path}:{job_name}: Swatinem/rust-cache is forbidden; use canonical sccache")
+            violations.append(
+                f"{path}:{job_name}: Swatinem/rust-cache is forbidden; use canonical sccache"
+            )
 
     if unresolved_by_step and not setup_indices:
-        for index, unknowns in sorted(unresolved_by_step.items()):
-            for reason in sorted(unknowns):
-                violations.append(f"{path}:{job_name}: step {index}: {reason}; canonical sccache required")
+        violations.extend(
+            f"{path}:{job_name}: step {index}: {reason}; canonical sccache required"
+            for index, unknowns in sorted(unresolved_by_step.items())
+            for reason in sorted(unknowns)
+        )
 
     if not rust_indices:
         return violations
@@ -482,19 +523,27 @@ def inspect_job(path: Path, job_name: str, job: Any, strict_ref: str | None, roo
     first_rust = min(rust_indices)
     last_rust = max(rust_indices)
     if not setup_indices:
-        violations.append(f"{path}:{job_name}: Rust job is missing canonical setup-sccache")
+        violations.append(
+            f"{path}:{job_name}: Rust job is missing canonical setup-sccache"
+        )
     elif min(setup_indices) > first_rust:
         violations.append(f"{path}:{job_name}: setup-sccache runs after Rust tooling")
 
     if not finalize_indices:
-        violations.append(f"{path}:{job_name}: Rust job is missing canonical finalize-sccache")
+        violations.append(
+            f"{path}:{job_name}: Rust job is missing canonical finalize-sccache"
+        )
     elif max(finalize_indices) < last_rust:
-        violations.append(f"{path}:{job_name}: finalize-sccache runs before the last Rust tooling step")
+        violations.append(
+            f"{path}:{job_name}: finalize-sccache runs before the last Rust tooling step"
+        )
     else:
         for index in finalize_indices:
             step = steps[index]
             if isinstance(step, dict) and str(step.get("if", "")).strip() != "always()":
-                violations.append(f"{path}:{job_name}: finalize-sccache must use if: always()")
+                violations.append(
+                    f"{path}:{job_name}: finalize-sccache must use if: always()"
+                )
 
     return violations
 
@@ -516,17 +565,21 @@ def inspect_root(root: Path, strict_ref: str | None = None) -> list[str]:
         if not isinstance(jobs, dict):
             continue
         for name, job in jobs.items():
-            violations.extend(inspect_job(path.relative_to(root), str(name), job, strict_ref, root))
+            violations.extend(
+                inspect_job(path.relative_to(root), str(name), job, strict_ref, root)
+            )
     return violations
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path.cwd())
-    parser.add_argument("--strict-ref", help="Expected rust-skills2 strict workflow SHA")
+    parser.add_argument(
+        "--strict-ref", help="Expected rust-skills2 strict workflow SHA"
+    )
     args = parser.parse_args()
     root = args.root.resolve()
-    violations = inspect_root(root, args.strict_ref)
+    violations = inspect_root(root, args.strict_ref or None)
     if violations:
         print("ci-workflows: Rust CI sccache policy violations:")
         for violation in violations:
