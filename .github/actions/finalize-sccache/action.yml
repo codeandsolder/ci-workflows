@@ -20,15 +20,17 @@ runs:
           process.stdin.on("data", chunk => input += chunk);
           process.stdin.on("end", () => {
             const stats = JSON.parse(input).stats ?? {};
-            process.stdout.write(`${stats.cache_read_errors ?? 0} ${stats.cache_write_errors ?? 0}`);
+            const misses = Object.values(stats.cache_misses?.counts ?? {}).reduce((sum, n) => sum + n, 0);
+            process.stdout.write(`${stats.cache_read_errors ?? 0} ${stats.cache_write_errors ?? 0} ${misses}`);
           });
         ')"
-        read -r read_errors write_errors <<< "$errors"
+        read -r read_errors write_errors misses <<< "$errors"
         "$SCCACHE_BIN" --stop-server || true
         if (( read_errors != 0 || write_errors != 0 )); then
           echo "sccache backend errors: read=$read_errors write=$write_errors" >&2
           exit 1
         fi
+        echo "CODEANDSOLDER_SCCACHE_REFRESH=$([[ "$misses" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_ENV"
 
     - name: Verify managed private Garage connection
       if: env.CODEANDSOLDER_SCCACHE_MODE == 'private-local-garage'
@@ -71,6 +73,7 @@ runs:
       if: >-
         env.CODEANDSOLDER_SCCACHE_MODE == 'public-actions' &&
         env.CODEANDSOLDER_SCCACHE_CACHE_HIT != 'true' &&
+        env.CODEANDSOLDER_SCCACHE_REFRESH == 'true' &&
         (github.event_name == 'workflow_dispatch' ||
          (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch))
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
