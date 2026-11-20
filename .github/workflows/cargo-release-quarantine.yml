@@ -24,7 +24,6 @@ permissions:
 
 jobs:
   quarantine:
-    if: github.repository_owner != 'codeandsolder'
     runs-on: ${{ inputs.runner == 'auto' && (github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04') || fromJSON(inputs.runner) }}
     timeout-minutes: 10
     steps:
