@@ -12,7 +12,7 @@ assert.equal(fleet.platformAutomerge,false);
 assert.equal(fleet.ignoreTests,false);
 assert.equal(trust.platformAutomerge,false);
 assert.equal(trust.ignoreTests,false);
-assert.equal(fleet.minimumReleaseAge,null, 'the codeandsolder fleet has no release-age hold');
+assert.equal(fleet.minimumReleaseAge,null, 'age scope is determined by dependency source, not consuming repository');
 assert.equal(Object.hasOwn(fleet,'minimumReleaseAgeBehaviour'),false);
 assert.equal(fleet.internalChecksFilter,'strict');
 // Limit CI-producing commits, not just PR creation. Preserve CI-gated,
@@ -26,14 +26,25 @@ assert(firstRule);
 assert.equal(firstRule.automerge,true);
 assert.deepEqual(firstRule.matchUpdateTypes,['digest','pinDigest']);
 assert.deepEqual(firstRule.matchManagers,['github-actions']);
-const noAge=fleet.packageRules.at(-1);
+const noAge=fleet.packageRules.at(-2);
 assert.deepEqual(noAge.matchPackageNames,['/.*/']);
 assert.equal(noAge.minimumReleaseAge,null);
 assert.equal(noAge.minimumReleaseAgeBuffer,null);
-for (const rule of [...fleet.packageRules.slice(0,-1),...trust.packageRules]) {
- assert.equal(Object.hasOwn(rule,'minimumReleaseAge'),false, 'obsolete per-package hold override');
- assert.equal(Object.hasOwn(rule,'minimumReleaseAgeBehaviour'),false, 'obsolete timestamp workaround');
+const externalCrates=fleet.packageRules.at(-1);
+assert.deepEqual(externalCrates.matchManagers,['cargo']);
+assert.deepEqual(externalCrates.matchDatasources,['crate']);
+assert.equal(externalCrates.minimumReleaseAge,'3 days');
+assert.equal(externalCrates.minimumReleaseAgeBehaviour,'timestamp-required');
+// Crate names are not repository owner identifiers. Do not waive age for
+// a crate using a self-declared repository URL. First-party Git dependencies
+// and Actions have different datasources and never match this registry rule.
+assert.equal(Object.hasOwn(externalCrates,'matchSourceUrls'),false);
+assert.equal(Object.hasOwn(externalCrates,'matchPackageNames'),false);
+for (const rule of [...fleet.packageRules.slice(0,-2),...trust.packageRules]) {
+ assert.equal(Object.hasOwn(rule,'minimumReleaseAge'),false, 'age policy belongs in final source-based rules');
 }
+const quarantine=fs.readFileSync('.github/workflows/cargo-release-quarantine.yml','utf8');
+assert(!quarantine.includes('github.repository_owner'),'do not exempt all dependencies by caller ownership');
 const stable=fleet.packageRules.find(r=>r.matchCurrentVersion==='!/^0\\./');
 assert.equal(stable.automerge,true);
 assert(stable.matchUpdateTypes.includes('patch'));

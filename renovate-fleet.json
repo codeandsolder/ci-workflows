@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Fleet-wide Renovate defaults: CI-gated automerge for compatible dependencies and pinned Actions, with breaking and toolchain updates reviewable; no release-age waiting period.",
+  "description": "Fleet-wide CI-gated automerge with a 72-hour external crates.io release-age quarantine; first-party Git dependencies and trust roots are exempt.",
   "extends": [
     "config:recommended",
     "helpers:pinGitHubActionDigests",
@@ -125,12 +125,23 @@
       "matchCurrentVersion": "/^nightly-/"
     },
     {
-      "description": "No release-age hold in codeandsolder repos; also override inherited package-specific delays from config:best-practices",
+      "description": "Clear inherited generic age delays; the following rule enforces the external registry crate quarantine.",
       "matchPackageNames": [
         "/.*/"
       ],
       "minimumReleaseAge": null,
       "minimumReleaseAgeBuffer": null
+    },
+    {
+      "description": "External crates.io releases must age for 72 hours; Git-sourced dependencies use a different datasource.",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "crate"
+      ],
+      "minimumReleaseAge": "3 days",
+      "minimumReleaseAgeBehaviour": "timestamp-required"
     }
   ],
   "platformAutomerge": false,

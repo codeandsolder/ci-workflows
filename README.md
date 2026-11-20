@@ -80,13 +80,13 @@ Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate
 
 | Update | Central behavior |
 | --- | --- |
-| Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks, with no release-age delay; compatible Cargo minor/patch updates are grouped |
-| Pre-1.0 patch | PR automerge after green checks |
+| Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks, after the applicable release-age check; compatible Cargo minor/patch updates are grouped |
+| Pre-1.0 patch | PR automerge after green checks and applicable release-age check |
 | Rust toolchain (stable and nightly) | PR for review; do not silently change pinned compiler versions or project MSRV |
 | Pre-1.0 minor, major, replacement | PR for review |
 | Third-party GitHub Actions digest/pinning | PR automerge after green checks |
 | `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped; PR automerge after consumer CI succeeds |
-| Lockfile maintenance | Weekly, PR automerge after green checks |
+| Lockfile maintenance | Weekly, PR automerge after green checks including newly introduced external crates.io versions |
 
 When a workflow uses one pinned Rust nightly for several steps (such as cache identity, `dtolnay/rust-toolchain` and `cargo +...`), declare `RUST_NIGHTLY_TOOLCHAIN: nightly-YYYY-MM-DD` once in the workflow `env`. Reference `${{ env.RUST_NIGHTLY_TOOLCHAIN }}` in action inputs and `"$RUST_NIGHTLY_TOOLCHAIN"` in shell commands. The fleet Renovate regex manager tracks that env declaration as the same review-only `rust`/`rust-version` dependency as explicit `rust-toolchain:` inputs; it prevents drift between the cache key, installed compiler and executed compiler.
 
@@ -96,7 +96,7 @@ Use immutable SHA references to shared workflows and actions with a tracking `# 
 uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> # main
 ```
 
-`platformAutomerge: false` and `ignoreTests: false` deliberately require Renovate itself to observe passing branch checks; this matters for repositories without GitHub required-check protection. A repository without checks **does not automatically merge**. The codeandsolder fleet explicitly sets `minimumReleaseAge: null` globally **and in a final catch-all package rule** (which overrides inherited package-specific holds, including `config:best-practices`): there is **no age-based waiting period** for dependency updates. Ordinary failed, pending, or unknown CI checks still block automerge.
+`platformAutomerge: false` and `ignoreTests: false` deliberately require Renovate itself to observe passing branch checks; this matters for repositories without GitHub required-check protection. A repository without checks **does not automatically merge**. The final source-based Renovate rule requires a 72-hour release age for Cargo registry crate releases. First-party Git dependencies and pinned shared CI SHAs do not incur a release-age delay. The independent Cargo lockfile gate checks newly introduced registry versions, including transitive dependencies, in every consuming repository regardless of its owner. A registry crate is not first-party merely because its metadata claims a codeandsolder repository; registry exceptions would require independently verified ownership. Other dependency ecosystems retain their existing no-age defaults. Ordinary failed, pending, or unknown CI checks still block automerge.
 
 ### Keep routine dependency maintenance from flooding CI
 
@@ -164,13 +164,13 @@ The caller still controls toolchain, components, targets, `RUSTFLAGS`, timeout, 
 
 `isolate-public-sccache-server: true` places the hosted Linux/macOS compiler-cache daemon on a dedicated Unix-domain socket, distinct from the default TCP endpoint used by the program's integration tests. This is designed for repositories such as `sccache-deduplicated` whose tests deliberately start/stop their own sccache instance. The compiler and finalizer retain the dedicated socket; the caller should launch **only the test executables** with `SCCACHE_SERVER_UDS` unset using Cargo's target runner, preserving the compiler's mandatory cache. This option is public-Unix only and explicitly rejects Windows instead of silently failing to isolate. Do not use it on a private local/Garage runner; the root-managed daemon there remains unchanged.
 
-## Optional Cargo release-age checker (not used by codeandsolder fleet)
+## Cargo release-age quarantine
 
-The optional `.github/workflows/cargo-release-quarantine.yml` can reject newly introduced crates.io package versions under 72 hours old when explicitly used by **non-codeandsolder** consumers. The codeandsolder fleet does not invoke the age checker from its strict gate or mandatory dependency CI. The caller keeps only a tiny trigger workflow; the implementation lives here and is checked out at the exact reusable-workflow SHA via `job.workflow_sha`. The reusable action `.github/actions/cargo-release-quarantine` can also be invoked directly from a different shared CI gate, without adding another checkout to the caller's source workspace.
+The shared `.github/workflows/cargo-release-quarantine.yml` rejects newly introduced crates.io package versions under 72 hours old. Standard strict Rust CI invokes the same action for all repository owners; first-party Git-sourced dependencies are outside the registry check, but their newly introduced external transitive crates remain subject to it. The caller keeps only a tiny trigger workflow; the implementation lives here and is checked out at the exact reusable-workflow SHA via `job.workflow_sha`. The reusable action `.github/actions/cargo-release-quarantine` can also be invoked directly from a different shared CI gate, without adding another checkout to the caller's source workspace.
 
 By default, `lockfile: auto` scans **all git-tracked `Cargo.lock` files**, including nested independent Rust workspaces. It compares the union of crates.io package identities across all lockfiles in the PR checkout with the union in the base commit, so shared versions are looked up once and moving a lockfile does not produce a spurious introduction. A newly introduced crate version is blocked until its crates.io publication is at least 72 hours old; metadata lookup failures fail closed. Removing a lockfile while the same workspace's Cargo.toml remains is rejected, but deleting an entire workspace is valid. Repositories without any tracked Cargo.lock have nothing for this lockfile-based gate to inspect.
 
-Use `lockfile: path/to/Cargo.lock` only when a *single* explicit lockfile is desired, for example a synthetic CI fixture. Opt-in external Rust CI should use the `auto` default. The action also supports `fail-on-blocked: "false"` when a maintenance process wants to probe eligibility without making CI red. The checker discovers tracked paths via Git, not untracked `target` or CI checkout folders; no code from lockfiles is executed. For private caller repositories, check out the PR merge ref with `fetch-depth: 2` before invoking the direct action: the exact PR base commit will already exist locally, so no network fetch (and no retained Git authentication) is required. The action verifies the SHA exists locally before attempting a fallback fetch; if GitHub did not supply that commit, a failed fetch is a hard CI failure, not a quarantine bypass.
+Use `lockfile: path/to/Cargo.lock` only when a *single* explicit lockfile is desired, for example a synthetic CI fixture. Standard Rust CI should use the `auto` default. The action also supports `fail-on-blocked: "false"` when a maintenance process wants to probe eligibility without making CI red. The checker discovers tracked paths via Git, not untracked `target` or CI checkout folders; no code from lockfiles is executed. For private caller repositories, check out the PR merge ref with `fetch-depth: 2` before invoking the direct action: the exact PR base commit will already exist locally, so no network fetch (and no retained Git authentication) is required. The action verifies the SHA exists locally before attempting a fallback fetch; if GitHub did not supply that commit, a failed fetch is a hard CI failure, not a quarantine bypass.
 
 The underlying `.github/actions/cargo-release-quarantine` composite also supports non-failing eligibility probes (`fail-on-blocked: "false"`) for automation that needs to wait for a frozen lockfile snapshot to age without modifying it.
 
