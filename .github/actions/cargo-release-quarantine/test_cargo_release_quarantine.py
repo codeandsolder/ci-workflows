@@ -150,6 +150,33 @@ class QuarantineTest(unittest.TestCase):
         ):
             self.assertEqual(quarantine.quarantine(ref, "auto", 72), 0)
 
+    def test_first_party_git_update_does_not_exempt_external_transitive_crates(self) -> None:
+        self.write("Cargo.toml", "[workspace]\n")
+
+        def lock(revision: str, external_version: str) -> str:
+            git_package = make_lock(("own-crate", "0.1.0")).replace(
+                _SOURCE, f"git+https://github.com/codeandsolder/own-crate#{revision}"
+            )
+            return git_package + make_lock(("serde", external_version)).split("\n", 1)[1]
+
+        self.write("Cargo.lock", lock("a" * 40, "1.0.0"))
+        ref = self.baseline()
+        self.write("Cargo.lock", lock("b" * 40, "1.0.0"))
+        with patch.object(quarantine, "publication_time") as lookup:
+            self.assertEqual(quarantine.quarantine(ref, "auto", 72), 0)
+            lookup.assert_not_called()
+
+        self.write("Cargo.lock", lock("b" * 40, "1.0.1"))
+        with patch.object(
+            quarantine, "publication_time", return_value=dt.datetime.now(dt.UTC)
+        ) as lookup:
+            self.assertEqual(
+                quarantine.quarantine(ref, "auto", 72), quarantine.QUARANTINED_EXIT
+            )
+            lookup.assert_called_once_with(
+                {"name": "serde", "version": "1.0.1", "source": _SOURCE}
+            )
+
     def test_missing_metadata_fails_closed(self) -> None:
         self.write("Cargo.toml", "[workspace]\n")
         self.write("Cargo.lock", make_lock(("serde", "1.0.0")))
