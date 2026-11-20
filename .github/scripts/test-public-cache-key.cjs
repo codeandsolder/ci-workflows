@@ -20,7 +20,7 @@ try {
     RUNNER_OS: 'Linux', RUNNER_ARCH: 'X64', ImageOS: 'ubuntu24', CACHE_SIZE_MIB: '6144',
     GITHUB_WORKFLOW: 'CI', GITHUB_JOB: 'rust', GITHUB_RUN_ID: '111', GITHUB_RUN_ATTEMPT: '1',
     CACHE_SCOPE: 'build', CACHE_RUST_TOOLCHAIN: 'stable', CACHE_RUSTFLAGS: '-D warnings',
-    FAKE_RUSTC: 'compiler-a' };
+    FAKE_RUSTC: 'compiler-a', RUSTC: 'rustc' };
   const key = () => {
     fs.writeFileSync(env.GITHUB_OUTPUT, ''); fs.writeFileSync(env.GITHUB_ENV, '');
     run('bash', [script], env);
@@ -28,6 +28,21 @@ try {
       .map(line => line.split('=')));
   };
   const a = key(); assert.deepEqual(a, key());
+  // An outer runner workspace can contain several separately checked out Git
+  // repositories. Select the intended one, not the shell's working directory.
+  const nested = path.join(tmp, 'nested');
+  fs.mkdirSync(nested);
+  execFileSync('git', ['init', '-q', nested]);
+  fs.copyFileSync(manifest, path.join(nested, 'Cargo.toml'));
+  execFileSync('git', ['-C', nested, 'add', 'Cargo.toml']);
+  env.CACHE_REPOSITORY_PATH = nested;
+  assert.deepEqual(a, key());
+  fs.appendFileSync(path.join(nested, 'Cargo.toml'), '\n[dependencies]\n');
+  execFileSync('git', ['-C', nested, 'add', 'Cargo.toml']);
+  const nestedChanged = key();
+  assert.ok(nestedChanged.key.startsWith(a['workload-prefix']));
+  assert.notEqual(nestedChanged.key, a.key);
+  delete env.CACHE_REPOSITORY_PATH;
   env.GITHUB_RUN_ID = '222';
   const b = key(); assert.notEqual(a.key, b.key); assert.ok(b.key.startsWith(a['graph-prefix']));
   env.GITHUB_RUN_ATTEMPT = '2';

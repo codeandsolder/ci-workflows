@@ -9,6 +9,10 @@ inputs:
     description: Optional RUSTFLAGS override for the public cache key; normally inherited from the job environment.
     required: false
     default: ""
+  repository-path:
+    description: Git checkout path relative to the workspace; use for builds with multiple checkouts.
+    required: false
+    default: "."
   cache-scope:
     description: Stable compilation workload identity; defaults to the caller workflow and job.
     required: false
@@ -57,6 +61,7 @@ runs:
         CACHE_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
         CACHE_RUSTFLAGS: ${{ inputs.rustflags }}
         CACHE_SCOPE: ${{ inputs.cache-scope }}
+        CACHE_REPOSITORY_PATH: ${{ inputs.repository-path }}
       run: |
         set -euo pipefail
         case "$CACHE_SIZE_MIB" in
