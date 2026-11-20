@@ -7,10 +7,18 @@ graph_hash="$(
     ':(glob)**/Cargo.lock' ':(glob)**/.cargo/config' ':(glob)**/.cargo/config.toml' |
     git -C "$repo_root" hash-object --stdin
 )"
-# Always distinguish the selected actual compiler, even for floating aliases.
-# The requested toolchain remains an additional discriminator when provided.
-if command -v "${RUSTC:-rustc}" >/dev/null 2>&1; then
-  compiler_identity="$("${RUSTC:-rustc}" -vV)"
+# Cargo +toolchain builds need not change the runner's default rustup toolchain.
+# Use the actual configured compiler first, then the installed requested toolchain.
+if [[ -n "${RUSTC:-}" ]]; then
+  compiler_identity="$("$RUSTC" -vV)"
+elif [[ -n "${CACHE_RUST_TOOLCHAIN:-}" ]] && command -v rustup >/dev/null 2>&1 &&
+     compiler_identity="$(rustup run "$CACHE_RUST_TOOLCHAIN" rustc -vV 2>/dev/null)"; then
+  :
+elif command -v rustc >/dev/null 2>&1; then
+  if [[ -n "${CACHE_RUST_TOOLCHAIN:-}" ]]; then
+    echo "Cache key: requested rustup toolchain unavailable; using current rustc identity. Install the selected toolchain before cache setup." >&2
+  fi
+  compiler_identity="$(rustc -vV)"
 else
   compiler_identity=rustc-unavailable
 fi
