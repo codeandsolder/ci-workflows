@@ -25,7 +25,11 @@ def inspect(workflow: str, strict_ref: str | None = None) -> list[str]:
         path = root / ".github/workflows/ci.yml"
         path.parent.mkdir(parents=True)
         path.write_text(workflow)
-        return mod.inspect_root(root, strict_ref)
+        result = mod.inspect_root(root, strict_ref)
+        assert isinstance(result, list) and all(
+            isinstance(item, str) for item in result
+        )
+        return [str(item) for item in result]
 
 
 def assert_clean(workflow: str, strict_ref: str | None = None) -> None:
@@ -250,7 +254,11 @@ def inspect_tree(workflow: str, files: dict[str, str]) -> list[str]:
             script = root / name
             script.parent.mkdir(parents=True, exist_ok=True)
             script.write_text(body)
-        return mod.inspect_root(root)
+        result = mod.inspect_root(root)
+        assert isinstance(result, list) and all(
+            isinstance(item, str) for item in result
+        )
+        return [str(item) for item in result]
 
 
 def assert_tree_blocked(workflow: str, files: dict[str, str], fragment: str) -> None:

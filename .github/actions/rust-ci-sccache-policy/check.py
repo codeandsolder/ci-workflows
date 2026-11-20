@@ -152,7 +152,7 @@ def run_mentions_rust(run: str) -> bool:
             continue
         heredoc = re.search(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?", stripped)
         if heredoc is not None:
-            heredoc_terminator = heredoc.group(1)
+            heredoc_terminator = str(heredoc.group(1))
         # Strip the ordinary unquoted shell-comment form. Quoted '#' is unusual
         # in compiler command lines; keeping this simple avoids pretending to be
         # a full shell parser.
@@ -210,7 +210,7 @@ def shell_commands(source: str) -> list[list[str]]:
             continue
         heredoc = re.search(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?", line)
         if heredoc is not None:
-            terminator = heredoc.group(1)
+            terminator = str(heredoc.group(1))
             shell_stdin = bool(re.match(r"^(?:bash|sh|dash|zsh|ksh)\b", line))
         try:
             lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
@@ -479,7 +479,11 @@ def inspect_job(
         known = step_mentions_rust(step)
         run = step.get("run")
         if isinstance(run, str):
-            cwd = working_directory(root, job, step)
+            cwd = working_directory(
+                root,
+                {str(k): v for k, v in job.items()},
+                {str(k): v for k, v in step.items()},
+            )
             if cwd is None:
                 if "./" in run or ".sh" in run:
                     unresolved_by_step[index] = {
