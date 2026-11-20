@@ -199,6 +199,21 @@ fn prod_after() { let x = "}"; }
         with self.assertRaises(ValueError):
             policy.apply(self.report(), self.root, 120, 100)
 
+    def test_mandatory_gate_does_not_expose_weakening_inputs(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[1] / "workflows" / "clone-regression.yml"
+        ).read_text()
+        mandatory = workflow.split("\npermissions:", 1)[0]
+        self.assertIn("workflow_call:", mandatory)
+        self.assertNotIn("inputs:", mandatory)
+        self.assertNotIn("inputs.", workflow)
+        self.assertIn('CLONE_GUARD_DISCOVERY_TOKENS: "50"', workflow)
+        self.assertIn('CLONE_GUARD_BLOCKING_TOKENS: "100"', workflow)
+        self.assertIn('CLONE_GUARD_TEST_BLOCKING_TOKENS: "140"', workflow)
+        self.assertIn('CLONE_GUARD_LANGUAGES: ""', workflow)
+        self.assertIn('CLONE_GUARD_SCAN_PATH: "."', workflow)
+        self.assertIn("CLONE_GUARD_EXCLUDES:", workflow)
+
     def test_cli_writes_structured_report(self) -> None:
         raw = self.report(group(150, "abcdef123456", ("src/missing.rs", 1, 1)))
         raw_path = self.root / "raw.json"

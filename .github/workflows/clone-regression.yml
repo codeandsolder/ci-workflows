@@ -1,32 +1,8 @@
 name: Duplicate code regression
 
+# Mandatory CI gate: no caller-controlled weakenable scan settings.
 on:
   workflow_call:
-    inputs:
-      discovery-tokens:
-        description: Report new clone groups at or above this number of syntax tokens
-        type: number
-        default: 50
-      blocking-tokens:
-        description: Fail for production/mixed clone groups at or above this number of syntax tokens
-        type: number
-        default: 100
-      test-blocking-tokens:
-        description: Fail for test-only clone groups at or above this number of syntax tokens
-        type: number
-        default: 140
-      languages:
-        description: Optional comma-separated language names (empty means all supported)
-        type: string
-        default: ""
-      scan-path:
-        description: Path relative to the caller's repository to scan
-        type: string
-        default: "."
-      exclude-globs:
-        description: Optional newline-separated additional exclusion globs
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -65,11 +41,11 @@ jobs:
         uses: ./.ci-workflows/.github/actions/clone-regression
         env:
           CLONE_GUARD_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
-          CLONE_GUARD_DISCOVERY_TOKENS: ${{ inputs.discovery-tokens }}
-          CLONE_GUARD_BLOCKING_TOKENS: ${{ inputs.blocking-tokens }}
-          CLONE_GUARD_TEST_BLOCKING_TOKENS: ${{ inputs.test-blocking-tokens }}
-          CLONE_GUARD_LANGUAGES: ${{ inputs.languages }}
-          CLONE_GUARD_SCAN_PATH: ${{ inputs.scan-path }}
+          CLONE_GUARD_DISCOVERY_TOKENS: "50"
+          CLONE_GUARD_BLOCKING_TOKENS: "100"
+          CLONE_GUARD_TEST_BLOCKING_TOKENS: "140"
+          CLONE_GUARD_LANGUAGES: ""
+          CLONE_GUARD_SCAN_PATH: "."
           CLONE_GUARD_EXCLUDES: |
             .ci-workflows/**
             tests/**
@@ -84,7 +60,6 @@ jobs:
             **/node_modules/**
             target/**
             **/target/**
-            ${{ inputs.exclude-globs }}
 
 
       - name: Upload full clone findings

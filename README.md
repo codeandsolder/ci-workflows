@@ -45,8 +45,13 @@ groups; never use global cancellation for independent PR builds.
 The rust-skills2 strict CI calls the same pinned action during its regular
 validation, so projects already consuming the shared strict gate acquire
 enforcement without a separate per-repository check. Non-Rust projects can call
-the provider's reusable validation workflow. This is enforcement of native
-GitHub Actions cancellation, not a custom polling daemon.
+the provider's reusable validation workflow. Its `runner: auto` default
+uses the registered `local-ci` runner for private callers and hosted Ubuntu
+for public callers. Static-only private repositories without registered
+`local-ci` runners may explicitly request a GitHub-hosted runner with
+`runner: '"ubuntu-24.04"'` and do not need host/runner provisioning merely
+to lint workflow YAML. This is enforcement of native GitHub Actions
+cancellation, not a custom polling daemon.
 
 The concurrency checker uses the provider's committed `.github/uv.lock`,
 including when its reusable workflow checks out only the required action
@@ -166,6 +171,17 @@ Use `lockfile: path/to/Cargo.lock` only when a *single* explicit lockfile is des
 The underlying `.github/actions/cargo-release-quarantine` composite also supports non-failing eligibility probes (`fail-on-blocked: "false"`) for automation that needs to wait for a frozen lockfile snapshot to age without modifying it.
 
 ## Duplicate-code regression gate
+
+The mandatory reusable `.github/workflows/clone-regression.yml` has **no
+caller-adjustable thresholds, language filters, scan roots, or exclusion globs**.
+It discovers at 50 tokens, blocks production/mixed groups at 100 tokens and
+test-only groups at 140 tokens. The scanner always runs with `--no-config`;
+only reviewed `.doppelscan.toml` fingerprint accepts with meaningful reasons
+are honored. For exploratory custom scans, invoke the composite
+`.github/actions/clone-regression` in an explicitly advisory job, separate
+from the mandatory gate. This prevents routine callers from weakening the
+central regression contract via workflow inputs.
+
 
 Use the pinned reusable [clone-regression.yml](.github/workflows/clone-regression.yml)
 on pull requests and default-branch pushes. It runs `doppelscan` **v0.9.0**

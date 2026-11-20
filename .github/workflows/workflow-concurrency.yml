@@ -2,6 +2,11 @@ name: Check caller Actions concurrency policy
 
 on:
   workflow_call:
+    inputs:
+      runner:
+        description: "auto selects local-ci for private callers and hosted Ubuntu for public callers; otherwise supply a JSON-encoded runs-on selector."
+        type: string
+        default: auto
 
 permissions:
   contents: read
@@ -9,7 +14,7 @@ permissions:
 jobs:
   validate:
     name: Check PR workflow cancellation
-    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.runner == 'auto' && (github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04') || fromJSON(inputs.runner) }}
     timeout-minutes: 10
     steps:
       - name: Check out caller repository
