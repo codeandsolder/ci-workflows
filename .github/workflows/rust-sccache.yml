@@ -42,6 +42,11 @@ on:
         required: false
         default: 90
         type: number
+      sccache-cache-scope:
+        description: Stable cache workload override; defaults to caller command and target set
+        required: false
+        default: ""
+        type: string
       sccache-cache-size-mib:
         description: Maximum persistent compiler cache size in MiB for public repositories
         required: false
@@ -175,6 +180,7 @@ jobs:
           # Let setup derive its key from the resolved effective RUSTFLAGS.
           rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
+          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}', inputs.command, inputs.rust-targets) }}
 
       - name: Configure runner-local Cargo target
         shell: bash

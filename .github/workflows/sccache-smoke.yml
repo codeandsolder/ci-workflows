@@ -6,6 +6,7 @@ on:
       - .github/workflows/rust-sccache.yml
       - .github/workflows/sccache-smoke.yml
       - .github/scripts/check-runner-routing.cjs
+      - .github/scripts/test-public-cache-key.cjs
       - .github/actions/setup-sccache/**
       - .github/actions/finalize-sccache/**
       - smoke-cache/**
@@ -15,6 +16,7 @@ on:
       - .github/workflows/rust-sccache.yml
       - .github/workflows/sccache-smoke.yml
       - .github/scripts/check-runner-routing.cjs
+      - .github/scripts/test-public-cache-key.cjs
       - .github/actions/setup-sccache/**
       - .github/actions/finalize-sccache/**
       - smoke-cache/**
@@ -60,7 +62,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify public/private runner selection and managed cache backends
-        run: node .github/scripts/check-runner-routing.cjs
+        run: |
+          node .github/scripts/check-runner-routing.cjs
+          node .github/scripts/test-public-cache-key.cjs
 
       - name: Non-release events must not execute compatibility lane
         env:
@@ -76,6 +80,7 @@ jobs:
     with:
       command: >-
         cargo +1.99.0 test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
+      sccache-cache-scope: smoke-release
       rust-toolchain: "1.99.0"
       rustflags: "auto"
       runner: ${{ matrix.runner }}
@@ -96,6 +101,7 @@ jobs:
           echo "expected restored compiler cache to produce at least one Rust hit" >&2
           exit 1
         fi
+      sccache-cache-scope: smoke-release
       rust-toolchain: "1.99.0"
       rustflags: "auto"
       runner: ${{ matrix.runner }}
