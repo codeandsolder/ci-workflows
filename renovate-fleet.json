@@ -10,8 +10,9 @@
   "minimumReleaseAge": null,
   "internalChecksFilter": "strict",
   "prConcurrentLimit": 6,
-  "prHourlyLimit": 3,
-  "rebaseWhen": "behind-base-branch",
+  "prHourlyLimit": 1,
+  "commitHourlyLimit": 1,
+  "rebaseWhen": "auto",
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": [

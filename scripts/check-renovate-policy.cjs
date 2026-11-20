@@ -15,6 +15,12 @@ assert.equal(trust.ignoreTests,false);
 assert.equal(fleet.minimumReleaseAge,null, 'the codeandsolder fleet has no release-age hold');
 assert.equal(Object.hasOwn(fleet,'minimumReleaseAgeBehaviour'),false);
 assert.equal(fleet.internalChecksFilter,'strict');
+// Limit CI-producing commits, not just PR creation. Preserve CI-gated,
+// up-to-date automerge while avoiding needless rebases of review-only PRs.
+assert.equal(fleet.prHourlyLimit,1);
+assert.equal(fleet.commitHourlyLimit,1);
+assert.equal(fleet.rebaseWhen,'auto');
+assert.equal(fleet.prConcurrentLimit,6);
 const firstRule=trust.packageRules.find(r=>(r.matchPackageNames||[]).join('').includes('ci-workflows'));
 assert(firstRule);
 assert.equal(firstRule.automerge,true);
