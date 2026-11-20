@@ -8,14 +8,14 @@ after its failure log proves every new crates.io version has aged at least
 72 hours, plus a 15-minute margin. The actual CI gate runs again; normal
 Renovate automerge alone handles successful PRs.
 
-- Discover all nonarchived repositories in the GitHub App installation.
+- Discover nonarchived codeandsolder repositories in the GitHub App installation, excluding contribution-only OXC and Hayro.
 - Inspect only open Renovate PRs at the exact current head.
-- Select completed failed GitHub Actions quarantine or strict-Rust jobs.
-- Require that the sole failed step be the Cargo quarantine.
+- Select completed failed GitHub Actions jobs, regardless of caller-facing job name.
+- Require every failed check to have only Cargo quarantine failure steps, with every reported external crate past its minimum age.
 - Refuse missing timestamps, unexpected reasons, other failed jobs,
   queued/in-progress checks, changed PR heads, or repeat run attempts.
 - Revalidate the PR head, job and check state immediately before mutation.
-- Rerun only the specific failed job, not whole workflow runs.
+- Rerun only the specific failed job; if several failed jobs share a workflow, rerun just that workflow's failed jobs together.
 - JSON-lines audit output includes crate versions and eligibility dates.
 - No daemon, database, persistent state, cache or build artifacts.
 - Default read-only mode; --apply is required, --max caps one sweep.
