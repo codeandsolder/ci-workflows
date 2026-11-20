@@ -12,27 +12,22 @@ assert.equal(fleet.platformAutomerge,false);
 assert.equal(fleet.ignoreTests,false);
 assert.equal(trust.platformAutomerge,false);
 assert.equal(trust.ignoreTests,false);
-assert.equal(fleet.minimumReleaseAge,'3 days');
-assert.equal(fleet.minimumReleaseAgeBehaviour,'timestamp-required');
+assert.equal(fleet.minimumReleaseAge,null, 'the codeandsolder fleet has no release-age hold');
+assert.equal(Object.hasOwn(fleet,'minimumReleaseAgeBehaviour'),false);
 assert.equal(fleet.internalChecksFilter,'strict');
 const firstRule=trust.packageRules.find(r=>(r.matchPackageNames||[]).join('').includes('ci-workflows'));
 assert(firstRule);
 assert.equal(firstRule.automerge,true);
-assert.equal(firstRule.minimumReleaseAge,null);
 assert.deepEqual(firstRule.matchUpdateTypes,['digest','pinDigest']);
 assert.deepEqual(firstRule.matchManagers,['github-actions']);
-// Renovate #45236: branch-level stability status has no usable timestamp for these update classes.
-// The global 72h timestamp-required policy remains intact for normal releases.
-const timestampOptional=fleet.packageRules.find(r=>r.minimumReleaseAgeBehaviour==='timestamp-optional');
-assert(timestampOptional);
-assert.deepEqual(timestampOptional.matchUpdateTypes,['pin','pinDigest','digest','lockFileMaintenance','lockfileUpdate']);
-assert.equal(Object.hasOwn(timestampOptional,'minimumReleaseAge'),false);
-assert.equal(Object.hasOwn(timestampOptional,'automerge'),false);
-const runners=fleet.packageRules.find(r=>r.matchDepTypes?.includes('github-runner'));
-assert(runners);
-assert.deepEqual(runners.matchDepTypes,['github-runner']);
-assert.equal(runners.minimumReleaseAge,null);
-assert.equal(Object.hasOwn(runners,'automerge'),false);
+const noAge=fleet.packageRules.at(-1);
+assert.deepEqual(noAge.matchPackageNames,['/.*/']);
+assert.equal(noAge.minimumReleaseAge,null);
+assert.equal(noAge.minimumReleaseAgeBuffer,null);
+for (const rule of [...fleet.packageRules.slice(0,-1),...trust.packageRules]) {
+ assert.equal(Object.hasOwn(rule,'minimumReleaseAge'),false, 'obsolete per-package hold override');
+ assert.equal(Object.hasOwn(rule,'minimumReleaseAgeBehaviour'),false, 'obsolete timestamp workaround');
+}
 const stable=fleet.packageRules.find(r=>r.matchCurrentVersion==='!/^0\\./');
 assert.equal(stable.automerge,true);
 assert(stable.matchUpdateTypes.includes('patch'));

@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Immediately automerge first-party CI and strict Rust workflow SHA updates only after their required CI checks succeed; external dependencies retain normal release-age and quarantine.",
+  "description": "Automerge pinned first-party shared CI and strict Rust SHA updates only after consumer CI succeeds.",
   "packageRules": [
     {
       "description": "SHA-pinned first-party shared CI trust roots, validated by consumer CI",
@@ -14,7 +14,6 @@
         "digest",
         "pinDigest"
       ],
-      "minimumReleaseAge": null,
       "groupName": "Shared CI trust roots",
       "groupSlug": "shared-ci-trust-roots",
       "automerge": true,
