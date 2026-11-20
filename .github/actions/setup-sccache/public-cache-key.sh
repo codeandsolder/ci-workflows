@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(git -C "${CACHE_REPOSITORY_PATH:-.}" rev-parse --show-toplevel)"
 graph_hash="$(
-  git ls-files -s -- 'Cargo.toml' 'Cargo.lock' ':(glob)**/Cargo.toml' \
+  git -C "$repo_root" ls-files -s -- 'Cargo.toml' 'Cargo.lock' ':(glob)**/Cargo.toml' \
     ':(glob)**/Cargo.lock' ':(glob)**/.cargo/config' ':(glob)**/.cargo/config.toml' |
-    git hash-object --stdin
+    git -C "$repo_root" hash-object --stdin
 )"
 # Always distinguish the selected actual compiler, even for floating aliases.
 # The requested toolchain remains an additional discriminator when provided.
-if command -v rustc >/dev/null 2>&1; then
-  compiler_identity="$(rustc -vV)"
+if command -v "${RUSTC:-rustc}" >/dev/null 2>&1; then
+  compiler_identity="$("${RUSTC:-rustc}" -vV)"
 else
   compiler_identity=rustc-unavailable
 fi
@@ -17,10 +18,10 @@ effective_rustflags="${CACHE_RUSTFLAGS:-${RUSTFLAGS:-}}"
 semantic_hash="$(
   printf '%s\0' "$RUNNER_OS" "$RUNNER_ARCH" "${ImageOS:-$RUNNER_OS}" \
     "${CACHE_RUST_TOOLCHAIN:-}" "$compiler_identity" "$effective_rustflags" \
-    'sccache-v0.19.0' "$CACHE_SIZE_MIB" | git hash-object --stdin
+    'sccache-v0.19.0' "$CACHE_SIZE_MIB" | git -C "$repo_root" hash-object --stdin
 )"
 scope="${CACHE_SCOPE:-$GITHUB_WORKFLOW:$GITHUB_JOB}"
-scope_hash="$(printf '%s' "$scope" | git hash-object --stdin)"
+scope_hash="$(printf '%s' "$scope" | git -C "$repo_root" hash-object --stdin)"
 prefix="rust-sccache-v3-$semantic_hash-"
 workload_prefix="$prefix$scope_hash-"
 graph_prefix="$workload_prefix$graph_hash-"
