@@ -150,6 +150,10 @@ The public compiler cache defaults to 6144 MiB (6 GiB) and can be changed with `
 
 This deliberately does **not** use sccache's native GHA object backend: that backend maps compiler objects to individual GitHub cache writes and hit upload throttling in a real build. There is also no rolling L0 snapshot, delta artifact, merger workflow, Garage promotion, tailnet access, CI credential broker, Cargo wrapper, or cross-run path-canonicalization layer.
 
+### Public cross-rs containers
+
+Set `execution: cross` on the setup action (or `cache-execution: cross` on the reusable workflow) for Linux x64 hosted cross-rs Docker builds. The static client and local cache directory are bind-mounted; the shared entrypoint starts/stops sccache **inside** each build container and records stats outside its cache directory. The normal finalizer verifies actual compiler requests and persists the same native GitHub cache archive. A separate semantic namespace prevents restoring incompatible host-native snapshots. Use explicit workload scope for each target. This mode is not available on private runners: private builds must keep using the managed daemon. The cross image must use the standard command-only entrypoint contract.
+
 ### Private repositories
 
 Private repositories automatically select a registered self-hosted Linux x64 runner using the built-in GitHub labels `[self-hosted, Linux, X64, local-ci]`. The `local-ci` capability label explicitly identifies a host-managed runner with Rustup and a compatible Garage-backed sccache endpoint; it avoids accidentally scheduling on legacy containerized registrations whose separate filesystem cannot expose compiler executables to the host-side sccache daemon. The caller's `runner` input is **public-only**, so private repositories cannot accidentally be dispatched to GitHub-hosted runners. GitHub schedules an eligible existing local runner (Acer or Asus); the shared workflow does not assume a machine name such as `acer`/`asus`, or legacy labels such as `codeandsolder-private`. The logical `local-ci` pool is required.

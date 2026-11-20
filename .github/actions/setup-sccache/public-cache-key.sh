@@ -21,6 +21,10 @@ semantic_hash="$(
     'sccache-v0.19.0' "$CACHE_SIZE_MIB" | git -C "$repo_root" hash-object --stdin
 )"
 scope="${CACHE_SCOPE:-$GITHUB_WORKFLOW:$GITHUB_JOB}"
+if [[ "${CACHE_EXECUTION:-native}" == cross ]]; then
+  # Container rustc paths and environment differ from host builds.
+  semantic_hash="$(printf '%s\0' "$semantic_hash" cross | git -C "$repo_root" hash-object --stdin)"
+fi
 scope_hash="$(printf '%s' "$scope" | git -C "$repo_root" hash-object --stdin)"
 prefix="rust-sccache-v3-$semantic_hash-"
 workload_prefix="$prefix$scope_hash-"

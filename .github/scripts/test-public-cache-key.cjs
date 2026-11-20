@@ -28,6 +28,9 @@ try {
       .map(line => line.split('=')));
   };
   const a = key(); assert.deepEqual(a, key());
+  env.CACHE_EXECUTION = 'cross';
+  assert.notEqual(key()['restore-prefix'], a['restore-prefix']);
+  delete env.CACHE_EXECUTION;
   // An outer runner workspace can contain several separately checked out Git
   // repositories. Select the intended one, not the shell's working directory.
   const nested = path.join(tmp, 'nested');
