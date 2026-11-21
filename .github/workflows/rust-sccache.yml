@@ -42,6 +42,11 @@ on:
         required: false
         default: 90
         type: number
+      cache-execution:
+        description: Native compilation or public Linux cross-rs container compilation.
+        required: false
+        default: native
+        type: string
       sccache-cache-scope:
         description: Stable cache workload override; defaults to caller command and target set
         required: false
@@ -180,6 +185,7 @@ jobs:
           # Let setup derive its key from the resolved effective RUSTFLAGS.
           rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
+          execution: ${{ inputs.cache-execution }}
           cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}', inputs.command, inputs.rust-targets) }}
 
       - name: Configure runner-local Cargo target

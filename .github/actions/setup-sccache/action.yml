@@ -13,6 +13,10 @@ inputs:
     description: Git checkout path relative to the workspace; use for builds with multiple checkouts.
     required: false
     default: "."
+  execution:
+    description: Compiler execution environment (native or public Linux cross-rs container).
+    required: false
+    default: native
   cache-scope:
     description: Stable compilation workload identity; defaults to the caller workflow and job.
     required: false
@@ -37,8 +41,21 @@ runs:
     - name: Select canonical cache backend
       id: mode
       shell: bash
+      env:
+        CACHE_EXECUTION: ${{ inputs.execution }}
       run: |
         set -euo pipefail
+        case "$CACHE_EXECUTION" in
+          native) ;;
+          cross)
+            if [[ "${{ github.event.repository.private }}" == "true" ||
+                  "$RUNNER_OS" != Linux || "$RUNNER_ARCH" != X64 ]]; then
+              echo "cross cache mode requires a public Linux x64 hosted runner" >&2
+              exit 2
+            fi
+            ;;
+          *) echo "Unsupported cache execution: $CACHE_EXECUTION" >&2; exit 2 ;;
+        esac
         if [[ "${{ github.event.repository.private }}" == "true" ]]; then
           echo "mode=private-local-garage" >> "$GITHUB_OUTPUT"
         else
@@ -61,6 +78,7 @@ runs:
         CACHE_RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
         CACHE_RUSTFLAGS: ${{ inputs.rustflags }}
         CACHE_SCOPE: ${{ inputs.cache-scope }}
+        CACHE_EXECUTION: ${{ inputs.execution }}
         CACHE_REPOSITORY_PATH: ${{ inputs.repository-path }}
       run: |
         set -euo pipefail
@@ -87,7 +105,7 @@ runs:
           ${{ steps.key.outputs.restore-prefix }}
 
     - name: Configure public runner-local sccache
-      if: steps.mode.outputs.mode == 'public-actions'
+      if: steps.mode.outputs.mode == 'public-actions' && inputs.execution == 'native'
       shell: bash
       env:
         CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
@@ -114,6 +132,38 @@ runs:
         "$sccache_bin" --start-server
         "$sccache_bin" --zero-stats
         "$sccache_bin" --version
+
+    - name: Configure sccache inside public cross containers
+      if: steps.mode.outputs.mode == 'public-actions' && inputs.execution == 'cross'
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+        CACHE_SIZE_MIB: ${{ inputs.cache-size-mib }}
+      run: |
+        set -euo pipefail
+        sccache_bin="${SCCACHE_PATH:-$(command -v sccache)}"
+        test -x "$sccache_bin"
+        control="$RUNNER_TEMP/codeandsolder-cross-sccache"
+        cache_dir="$RUNNER_TEMP/sccache"
+        mkdir -p "$control" "$cache_dir"
+        install -m 0755 "$sccache_bin" "$control/sccache"
+        install -m 0755 "$GITHUB_ACTION_PATH/cross-entrypoint.sh" "$control/run"
+        if [[ "${CROSS_CONTAINER_OPTS:-}" == *--entrypoint* ]]; then
+          echo "Existing cross container entrypoint conflicts with canonical cache" >&2
+          exit 2
+        fi
+        # cross parses options with shell_words::split. Bind both directories;
+        # only cache objects are persisted by the Actions cache service.
+        printf -v opts ' --volume %q --volume %q --entrypoint /ci-sccache/run --env %q' \
+          "$control:/ci-sccache" "$cache_dir:/ci-sccache-cache" \
+          "SCCACHE_CACHE_SIZE=${CACHE_SIZE_MIB}M"
+        {
+          echo "CROSS_CONTAINER_OPTS=${CROSS_CONTAINER_OPTS:-}$opts"
+          echo "CODEANDSOLDER_CROSS_CACHE_CONTROL=$control"
+          echo "CODEANDSOLDER_SCCACHE_EXECUTION=cross"
+          echo "CODEANDSOLDER_SCCACHE_CACHE_HIT=${CACHE_HIT:-false}"
+          echo "CARGO_INCREMENTAL=0"
+        } >> "$GITHUB_ENV"
 
     - name: Configure private managed Garage sccache
       if: steps.mode.outputs.mode == 'private-local-garage'
