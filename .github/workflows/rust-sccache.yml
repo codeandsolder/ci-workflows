@@ -8,9 +8,9 @@ on:
         required: true
         type: string
       rust-toolchain:
-        description: Rust toolchain used for the caller command
+        description: Explicit release compatibility toolchain, or the exact routine repository pin
         required: false
-        default: "1.99.1"
+        default: ""
         type: string
       validation-tier:
         description: "routine (each PR/main) or release (only release tags); use release for MSRV and nonprimary OS/targets"
@@ -71,8 +71,6 @@ jobs:
     permissions:
       contents: read
     env:
-      RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
-      RUSTUP_TOOLCHAIN: ${{ inputs.rust-toolchain }}
       RUST_COMPONENTS: ${{ inputs.rust-components }}
       RUST_TARGETS: ${{ inputs.rust-targets }}
       RUSTFLAGS: ${{ inputs.rustflags }}
@@ -101,6 +99,7 @@ jobs:
           sparse-checkout: |
             .github/actions/setup-sccache
             .github/actions/finalize-sccache
+            .github/actions/resolve-rust-toolchain
           sparse-checkout-cone-mode: true
 
       - name: Exclude injected CI checkout from caller Git packaging
@@ -116,6 +115,13 @@ jobs:
             echo "Injected CI checkout is still visible as untracked source" >&2
             exit 1
           fi
+
+      - name: Resolve one quarantined compiler
+        id: compiler
+        uses: ./.ci-workflows/.github/actions/resolve-rust-toolchain
+        with:
+          rust-toolchain: ${{ inputs.rust-toolchain }}
+          validation-tier: ${{ inputs.validation-tier }}
 
       - name: Resolve portable RUSTFLAGS
         shell: bash
@@ -134,6 +140,9 @@ jobs:
 
       - name: Install Rust toolchain
         shell: bash
+        env:
+          RUST_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
+          VALIDATION_TIER: ${{ inputs.validation-tier }}
         run: |
           set -euo pipefail
           if ! rustup run "$RUST_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
@@ -142,8 +151,11 @@ jobs:
             echo "Rust toolchain $RUST_TOOLCHAIN is already installed on the runner."
           fi
 
-          if [[ -n "$RUST_COMPONENTS" ]]; then
-            read -r -a components <<< "$RUST_COMPONENTS"
+          read -r -a components <<< "$RUST_COMPONENTS"
+          if [[ "$VALIDATION_TIER" == routine ]]; then
+            components+=(clippy rustfmt)
+          fi
+          if (( ${#components[@]} )); then
             rustup component add --toolchain "$RUST_TOOLCHAIN" "${components[@]}"
           fi
 
@@ -155,6 +167,7 @@ jobs:
           rustc_path="$(rustup which rustc --toolchain "$RUST_TOOLCHAIN")"
           rustdoc_path="$(rustup which rustdoc --toolchain "$RUST_TOOLCHAIN")"
           {
+            echo "RUSTUP_TOOLCHAIN=$RUST_TOOLCHAIN"
             echo "RUSTC=$rustc_path"
             echo "RUSTDOC=$rustdoc_path"
           } >> "$GITHUB_ENV"
@@ -176,7 +189,7 @@ jobs:
       - name: Setup mandatory sccache
         uses: ./.ci-workflows/.github/actions/setup-sccache
         with:
-          rust-toolchain: ${{ inputs.rust-toolchain }}
+          rust-toolchain: ${{ steps.compiler.outputs.channel }}
           # Let setup derive its key from the resolved effective RUSTFLAGS.
           rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
