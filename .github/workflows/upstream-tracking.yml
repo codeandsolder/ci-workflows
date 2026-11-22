@@ -376,7 +376,7 @@ jobs:
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         if: steps.check.outputs.checked == 'true' && inputs.go
         with:
           go-version: ${{ inputs.go-version-file == '' && 'stable' || '' }}
