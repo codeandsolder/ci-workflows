@@ -7,9 +7,10 @@ const [modulePath, policy, root, ...options] = process.argv.slice(2);
 if (!modulePath || !root || !(
   (policy === 'concurrency' && options.length === 0) ||
   (policy === 'sccache' && options.length <= 1) ||
-  (policy === 'clones' && options.length === 3)
+  (policy === 'clones' && options.length === 3) ||
+  (['quarantine-diff', 'quarantine-age'].includes(policy) && options.length === 0)
 )) {
-  throw new Error('usage: node run.mjs MODULE concurrency ROOT | sccache ROOT [STRICT_REF] | clones ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS');
+  throw new Error('usage: node run.mjs MODULE concurrency ROOT | sccache ROOT [STRICT_REF] | clones ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS | quarantine-diff ROOT | quarantine-age ROOT');
 }
 const host = workspace(root);
 const args = ['ci-policy', policy, '/workspace'];
@@ -18,7 +19,7 @@ if (policy === 'clones') {
   const resolved = host.lookup(path.isAbsolute(scan) ? scan : '/workspace/' + scan);
   if (!resolved?.startsWith('d')) throw new Error('scan root must be a checkout directory');
   args.push(resolved.slice(1), production, testing);
-} else {
+} else if (policy === 'concurrency' || policy === 'sccache') {
   if (policy === 'sccache') args.push(options[0] ?? '');
   args.push(...host.workflowPaths());
 }

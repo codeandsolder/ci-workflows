@@ -1,6 +1,7 @@
 mod cache;
 mod clones;
 mod concurrency;
+mod quarantine;
 mod rust_tests;
 mod shell;
 mod workspace;
@@ -19,6 +20,17 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
         return Err("usage: ci-policy concurrency|sccache ROOT [STRICT_REF]".into());
     };
     let root = Path::new(&root);
+    match policy.as_str() {
+        "quarantine-diff" => {
+            quarantine::diff()?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        "quarantine-age" => {
+            quarantine::age()?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        _ => {}
+    }
     if policy == "clones" {
         let (Some(scan), Some(production), Some(testing), None) =
             (args.next(), args.next(), args.next(), args.next())
