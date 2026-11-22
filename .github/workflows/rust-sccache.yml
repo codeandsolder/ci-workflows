@@ -156,6 +156,9 @@ jobs:
             if [[ "$VALIDATION_TIER" == routine ]]; then
               components+=(clippy rustfmt)
             fi
+            # Rustup may schedule concurrent downloads for repeated components.
+            # Pass each requested component exactly once.
+            mapfile -t components < <(printf '%s\n' "${components[@]}" | sort -u)
             rustup component add --toolchain "$RUST_TOOLCHAIN" "${components[@]}"
           fi
 

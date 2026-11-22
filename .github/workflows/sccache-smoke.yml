@@ -39,6 +39,8 @@ jobs:
     uses: ./.github/workflows/rust-sccache.yml
     with:
       isolate-public-sccache-server: true
+      # Repeated explicit/default component requests must not race in rustup.
+      rust-components: "clippy rustfmt clippy"
       command: |
         # A nested checkout inside the caller must never appear as untracked
         # packaging input (cargo package rejects dirty source trees).
