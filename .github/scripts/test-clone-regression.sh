@@ -280,4 +280,53 @@ jq -e '.new|length==0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
 jq -e '.accepted|length>0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
 reset_case
 
+# A synthetic PR merge can be generated after the event payload's base
+# advanced. A workflow-only PR must not be blamed for clones already in
+# the actual base. Keep the event head fixed to validate the second parent.
+git -C "$repo" switch -q -c fixture-base "$base"
+sed 's/fn fold_bytes(/fn fold_bytes_base_copy(/' "$repo/src/engine.rs" > "$repo/src/base_copy.rs"
+git -C "$repo" add .
+git -C "$repo" commit -qm "base advances with additional existing duplication"
+actual_base="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" switch -q -c fixture-pr "$base"
+printf 'workflow-only change\n' > "$repo/README.md"
+git -C "$repo" add README.md
+git -C "$repo" commit -qm "PR changes no Rust source"
+pr_head="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" switch -q fixture-base
+git -C "$repo" merge -q --no-ff -m "synthetic PR merge" fixture-pr
+check stale-event-base-reproduces-false-positive 1
+export CLONE_GUARD_PR_HEAD_SHA="$pr_head"
+check actual-merge-parent-passes 0
+[[ "$(git -C "$repo" rev-parse HEAD^1)" == "$actual_base" ]]
+[[ "$(<"$test_dir/actual-merge-parent-passes.out")" == *"using checked-out merge parent $actual_base instead of event base $base"* ]]
+
+# Real GitHub checkouts are shallow by default. The first parent must be
+# selected from the raw commit header and fetched if it is absent.
+git clone -q --depth=1 --branch fixture-base "file://$repo" "$test_dir/shallow"
+export GITHUB_WORKSPACE="$test_dir/shallow"
+check shallow-merge-parent-passes 0
+export GITHUB_WORKSPACE="$repo"
+
+git -C "$repo" switch -q fixture-pr
+sed 's/fn fold_bytes(/fn fold_bytes_pr_copy(/' "$repo/src/engine.rs" > "$repo/src/pr_copy.rs"
+git -C "$repo" add src/pr_copy.rs
+git -C "$repo" commit -qm "PR introduces real duplication"
+CLONE_GUARD_PR_HEAD_SHA="$(git -C "$repo" rev-parse HEAD)"
+export CLONE_GUARD_PR_HEAD_SHA
+git -C "$repo" switch -q -c fixture-merge "$actual_base"
+git -C "$repo" merge -q --no-ff -m "synthetic PR merge with real clone" fixture-pr
+check actual-pr-duplication-blocked 1
+
+# A different head means this is not the merge commit for the advertised
+# PR revision. Never accept the unrelated commit as a baseline.
+set +e
+CLONE_GUARD_PR_HEAD_SHA="$base" bash "$script_dir/run-clone-regression.sh" \
+  > "$test_dir/mismatched-head.out" 2> "$test_dir/mismatched-head.err"
+status=$?
+set -e
+[[ "$status" == 2 ]] || { echo "FAIL mismatched PR head: exit $status" >&2; exit 1; }
+[[ "$(<"$test_dir/mismatched-head.err")" == *"checked-out PR merge commit does not match event head"* ]]
+echo "PASS mismatched PR head rejected"
+
 echo "All clone-regression integration cases passed."
