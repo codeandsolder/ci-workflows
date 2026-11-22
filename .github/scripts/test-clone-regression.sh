@@ -2,7 +2,8 @@
 # Integration test with real Git baselines, real doppelscan and generated Rust.
 set -Eeuo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-python3 "$script_dir/test-clone-regression-policy.py"
+uv run --project "$script_dir/.." --locked python -B "$script_dir/test-clone-regression-policy.py" \
+  --wasm "$script_dir/../../policy-wasm/module.json"
 test_dir="$(mktemp -d)"
 trap 'rm -rf -- "$test_dir"' EXIT
 repo="$test_dir/repo"

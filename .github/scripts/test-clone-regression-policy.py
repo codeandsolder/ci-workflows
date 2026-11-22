@@ -1,5 +1,6 @@
 """Self-contained policy tests (no scanner or external Python dependencies)."""
 
+import argparse
 import importlib.util
 import json
 import subprocess
@@ -11,13 +12,19 @@ from typing import Any
 
 sys.dont_write_bytecode = True
 
-SCRIPT = Path(__file__).with_name("clone-regression-policy.py")
+SCRIPT = Path(__file__).with_name("clone-regression-oracle.py")
 SPEC = importlib.util.spec_from_file_location("clone_regression_policy", SCRIPT)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("cannot import the clone regression policy source")
 policy = importlib.util.module_from_spec(SPEC)
 loader = SPEC.loader
 loader.exec_module(policy)
+
+ROOT = SCRIPT.parents[2]
+PARSER = argparse.ArgumentParser(add_help=False)
+PARSER.add_argument("--wasm", type=Path)
+ARGS, UNITTEST_ARGS = PARSER.parse_known_args()
+WASM = ARGS.wasm.resolve() if ARGS.wasm is not None else None
 
 
 def group(
@@ -37,7 +44,7 @@ class ClonePolicyTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         (self.root / "src").mkdir()
 
     def report(self, *groups: dict[str, Any]) -> dict[str, Any]:
@@ -47,6 +54,45 @@ class ClonePolicyTests(unittest.TestCase):
             "resolved": [],
             "summary": {"files": 1, "groups": len(groups)},
         }
+
+    def run_wasm(
+        self,
+        raw: dict[str, Any],
+        production: int,
+        testing: int,
+        scan_root: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        assert WASM is not None
+        return subprocess.run(
+            [
+                "node",
+                str(ROOT / "policy-wasm/run.mjs"),
+                str(WASM),
+                "clones",
+                str(self.root),
+                str(scan_root or self.root),
+                str(production),
+                str(testing),
+            ],
+            input=json.dumps(raw),
+            encoding="utf-8",
+            capture_output=True,
+            check=False,
+        )
+
+    def classify(
+        self,
+        raw: dict[str, Any],
+        production: int = 100,
+        testing: int = 140,
+        scan_root: Path | None = None,
+    ) -> dict[str, Any]:
+        expected = policy.apply(raw, self.root, production, testing, scan_root)
+        if WASM is not None:
+            result = self.run_wasm(raw, production, testing, scan_root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), expected)
+        return expected
 
     def test_test_module_is_a_precise_scope_even_with_literals_and_comments(
         self,
@@ -82,6 +128,16 @@ fn prod_after() { let x = "}"; }
         false_marker = next(
             i for i, line in enumerate(lines, 1) if "const DECOY" in line
         )
+        self.classify(
+            self.report(
+                *(
+                    group(110, f"{i:012x}", ("src/mixed.rs", line, line))
+                    for i, line in enumerate(
+                        (test_line, fixture_line, after_line, false_marker)
+                    )
+                )
+            )
+        )
         cache = {}
         for line in (test_line, fixture_line):
             self.assertTrue(
@@ -104,7 +160,13 @@ fn prod_after() { let x = "}"; }
         source = (
             "#[test]\nfn only_test() { assert!(true); }\nfn prod() { assert!(true); }\n"
         )
-        (self.root / "src" / "simple.rs").write_text(source)
+        (self.root / "src" / "simple.rs").write_text(source, encoding="utf-8")
+        self.classify(
+            self.report(
+                group(110, "123456abcdef", ("src/simple.rs", 2, 2)),
+                group(110, "123456abcdea", ("src/simple.rs", 3, 3)),
+            )
+        )
         self.assertTrue(
             policy.test_occurrence(
                 self.root, {"file": "src/simple.rs", "start_line": 2, "end_line": 2}, {}
@@ -129,7 +191,7 @@ fn prod_after() { let x = "}"; }
             group(105, "123456abcdeb", prod, prod),
             group(95, "123456abcdec", test, test),
         )
-        classified = policy.apply(raw, self.root, 100, 140)
+        classified = self.classify(raw)
         self.assertEqual(
             [(g["tokens"], g["policy_tier"]) for g in classified["new"]],
             [(115, "production"), (105, "production")],
@@ -175,12 +237,12 @@ fn prod_after() { let x = "}"; }
             '[[accept]]\nfingerprint = "abcdef123456"\n'
             'reason = "Test fixture is intentionally duplicated across interfaces."\n',
         )
-        result = policy.apply(raw, self.root, 100, 140)
+        result = self.classify(raw)
         self.assertEqual(result["new"], [])
         self.assertEqual(len(result["accepted"]), 1)
         self.assertEqual(result["accepted"][0]["policy_tier"], "production")
         config.write_text('min-tokens = 99999\nexclude = ["src/**"]\n')
-        self.assertEqual(len(policy.apply(raw, self.root, 100, 140)["new"]), 1)
+        self.assertEqual(len(self.classify(raw)["new"]), 1)
 
     def test_invalid_accept_reasons_fail_and_bad_thresholds_fail(self) -> None:
         (self.root / "src" / "engine.rs").write_text("fn production() {}")
@@ -195,9 +257,44 @@ fn prod_after() { let x = "}"; }
             )
             with self.assertRaises(ValueError):
                 policy.accepted_fingerprints(self.root)
+            if WASM is not None:
+                self.assertNotEqual(
+                    self.run_wasm(self.report(), 100, 140).returncode, 0
+                )
         config.unlink()
         with self.assertRaises(ValueError):
             policy.apply(self.report(), self.root, 120, 100)
+        if WASM is not None:
+            self.assertNotEqual(self.run_wasm(self.report(), 120, 100).returncode, 0)
+
+    def test_scan_scope_and_arbitrary_scanner_fields(self) -> None:
+        scan = self.root / "nested"
+        (scan / "tests").mkdir(parents=True)
+        (scan / "tests" / "a.rs").write_text("fn fixture() {}", encoding="utf-8")
+        (self.root / "tests").mkdir()
+        (self.root / "tests" / "outside.rs").write_text(
+            "fn outside() {}", encoding="utf-8"
+        )
+        inner = group(120, "abcdef123456", ("tests/a.rs", 1, 1))
+        inner["scanner_detail"] = {"nested": [True, 42, None]}
+        inner["occurrences"][0]["snippet"] = "fn fixture() {}"
+        outer = group(120, "abcdef123457", ("../tests/outside.rs", 1, 1))
+        missing = group(120, "abcdef123458", ("tests/missing.rs", 1, 1))
+        raw = self.report(inner, outer)
+        raw["smaller"] = [missing]
+        raw["unrecognized_report_field"] = {"preserve": [1, "string"]}
+        result = self.classify(raw, scan_root=scan)
+        self.assertEqual(
+            [g["fingerprint"] for g in result["new"]], ["abcdef123457", "abcdef123458"]
+        )
+        self.assertEqual(result["smaller"][0]["policy_tier"], "test")
+        self.assertEqual(
+            result["smaller"][0]["scanner_detail"], inner["scanner_detail"]
+        )
+        self.assertEqual(result["smaller"][0]["occurrences"], inner["occurrences"])
+        self.assertEqual(
+            result["unrecognized_report_field"], raw["unrecognized_report_field"]
+        )
 
     def test_mandatory_gate_does_not_expose_weakening_inputs(self) -> None:
         workflow = (
@@ -221,7 +318,7 @@ fn prod_after() { let x = "}"; }
         raw_path.write_text(json.dumps(raw))
         result = subprocess.run(
             [
-                "python3",
+                sys.executable,
                 str(SCRIPT),
                 str(raw_path),
                 str(result_path),
@@ -237,7 +334,8 @@ fn prod_after() { let x = "}"; }
         self.assertEqual(result.returncode, 0, result.stderr)
         result = json.loads(result_path.read_text())
         self.assertEqual(result["policy"]["blocking"], 1)
+        self.assertEqual(self.classify(raw), result)
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(argv=[sys.argv[0], *UNITTEST_ARGS])

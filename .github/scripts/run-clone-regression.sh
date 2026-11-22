@@ -28,7 +28,7 @@ base="${CLONE_GUARD_BASE_SHA:-}"
 [[ "$base" =~ ^[0-9a-fA-F]{40}$ ]] || fail "a 40-digit base commit SHA is required"
 [[ ! "$base" =~ ^0+$ ]] || fail "base commit is the all-zero initial-push sentinel"
 
-for dependency in git jq curl sha256sum tar python3; do
+for dependency in git jq curl sha256sum tar node; do
   command -v "$dependency" >/dev/null || fail "$dependency is required"
 done
 
@@ -119,8 +119,8 @@ fi
 # centrally controlled settings, while reviewed, documented fingerprints
 # from .doppelscan.toml can be accepted by the post-scan policy.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-python3 "$script_dir/clone-regression-policy.py" "$raw_report" "$report" \
-  "$root" "$scan_dir" "$blocking" "$test_blocking" || fail "clone policy classification failed"
+node "$script_dir/../../policy-wasm/run.mjs" "$script_dir/../../policy-wasm/module.json" \
+  clones "$root" "$scan_dir" "$blocking" "$test_blocking" < "$raw_report" > "$report" || fail "clone policy classification failed"
 
 new="$(jq '.new | length' "$report")"
 smaller="$(jq '.smaller | length' "$report")"
