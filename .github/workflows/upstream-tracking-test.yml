@@ -27,10 +27,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Test 72-hour observation gate
-        run: node --test .github/actions/upstream-tracking/observe.test.mjs
+        run: node --test .github/actions/upstream-tracking/*.test.mjs
       - name: Test persistent observation state
         run: bash .github/actions/upstream-tracking/observe.integration.test.sh
       - name: Test real merge and rebase scenarios
         run: bash .github/actions/upstream-tracking/prepare.test.sh
       - name: Test exact-revision publication and concurrent changes
         run: bash .github/actions/upstream-tracking/publish.test.sh
+      - name: Test generated-file commit boundaries
+        run: bash .github/actions/upstream-tracking/generated.test.sh
+      - name: Test exact release tag publication
+        run: bash .github/actions/upstream-tracking/releases.integration.test.sh

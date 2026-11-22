@@ -344,6 +344,28 @@ when checks are missing or failing. PR mode accepts a narrowly scoped
 `upstream-pr-token` secret if the default workflow token cannot create PRs or
 trigger their CI.
 
+For reproducible generated files, set the merge strategy, `generated-files`
+(whitespace-separated exact tracked regular file paths), `generation-script`
+(a script reviewed on the fork base), and `generation-container` (a digest-pinned
+image). Preparation preserves those files from the reviewed fork even when
+upstream changed the same generated artifacts. The read-only regeneration job
+runs the external crate age gate and mandatory sccache where applicable, rebuilds
+the files, and exports an immutable Git bundle containing at most one generated
+commit. Validation consumes that bundle in a fresh checkout, and publication
+independently checks the exact parent and file allowlist before updating the fork
+with its existing base lease. Any non-generated conflict still requires review.
+
+For release-driven forks, set `upstream-release-prefix` (for example
+`crate-v`). The observer chooses the highest published stable semantic version
+in that series on the configured upstream branch, rather than untagged commits.
+Tag identity is part of the 72-hour observation state; removed, retargeted and
+prerelease tags cannot pass the gate. The validator also receives the eligible
+upstream tag as its third argument and should check the actual package version.
+After validation and exact-revision integration, publication creates the fork's
+`vMAJOR.MINOR.PATCH` tag and GitHub release with the upstream tag and both commit
+identities in the notes. Tags are immutable; a conflicting tag fails instead of
+being moved. This is GitHub release publication, not crates.io or npm publishing.
+
 Tracking failures open/update a single issue including the upstream tip,
 eligible revision, fork base and run URL. Quarantine is a pending state, not an
 error. A successful retry closes the old failure issue. Do not force the cursor

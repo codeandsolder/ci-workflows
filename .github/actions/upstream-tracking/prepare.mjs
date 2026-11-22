@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { generatedPaths } from "./generated.mjs";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -24,7 +25,7 @@ function unchanged(...args) {
   }
 }
 
-const [repository, branch, upstream, base, strategy, workflowPolicy, bundle] = process.argv.slice(2);
+const [repository, branch, upstream, base, strategy, workflowPolicy, bundle, generatedInput = ""] = process.argv.slice(2);
 const output = (key, value) => appendFileSync(process.env.GITHUB_OUTPUT, key + "=" + value + "\n");
 if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? "") || !SHA.test(upstream ?? "") || !SHA.test(base ?? "")) {
   throw new Error("Invalid candidate input");
@@ -36,6 +37,8 @@ git("merge-base", "--is-ancestor", upstream, "FETCH_HEAD");
 git("config", "user.name", "github-actions[bot]");
 git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com");
 
+const generated = generatedPaths(generatedInput, base);
+if (generated.length && strategy !== "merge") throw new Error("Generated files require merge strategy");
 let forkBase = git("merge-base", base, upstream);
 let reviewed = null;
 if (strategy === "source-merge" && existsSync(CHECKPOINT)) {
@@ -55,23 +58,25 @@ if (!["reject", "preserve"].includes(workflowPolicy)) throw new Error("Unknown w
 function restoreWorkflows(source) {
   git("restore", "--source=" + source, "--staged", "--worktree", WORKFLOWS);
 }
-function mergePreservingWorkflows() {
+function mergeReviewedPaths() {
+  const preserveWorkflows = drift && workflowPolicy === "preserve";
   try {
     git("merge", "--no-ff", "--no-commit", upstream);
   } catch (error) {
     if (error.status !== 1 || git("rev-parse", "--verify", "MERGE_HEAD") !== upstream) throw error;
-    // Do not mistake a non-workflow conflict for a reviewable CI-only conflict.
+    // Only explicitly regenerated files and preserved workflows can be resolved automatically.
     // Read the raw NUL-delimited names, including rename and deletion conflicts.
     const conflicts = execFileSync("git", ["diff", "--name-only", "--diff-filter=U", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
-    if (conflicts.length === 0 || conflicts.some(path => path !== WORKFLOWS && !path.startsWith(WORKFLOWS + "/"))) throw error;
+    if (conflicts.length === 0 || conflicts.some(path => !generated.includes(path) && !(preserveWorkflows && (path === WORKFLOWS || path.startsWith(WORKFLOWS + "/"))))) throw error;
   }
-  restoreWorkflows(base);
+  if (preserveWorkflows) restoreWorkflows(base);
+  if (generated.length) git("restore", "--source=" + base, "--staged", "--worktree", "--", ...generated);
   if (git("ls-files", "--unmerged")) throw new Error("Unresolved source merge conflicts");
   git("commit", "--no-edit");
 }
 switch (strategy) {
   case "merge":
-    if (drift && workflowPolicy === "preserve") mergePreservingWorkflows();
+    if (generated.length || (drift && workflowPolicy === "preserve")) mergeReviewedPaths();
     else git("merge", "--no-ff", "--no-edit", upstream);
     break;
   case "source-merge":

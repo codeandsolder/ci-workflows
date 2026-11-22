@@ -16,7 +16,6 @@ fixture() {
   echo common > upstream/common
   git -C upstream add .
   git -C upstream commit -qm base
-  ancestor=$(git -C upstream rev-parse HEAD)
   git clone -q upstream fork
   git -C fork config user.name test
   git -C fork config user.email test@example.invalid
@@ -36,7 +35,7 @@ fixture() {
 }
 
 prepare() {
-  GITHUB_OUTPUT="$output" node "$here/prepare.mjs" example/project main "$selected" "$base" "$1" "$2" "$bundle"
+  GITHUB_OUTPUT="$output" node "$here/prepare.mjs" example/project main "$selected" "$base" "$1" "$2" "$bundle" "${3:-}"
 }
 
 verify() {
@@ -140,4 +139,33 @@ test "$(cat next)" = subsequent
 test "$(cat .github/upstream-reconciliation/reviewed-source-sha)" = "$selected"
 git merge-base --is-ancestor "$base" HEAD
 verify
-echo "All eight real Git integration scenarios passed"
+fixture generated-conflict
+printf 'fork artifact\0' > artifact.bin
+git add artifact.bin
+git commit -qm artifact
+base=$(git rev-parse HEAD)
+printf 'upstream artifact\0' > ../upstream/artifact.bin
+git -C ../upstream add artifact.bin
+git -C ../upstream commit -qm artifact
+selected=$(git -C ../upstream rev-parse HEAD)
+prepare merge preserve artifact.bin
+source=$(git rev-parse HEAD)
+cmp artifact.bin <(printf 'fork artifact\0')
+printf 'regenerated artifact\0' > artifact.bin
+GITHUB_OUTPUT="$output" node "$here/generated.mjs" commit "$source" "$base" artifact.bin "$bundle.new"
+head=$(git rev-parse HEAD)
+node "$here/generated.mjs" verify "$source" "$head" artifact.bin
+git merge-base --is-ancestor "$selected" "$head"
+git merge-base --is-ancestor "$base" "$head"
+mv "$bundle.new" "$bundle"
+verify
+
+fixture generated-illegal-source-conflict
+echo local > common
+git commit -qam local
+base=$(git rev-parse HEAD)
+echo upstream > ../upstream/common
+git -C ../upstream commit -qam upstream
+selected=$(git -C ../upstream rev-parse HEAD)
+if prepare merge preserve local; then exit 1; fi
+echo "All ten real Git integration scenarios passed"
