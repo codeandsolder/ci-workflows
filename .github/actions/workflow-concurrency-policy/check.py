@@ -165,7 +165,9 @@ def validate(
 # labels (including licensed tools and dedicated benchmark hardware) remain
 # legitimate; those are verified separately by runner inventory admission.
 HOST_IDENTITIES = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?:acer|asus)(?![A-Za-z0-9_.-])")
-HOST_INPUT = re.compile(r"(?<![A-Za-z0-9_.-])/(?:home/jan|srv/ci/toolchains|srv/scratch)(?:/|\b)")
+HOST_INPUT = re.compile(
+    r"(?<![A-Za-z0-9_.-])/(?:home/jan|srv/ci/toolchains|srv/scratch)(?:/|\b)"
+)
 MATRIX_REF = re.compile(r"\bmatrix\.([A-Za-z_][A-Za-z0-9_-]*)")
 
 
@@ -194,9 +196,7 @@ def validate_portability(path: Path, doc: dict[str, Any]) -> list[str]:
         if isinstance(with_inputs, dict):
             selectors.append(with_inputs.get("runner"))
         values = list(scalar_strings(selectors))
-        referenced = {
-            key for value in values for key in MATRIX_REF.findall(value)
-        }
+        referenced = {key for value in values for key in MATRIX_REF.findall(value)}
         matrix = job.get("strategy", {})
         matrix = matrix.get("matrix", {}) if isinstance(matrix, dict) else {}
         if isinstance(matrix, dict):
