@@ -35,6 +35,78 @@
       ]
     },
     {
+      "name": "codeandsolder/certifex-minimus-rs",
+      "requiredChecks": [
+        [
+          "CI",
+          "check / rust"
+        ],
+        [
+          "CI",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
+      "name": "codeandsolder/lurkmoar-rs",
+      "requiredChecks": [
+        [
+          "CI",
+          "rust / rust"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
+      "name": "codeandsolder/MoraineFS",
+      "requiredChecks": [
+        [
+          "CI",
+          "check / rust"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
+      "name": "codeandsolder/VNAOLTE",
+      "requiredChecks": [
+        [
+          "Repository checks",
+          "Workspace tests / rust"
+        ],
+        [
+          "Repository checks",
+          "Strict Rust and Python policy / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ],
+        [
+          "Repository checks",
+          "Source checks"
+        ]
+      ]
+    },
+    {
       "name": "codeandsolder/ci-workflows",
       "requiredChecks": [
         [
