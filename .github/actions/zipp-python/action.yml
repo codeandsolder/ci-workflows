@@ -1,0 +1,17 @@
+name: Zipp Python runtime
+description: Locate the pinned, bundled Zipp Python WASM runner (no installations).
+outputs:
+  runner:
+    description: Absolute path to the portable Python task runner.
+    value: ${{ steps.locate.outputs.runner }}
+runs:
+  using: composite
+  steps:
+    - name: Locate bundled Zipp runtime
+      id: locate
+      shell: bash
+      run: |
+        set -euo pipefail
+        runner="$(cd "$GITHUB_ACTION_PATH/../../../zipp-python" && pwd -P)/run.mjs"
+        test -f "$runner"
+        printf 'runner=%s\n' "$runner" >> "$GITHUB_OUTPUT"
