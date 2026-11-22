@@ -158,8 +158,11 @@ jobs:
             fi
             # Rustup may schedule concurrent downloads for repeated components.
             # Pass each requested component exactly once.
-            mapfile -t components < <(printf '%s\n' "${components[@]}" | sort -u)
-            rustup component add --toolchain "$RUST_TOOLCHAIN" "${components[@]}"
+            unique_components=()
+            while IFS= read -r component; do
+              unique_components+=("$component")
+            done < <(printf '%s\n' "${components[@]}" | sort -u)
+            rustup component add --toolchain "$RUST_TOOLCHAIN" "${unique_components[@]}"
           fi
 
           # Rustup's native manifest may declare additional components/targets.
