@@ -1,5 +1,7 @@
 mod cache;
+mod clones;
 mod concurrency;
+mod rust_tests;
 mod shell;
 mod workspace;
 mod yaml;
@@ -16,13 +18,27 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
     let (Some(policy), Some(root)) = (args.next(), args.next()) else {
         return Err("usage: ci-policy concurrency|sccache ROOT [STRICT_REF]".into());
     };
+    let root = Path::new(&root);
+    if policy == "clones" {
+        let (Some(scan), Some(production), Some(testing), None) =
+            (args.next(), args.next(), args.next(), args.next())
+        else {
+            return Err("usage: ci-policy clones ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS".into());
+        };
+        clones::classify(
+            root,
+            Path::new(&scan),
+            production.parse()?,
+            testing.parse()?,
+        )?;
+        return Ok(ExitCode::SUCCESS);
+    }
     let strict_ref = if policy == "sccache" {
         args.next()
     } else {
         None
     };
     let paths = args.map(PathBuf::from).collect();
-    let root = Path::new(&root);
     let (problems, success, failure) = match policy.as_str() {
         "concurrency" => (
             concurrency::inspect(root, paths)?,

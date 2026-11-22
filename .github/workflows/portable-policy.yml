@@ -5,6 +5,8 @@ on:
     paths:
       - "policy-wasm/**"
       - ".github/scripts/test-workflow-concurrency.py"
+      - ".github/scripts/test-clone-regression-policy.py"
+      - ".github/scripts/clone-regression-policy.py"
       - ".github/scripts/test-rust-ci-sccache-policy.py"
       - ".github/scripts/rust-ci-sccache-oracle.py"
       - ".github/actions/rust-ci-sccache-policy/**"
@@ -16,6 +18,8 @@ on:
     paths:
       - "policy-wasm/**"
       - ".github/scripts/test-workflow-concurrency.py"
+      - ".github/scripts/test-clone-regression-policy.py"
+      - ".github/scripts/clone-regression-policy.py"
       - ".github/scripts/test-rust-ci-sccache-policy.py"
       - ".github/scripts/rust-ci-sccache-oracle.py"
       - ".github/actions/rust-ci-sccache-policy/**"
@@ -75,6 +79,7 @@ jobs:
           node --test policy-wasm/workspace.test.mjs
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache .
           node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
           node --test policy-wasm/workspace.test.mjs
