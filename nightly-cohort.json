@@ -4,15 +4,15 @@
       "name": "codeandsolder/fast-socks5-fast",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "rust / rust"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -21,15 +21,15 @@
       "name": "codeandsolder/quiescence",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "rust / rust"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -38,15 +38,15 @@
       "name": "codeandsolder/rust-skills2",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "Validate & compile-check"
         ],
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "Strict reusable gate self-test"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -55,15 +55,15 @@
       "name": "codeandsolder/certifex-minimus-rs",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "check / rust"
         ],
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -72,15 +72,15 @@
       "name": "codeandsolder/lurkmoar-rs",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "rust / rust"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -89,15 +89,15 @@
       "name": "codeandsolder/MoraineFS",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "check / rust"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -106,19 +106,19 @@
       "name": "codeandsolder/VNAOLTE",
       "requiredChecks": [
         [
-          "Repository checks",
+          ".github/workflows/ci.yml",
           "Workspace tests / rust"
         ],
         [
-          "Repository checks",
+          ".github/workflows/ci.yml",
           "Strict Rust and Python policy / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ],
         [
-          "Repository checks",
+          ".github/workflows/ci.yml",
           "Source checks"
         ]
       ]
@@ -127,15 +127,15 @@
       "name": "codeandsolder/step-p21-fast",
       "requiredChecks": [
         [
-          "Rust CI",
+          ".github/workflows/ci.yml",
           "Test, lint, docs, EXPRESS regression / rust"
         ],
         [
-          "Rust CI",
+          ".github/workflows/ci.yml",
           "Strict Rust / Strict Rust + Python policy"
         ],
         [
-          "Documentation links",
+          ".github/workflows/doc.yml",
           "markdown-link-check"
         ]
       ]
@@ -144,15 +144,15 @@
       "name": "codeandsolder/scraper-blackbox-lab",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "Rust / rust"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -161,15 +161,15 @@
       "name": "codeandsolder/allegro-redox",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "rust / rust"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -178,19 +178,19 @@
       "name": "codeandsolder/hashwx-rs",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "verify / rust"
         ],
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "wasm-wide-arithmetic-tripwire"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -199,11 +199,11 @@
       "name": "codeandsolder/html-to-text-comparison",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "Rust / rust"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/strict-rust.yml",
           "strict-rust / Strict Rust + Python policy"
         ]
       ]
@@ -212,15 +212,15 @@
       "name": "codeandsolder/warpproxy",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "Rust / rust"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust / Strict Rust + Python policy"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ]
       ]
@@ -229,39 +229,39 @@
       "name": "codeandsolder/rs-linux-exporter",
       "requiredChecks": [
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "Rust Linux checks and tests / rust"
         ],
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "Strict Rust / Strict Rust + Python policy"
         ],
         [
-          "CI",
+          ".github/workflows/ci.yml",
           "Python tooling"
         ],
         [
-          "Duplicate-code regression",
+          ".github/workflows/clone-regression.yml",
           "duplicates / New duplicated code"
         ],
         [
-          "build-deb",
+          ".github/workflows/build-deb.yml",
           "build (ubuntu2204, ubuntu:22.04)"
         ],
         [
-          "build-deb",
+          ".github/workflows/build-deb.yml",
           "build (ubuntu2404, ubuntu:24.04)"
         ],
         [
-          "build-deb",
+          ".github/workflows/build-deb.yml",
           "build (ubuntu2604, ubuntu:26.04)"
         ],
         [
-          "build-deb",
+          ".github/workflows/build-deb.yml",
           "build (debian12, debian:12)"
         ],
         [
-          "build-deb",
+          ".github/workflows/build-deb.yml",
           "build (debian13, debian:13)"
         ]
       ]
@@ -270,35 +270,35 @@
       "name": "codeandsolder/ci-workflows",
       "requiredChecks": [
         [
-          "Fleet Rust toolchain policy",
+          ".github/workflows/nightly-toolchain.yml",
           "Nightly quarantine and promotion tests"
         ],
         [
-          "Persistent Actions sccache smoke",
+          ".github/workflows/sccache-smoke.yml",
           "isolated-daemon / rust"
         ],
         [
-          "Persistent Actions sccache smoke",
+          ".github/workflows/sccache-smoke.yml",
           "prime (ubuntu-24.04) / rust"
         ],
         [
-          "Persistent Actions sccache smoke",
+          ".github/workflows/sccache-smoke.yml",
           "prime (ubuntu-24.04-arm) / rust"
         ],
         [
-          "Persistent Actions sccache smoke",
+          ".github/workflows/sccache-smoke.yml",
           "prime (macos-15) / rust"
         ],
         [
-          "Persistent Actions sccache smoke",
+          ".github/workflows/sccache-smoke.yml",
           "prime (windows-2025) / rust"
         ],
         [
-          "Persistent Actions sccache smoke",
+          ".github/workflows/sccache-smoke.yml",
           "assert-release-tier-skipped"
         ],
         [
-          "Strict Rust",
+          ".github/workflows/rust-skills2-strict.yml",
           "strict-rust-smoke-cache / Strict Rust + Python policy"
         ]
       ]
