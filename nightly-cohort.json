@@ -1,6 +1,23 @@
 {
   "repositories": [
     {
+      "name": "codeandsolder/fast-socks5-fast",
+      "requiredChecks": [
+        [
+          "CI",
+          "rust / rust"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
       "name": "codeandsolder/quiescence",
       "requiredChecks": [
         [
