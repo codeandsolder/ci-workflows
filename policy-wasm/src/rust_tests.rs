@@ -265,6 +265,6 @@ mod tests {
     fn generic_signature_braces_are_not_body() {
         let source = "#[test]\nfn x<T: Trait<{ 1 + 2 }>>() {\n    run();\n}\nfn prod() {}";
         assert_eq!(test_ranges(source), [(1, 4)]);
-        assert!(test_ranges("#[test] fn x() {").is_empty());
+        assert_eq!(test_ranges("#[test] fn x() {"), [] as [(usize, usize); 0]);
     }
 }

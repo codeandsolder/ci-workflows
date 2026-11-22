@@ -96,7 +96,7 @@ struct Thresholds {
 }
 
 impl Thresholds {
-    fn new(production: usize, testing: usize) -> Result<Self, &'static str> {
+    const fn new(production: usize, testing: usize) -> Result<Self, &'static str> {
         if production == 0 || testing < production {
             return Err("test blocking threshold must be >= production threshold > 0");
         }
@@ -304,9 +304,9 @@ pub fn classify(
         rust_cache: BTreeMap::new(),
     };
     let report = serde_json::from_reader(io::stdin().lock())?;
-    let classified = classifier.apply(report);
+    let result = classifier.apply(report);
     let mut output = io::BufWriter::new(io::stdout().lock());
-    serde_json::to_writer_pretty(&mut output, &classified)?;
+    serde_json::to_writer_pretty(&mut output, &result)?;
     output.write_all(b"\n")?;
     output.flush()?;
     Ok(())
