@@ -1,12 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { listReleases, remoteTagCommits, versionFromTag } from "./releases.mjs";
 
 export const QUARANTINE_MS = 72 * 60 * 60 * 1000;
 const STATE_REF = "refs/heads/automation/upstream-observations";
 const SHA = /^[0-9a-f]{40}$/;
 
-export function planObservation(previous, source, tip, now, isAncestor) {
+export function planObservation(previous, source, tip, now, isAncestor, releaseTag = null, tagValid = () => true) {
   if (!SHA.test(tip) || !Number.isSafeInteger(now) || now < 0) {
     throw new Error("Invalid upstream tip or observation time");
   }
@@ -16,13 +17,15 @@ export function planObservation(previous, source, tip, now, isAncestor) {
       new Date(now).toISOString().slice(0, 10)) {
     return { skipped: true };
   }
-  const observations = (prior?.observations ?? []).filter(({ sha }) => isAncestor(sha, tip));
-  if (!observations.some(({ sha }) => sha === tip)) observations.push({ sha: tip, firstObserved: now });
+  const observations = (prior?.observations ?? []).filter(({ sha, releaseTag }) => isAncestor(sha, tip) && tagValid(sha, releaseTag));
+  if (!observations.some(item => item.sha === tip && (item.releaseTag ?? null) === releaseTag)) {
+    observations.push({ sha: tip, firstObserved: now, ...(releaseTag ? { releaseTag } : {}) });
+  }
   const eligible = observations.filter(({ firstObserved }) => now - firstObserved >= QUARANTINE_MS).at(-1);
   // Earlier snapshots are superseded by the latest eligible ancestor, but
   // keep that ancestor and every more recent observation for retries.
   const retained = eligible ? observations.slice(observations.indexOf(eligible)) : observations;
-  return { skipped: false, eligible: eligible?.sha ?? null, state: { source, lastAttempt: now, observations: retained } };
+  return { skipped: false, eligible: eligible?.sha ?? null, eligibleTag: eligible?.releaseTag ?? null, state: { source, lastAttempt: now, observations: retained } };
 }
 
 function git(args, options = {}) {
@@ -66,10 +69,11 @@ function saveState(state, parent) {
   return commit;
 }
 
-function main([repository, branch, strategy]) {
+function main([repository, branch, strategy, releasePrefix = ""]) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? "") || !branch) throw new Error("Expected upstream repository and branch");
   git(["check-ref-format", "refs/heads/" + branch]);
-  const source = repository + ":" + branch;
+  const source = repository + ":" + branch + (releasePrefix ? ":releases:" + releasePrefix : "");
+  if (releasePrefix && strategy !== "merge") throw new Error("Release tracking requires merge strategy");
   const { previous, parent } = loadState();
   const now = Date.now();
   const output = (key, value) => appendFileSync(process.env.GITHUB_OUTPUT, key + "=" + value + "\n");
@@ -88,7 +92,26 @@ function main([repository, branch, strategy]) {
     source, lastAttempt: now, observations: previous?.source === source ? previous.observations : [],
   }, parent);
   git(["fetch", "--no-tags", "https://github.com/" + repository + ".git", "refs/heads/" + branch]);
-  const tip = git(["rev-parse", "FETCH_HEAD"]);
+  const branchTip = git(["rev-parse", "FETCH_HEAD"]);
+  let tip = branchTip;
+  let releaseTag = null;
+  let tagValid = () => true;
+  if (releasePrefix) {
+    const published = listReleases(repository, releasePrefix, Date.now());
+    if (!published.length) throw new Error("No stable matching upstream release");
+    releaseTag = published[0].tag_name;
+    const upstreamRemote = "https://github.com/" + repository + ".git";
+    git(["fetch", "--no-tags", upstreamRemote, "refs/tags/" + releaseTag]);
+    tip = git(["rev-parse", "FETCH_HEAD^{commit}"]);
+    if (!ancestor(tip, branchTip)) throw new Error("Upstream release is not on the configured branch");
+    const publishedTags = new Set(published.map(release => release.tag_name));
+    const observedTags = (previous?.source === source ? previous.observations : [])
+      .map(item => item.releaseTag)
+      .filter(tag => typeof tag === "string" && versionFromTag(tag, releasePrefix) !== null && publishedTags.has(tag));
+    const tags = remoteTagCommits(upstreamRemote, [...new Set([releaseTag, ...observedTags])]);
+    if (tags.get(releaseTag) !== tip) throw new Error("Upstream release moved during observation");
+    tagValid = (commit, tag) => publishedTags.has(tag) && tags.get(tag) === commit;
+  }
   output("tip", tip);
   const observedAt = Date.now();
   const reachable = (sha, head) => {
@@ -96,7 +119,7 @@ function main([repository, branch, strategy]) {
     catch { return false; } // A force-pushed snapshot may no longer be fetchable.
     return ancestor(sha, head);
   };
-  const result = planObservation(previous, source, tip, observedAt, reachable);
+  const result = planObservation(previous, source, tip, observedAt, reachable, releaseTag, tagValid);
   saveState(result.state, attempt);
   let reviewed = null;
   if (strategy === "source-merge" &&
@@ -107,7 +130,7 @@ function main([repository, branch, strategy]) {
     }
   }
   const accepted = sha => ancestor(sha, base) || (reviewed !== null && ancestor(sha, reviewed));
-  if (accepted(tip)) {
+  if (!releasePrefix && accepted(tip)) {
     output("upstream", tip);
     output("status", "current");
     return;
@@ -118,7 +141,12 @@ function main([repository, branch, strategy]) {
     return;
   }
   output("upstream", result.eligible);
-  output("status", accepted(result.eligible) ? "quarantined" : "ready");
+  if (releasePrefix) {
+    if (!result.eligibleTag) throw new Error("Eligible snapshot has no release tag");
+    output("release_tag", result.eligibleTag);
+    output("downstream_tag", "v" + versionFromTag(result.eligibleTag, releasePrefix));
+  }
+  output("status", accepted(result.eligible) ? (releasePrefix ? "current" : "quarantined") : "ready");
   console.log("Upstream tip " + tip + "; eligible snapshot " + result.eligible);
 }
 

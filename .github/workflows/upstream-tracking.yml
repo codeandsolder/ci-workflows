@@ -18,6 +18,22 @@ on:
       workflow-policy:
         type: string
         default: reject
+      generated-files:
+        description: Whitespace-separated exact tracked files to regenerate after merging upstream.
+        type: string
+        default: ""
+      generation-script:
+        description: Reviewed fork generation script, executed in a read-only candidate job.
+        type: string
+        default: ""
+      generation-container:
+        description: Immutable image containing the native build prerequisites.
+        type: string
+        default: ""
+      upstream-release-prefix:
+        description: Track stable release tags with this prefix, publishing corresponding vMAJOR.MINOR.PATCH tags.
+        type: string
+        default: ""
       validation-script:
         description: Fork-owned validation script (read from the current target branch).
         type: string
@@ -71,6 +87,8 @@ jobs:
       base: ${{ steps.observe.outputs.base }}
       upstream: ${{ steps.observe.outputs.upstream }}
       tip: ${{ steps.observe.outputs.tip }}
+      release_tag: ${{ steps.observe.outputs.release_tag }}
+      downstream_tag: ${{ steps.observe.outputs.downstream_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -91,13 +109,24 @@ jobs:
           UPSTREAM_BRANCH: ${{ inputs.upstream-branch }}
           STRATEGY: ${{ inputs.strategy }}
           VALIDATION: ${{ inputs.validation-script }}
+          GENERATED_FILES: ${{ inputs.generated-files }}
+          GENERATOR: ${{ inputs.generation-script }}
+          GENERATION_CONTAINER: ${{ inputs.generation-container }}
+          RELEASE_PREFIX: ${{ inputs.upstream-release-prefix }}
+          GH_TOKEN: ${{ github.token }}
           WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
         run: |
           set -euo pipefail
           case "$STRATEGY" in merge|rebase|squash-rebase|source-merge) ;; *) exit 2;; esac
           case "$WORKFLOW_POLICY" in reject|preserve) ;; *) exit 2;; esac
           test -n "$VALIDATION"
-          node .ci-upstream/.github/actions/upstream-tracking/observe.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$STRATEGY"
+          if [[ -n "$GENERATOR$GENERATED_FILES$GENERATION_CONTAINER" ]]; then
+            test -n "$GENERATOR"
+            test -n "$GENERATED_FILES"
+            test "$STRATEGY" = merge
+            [[ "$GENERATION_CONTAINER" =~ @sha256:[0-9a-f]{64}$ ]]
+          fi
+          node .ci-upstream/.github/actions/upstream-tracking/observe.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$STRATEGY" "$RELEASE_PREFIX"
 
   prepare:
     needs: observe
@@ -131,8 +160,9 @@ jobs:
           BASE: ${{ needs.observe.outputs.base }}
           STRATEGY: ${{ inputs.strategy }}
           WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
+          GENERATED_FILES: ${{ inputs.generated-files }}
         run: |
-          node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$STRATEGY" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle"
+          node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$STRATEGY" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle" "$GENERATED_FILES"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: steps.prepare.outputs.changed == 'true'
         with:
@@ -141,9 +171,108 @@ jobs:
           retention-days: 2
           if-no-files-found: error
 
-  validate:
+  generate:
     needs: [observe, prepare]
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || (needs.observe.result == 'success' && ((needs.observe.outputs.status == 'ready' && needs.prepare.result == 'success') || needs.observe.outputs.status == 'current'))) }}
+    if: needs.prepare.outputs.changed == 'true' && inputs.generation-script != ''
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ inputs.generation-container || 'ubuntu:24.04' }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      head: ${{ steps.commit.outputs.head }}
+      eligible: ${{ steps.quarantine.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.observe.outputs.base }}
+          fetch-depth: 0
+          fetch-tags: false
+          persist-credentials: false
+      - name: Read reviewed generator
+        env:
+          GENERATOR: ${{ inputs.generation-script }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git show "HEAD:$GENERATOR" > "$RUNNER_TEMP/generate-upstream.sh"
+      - uses: actions/download-artifact@v4
+        with:
+          name: upstream-candidate
+          path: ${{ runner.temp }}
+      - name: Check out prepared candidate
+        env:
+          EXPECTED: ${{ needs.prepare.outputs.head }}
+        run: |
+          set -euo pipefail
+          git fetch "$RUNNER_TEMP/candidate.bundle" HEAD
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED"
+          git checkout --detach "$EXPECTED"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-upstream
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions
+            policy-wasm
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+      - name: Enforce external crate release age before regeneration
+        id: quarantine
+        if: inputs.rust-toolchain != ''
+        uses: ./.ci-upstream/.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ needs.observe.outputs.base }}
+          hours: "72"
+          fail-on-blocked: "false"
+      - name: Resolve quarantined repository nightly
+        id: repository-compiler
+        if: inputs.rust-toolchain == 'repository' && steps.quarantine.outputs.eligible == 'true'
+        uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
+        with:
+          validation-tier: routine
+      - uses: dtolnay/rust-toolchain@stable
+        if: inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+        with:
+          toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
+          components: rustfmt, clippy
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
+        if: inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+        with:
+          rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
+      - name: Regenerate and commit only the declared artifacts
+        id: commit
+        if: inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true'
+        env:
+          SOURCE: ${{ needs.prepare.outputs.head }}
+          BASE: ${{ needs.observe.outputs.base }}
+          UPSTREAM: ${{ needs.observe.outputs.upstream }}
+          GENERATED: ${{ inputs.generated-files }}
+        run: |
+          set -euo pipefail
+          bash "$RUNNER_TEMP/generate-upstream.sh" "$UPSTREAM" "$BASE"
+          node .ci-upstream/.github/actions/upstream-tracking/generated.mjs commit "$SOURCE" "$BASE" "$GENERATED" "$RUNNER_TEMP/generated.bundle"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: steps.commit.outputs.head != ''
+        with:
+          name: upstream-generated-candidate
+          path: ${{ runner.temp }}/generated.bundle
+          retention-days: 2
+          if-no-files-found: error
+      - name: Finalize mandatory sccache
+        if: always() && inputs.rust-toolchain != ''
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
+
+  validate:
+    needs: [observe, prepare, generate]
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || (needs.observe.result == 'success' && ((needs.observe.outputs.status == 'ready' && needs.prepare.result == 'success' && (inputs.generation-script == '' || (needs.generate.result == 'success' && needs.generate.outputs.head != ''))) || needs.observe.outputs.status == 'current'))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
@@ -152,15 +281,29 @@ jobs:
     outputs:
       eligible: ${{ steps.quarantine.outputs.eligible }}
       checked: ${{ steps.check.outputs.checked }}
+      release_needed: ${{ steps.check.outputs.release_needed }}
+      head: ${{ steps.validated.outputs.head }}
     steps:
       - name: Decide whether validation is necessary
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
           STATUS: ${{ needs.observe.outputs.status }}
+          RELEASE_TAG: ${{ needs.observe.outputs.downstream_tag }}
         run: |
           set -euo pipefail
-          if [[ "$STATUS" == current ]]; then
+          release_needed=false
+          if [[ -n "$RELEASE_TAG" ]]; then
+            releases=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100")
+            if ! jq -e --arg tag "$RELEASE_TAG" 'any(.[][]; .tag_name == $tag and (.draft | not) and (.prerelease | not))' <<< "$releases" >/dev/null; then
+              release_needed=true
+            elif [[ "$STATUS" == ready ]]; then
+              echo "Upstream candidate would reuse an existing downstream release tag" >&2
+              exit 1
+            fi
+          fi
+          echo "release_needed=$release_needed" >> "$GITHUB_OUTPUT"
+          if [[ "$STATUS" == current && "$release_needed" == false ]]; then
             issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title --jq '.[] | select(.title == "Upstream tracking failed" or .title == "Automated upstream parity failure") | .number')
             if [[ -z "$issue" ]]; then
               echo checked=false >> "$GITHUB_OUTPUT"
@@ -185,14 +328,15 @@ jobs:
       - uses: actions/download-artifact@v4
         if: needs.prepare.outputs.changed == 'true'
         with:
-          name: upstream-candidate
+          name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
           path: ${{ runner.temp }}
       - name: Check out exact candidate
         if: needs.prepare.outputs.changed == 'true'
         env:
-          EXPECTED: ${{ needs.prepare.outputs.head }}
+          EXPECTED: ${{ needs.generate.outputs.head || needs.prepare.outputs.head }}
+          BUNDLE_NAME: ${{ inputs.generation-script != '' && 'generated.bundle' || 'candidate.bundle' }}
         run: |
-          git fetch "$RUNNER_TEMP/candidate.bundle" HEAD
+          git fetch "$RUNNER_TEMP/$BUNDLE_NAME" HEAD
           test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED"
           git checkout --detach "$EXPECTED"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -202,7 +346,9 @@ jobs:
           ref: ${{ job.workflow_sha }}
           path: .ci-upstream
           persist-credentials: false
-          sparse-checkout: .github/actions
+          sparse-checkout: |
+            .github/actions
+            policy-wasm
       - name: Enforce external crate release age as well
         id: quarantine
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
@@ -253,9 +399,16 @@ jobs:
         env:
           UPSTREAM_SHA: ${{ needs.observe.outputs.upstream }}
           FORK_BASE: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
+          RELEASE_TAG: ${{ needs.observe.outputs.release_tag }}
         run: |
-          bash "$RUNNER_TEMP/validate-upstream.sh" "$UPSTREAM_SHA" "$FORK_BASE"
+          args=("$UPSTREAM_SHA" "$FORK_BASE")
+          if [[ -n "$RELEASE_TAG" ]]; then args+=("$RELEASE_TAG"); fi
+          bash "$RUNNER_TEMP/validate-upstream.sh" "${args[@]}"
           git diff --exit-code HEAD --
+      - name: Record exactly validated revision
+        id: validated
+        if: steps.check.outputs.checked == 'true' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
+        run: echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Upload validated Cargo binary
         if: inputs.cargo-artifact && steps.check.outputs.checked == 'true' && steps.quarantine.outputs.eligible == 'true'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -271,8 +424,8 @@ jobs:
         uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
 
   publish:
-    needs: [observe, prepare, validate]
-    if: ${{ needs.prepare.outputs.changed == 'true' && needs.validate.result == 'success' && (inputs.rust-toolchain == '' || needs.validate.outputs.eligible == 'true') }}
+    needs: [observe, prepare, generate, validate]
+    if: ${{ !cancelled() && needs.prepare.outputs.changed == 'true' && needs.validate.result == 'success' && needs.validate.outputs.head != '' && (inputs.rust-toolchain == '' || needs.validate.outputs.eligible == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -292,19 +445,61 @@ jobs:
           sparse-checkout: .github/actions/upstream-tracking
       - uses: actions/download-artifact@v4
         with:
-          name: upstream-candidate
+          name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
           path: ${{ runner.temp }}
       - name: Publish exactly the validated revision
         env:
           TARGET: ${{ inputs.target-branch }}
           BASE: ${{ needs.observe.outputs.base }}
-          HEAD: ${{ needs.prepare.outputs.head }}
+          HEAD: ${{ needs.validate.outputs.head }}
+          SOURCE: ${{ needs.prepare.outputs.head }}
+          GENERATED_HEAD: ${{ needs.generate.outputs.head }}
+          GENERATED_FILES: ${{ inputs.generated-files }}
           STRATEGY: ${{ inputs.strategy }}
         run: |
-          node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/candidate.bundle"
+          set -euo pipefail
+          if [[ -n "$GENERATED_HEAD" ]]; then
+            test "$HEAD" = "$GENERATED_HEAD"
+            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/generated.bundle" "$SOURCE" "$GENERATED_FILES"
+          else
+            test "$HEAD" = "$SOURCE"
+            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/candidate.bundle"
+          fi
+
+  release:
+    needs: [observe, prepare, generate, validate, publish]
+    if: ${{ !cancelled() && needs.observe.outputs.release_tag != '' && needs.validate.result == 'success' && needs.validate.outputs.release_needed == 'true' && needs.validate.outputs.head != '' && (needs.publish.result == 'success' || needs.observe.outputs.status == 'current') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.head }}
+          fetch-depth: 0
+          fetch-tags: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-upstream
+          persist-credentials: false
+          sparse-checkout: .github/actions/upstream-tracking
+      - name: Release the validated upstream crate version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream-repository }}
+          RELEASE_PREFIX: ${{ inputs.upstream-release-prefix }}
+          RELEASE_TAG: ${{ needs.observe.outputs.release_tag }}
+          UPSTREAM: ${{ needs.observe.outputs.upstream }}
+          HEAD: ${{ needs.validate.outputs.head }}
+          TARGET: ${{ inputs.target-branch }}
+        run: |
+          node .ci-upstream/.github/actions/upstream-tracking/releases.mjs publish "$GITHUB_REPOSITORY" "$UPSTREAM_REPOSITORY" "$RELEASE_PREFIX" "$RELEASE_TAG" "$UPSTREAM" "$HEAD" "$TARGET"
 
   report:
-    needs: [observe, prepare, validate, publish]
+    needs: [observe, prepare, generate, validate, publish, release]
     if: ${{ always() && !cancelled() && needs.observe.result != 'skipped' && needs.observe.outputs.status != 'already-run' }}
     runs-on: ubuntu-24.04
     permissions:
@@ -317,7 +512,9 @@ jobs:
           OBSERVE: ${{ needs.observe.result }}
           PREPARE: ${{ needs.prepare.result }}
           VALIDATE: ${{ needs.validate.result }}
+          GENERATE: ${{ needs.generate.result }}
           PUBLISH: ${{ needs.publish.result }}
+          RELEASE: ${{ needs.release.result }}
           STATUS: ${{ needs.observe.outputs.status }}
           ELIGIBLE: ${{ needs.validate.outputs.eligible }}
           CHECKED: ${{ needs.validate.outputs.checked }}
@@ -347,14 +544,14 @@ jobs:
             if [[ -n "$issue" ]]; then gh issue close "$issue" --repo "$repo" --comment "Recovered: $url"; fi
           }
           failed=false
-          for result in "$OBSERVE" "$PREPARE" "$VALIDATE" "$PUBLISH"; do
+          for result in "$OBSERVE" "$PREPARE" "$GENERATE" "$VALIDATE" "$PUBLISH" "$RELEASE"; do
             if [[ "$result" == failure || "$result" == cancelled ]]; then failed=true; fi
           done
           if [[ "$DRIFT" == true ]]; then
             maintain "Upstream workflow changes require manual reconciliation" "Incoming workflow changes need a reviewed PR. Fork base: $BASE; upstream: $UPSTREAM. Run: $url"
           fi
           if [[ "$failed" == true ]]; then
-            maintain "Upstream tracking failed" "$(printf 'Upstream tracking failed.\n\nObservation: %s\nPreparation: %s\nValidation: %s\nPublication: %s\nFork base: %s\nEligible upstream: %s\nObserved tip: %s\n\nRun: %s\n' "$OBSERVE" "$PREPARE" "$VALIDATE" "$PUBLISH" "$BASE" "$UPSTREAM" "$TIP" "$url")"
+            maintain "Upstream tracking failed" "$(printf 'Upstream tracking failed.\n\nObservation: %s\nPreparation: %s\nGeneration: %s\nValidation: %s\nPublication: %s\nRelease: %s\nFork base: %s\nEligible upstream: %s\nObserved tip: %s\n\nRun: %s\n' "$OBSERVE" "$PREPARE" "$GENERATE" "$VALIDATE" "$PUBLISH" "$RELEASE" "$BASE" "$UPSTREAM" "$TIP" "$url")"
             exit 1
           fi
           if [[ "$CHECKED" == true && "$VALIDATE" == success && "$ELIGIBLE" != false ]]; then
