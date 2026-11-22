@@ -6,25 +6,25 @@ fail() {
   exit 2
 }
 
-require_uint() {
-  local value="$1" name="$2"
-  [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "$name must be a positive integer: $value"
-}
-
-discovery="${CLONE_GUARD_DISCOVERY_TOKENS:-50}"
-blocking="${CLONE_GUARD_BLOCKING_TOKENS:-100}"
-test_blocking="${CLONE_GUARD_TEST_BLOCKING_TOKENS:-140}"
-require_uint "$discovery" CLONE_GUARD_DISCOVERY_TOKENS
-require_uint "$blocking" CLONE_GUARD_BLOCKING_TOKENS
-require_uint "$test_blocking" CLONE_GUARD_TEST_BLOCKING_TOKENS
-(( test_blocking >= blocking )) || fail "test blocking threshold ($test_blocking) must be >= production threshold ($blocking)"
-(( blocking >= discovery )) || fail "blocking threshold ($blocking) must be >= discovery threshold ($discovery)"
-
-root="${GITHUB_WORKSPACE:-$(pwd)}"
-root="$(cd "$root" && pwd -P)"
-scan_path="${CLONE_GUARD_SCAN_PATH:-.}"
-[[ -d "$root/$scan_path" ]] || fail "scan path does not exist: $scan_path"
-base="${CLONE_GUARD_BASE_SHA:-}"
+# Mandatory policy: one owner, no repository or ambient environment overrides.
+readonly discovery=50 blocking=100 test_blocking=140
+readonly -a excludes=(
+  '.ci-workflows/**'
+  'tests/**' '**/tests/**'
+  'examples/**' '**/examples/**'
+  'benches/**' '**/benches/**'
+  'vendor/**' '**/vendor/**'
+  'node_modules/**' '**/node_modules/**'
+  'target/**' '**/target/**'
+)
+if (( $# < 4 || $# > 5 )); then
+  fail "usage: $0 REPOSITORY REPORT_DIRECTORY BASE_SHA PR_HEAD_SHA [PINNED_ARCHIVE]"
+fi
+root="$(cd "$1" && pwd -P)"
+mkdir -p "$2"
+report_dir="$(cd "$2" && pwd -P)"
+base="$3"
+pr_head="$4"
 [[ "$base" =~ ^[0-9a-fA-F]{40}$ ]] || fail "a 40-digit base commit SHA is required"
 [[ ! "$base" =~ ^0+$ ]] || fail "base commit is the all-zero initial-push sentinel"
 
@@ -37,7 +37,6 @@ done
 # against its first parent, not the older base advertised in the payload.
 # Verify the second parent matches the event's PR head before trusting it.
 # Raw commit headers retain parents even in a depth-one checkout.
-pr_head="${CLONE_GUARD_PR_HEAD_SHA:-}"
 if [[ -n "$pr_head" ]]; then
   [[ "$pr_head" =~ ^[0-9a-f]{40}$ ]] || fail "invalid PR head SHA"
   commit="$(git -C "$root" cat-file commit HEAD)" || fail "cannot inspect checked-out PR merge commit"
@@ -69,42 +68,40 @@ git -C "$root" cat-file -e "$base^{commit}" ||
 version="0.9.0"
 target="x86_64-unknown-linux-gnu"
 archive_sha256="e5d5abd63abfb74dddfc52d60d58144f402218aa49b3b6b6e610d1e3171f355f"
-# DOPPELSCAN_BIN is set by local smoke tests only, never by the reusable workflow.
-if [[ -n "${DOPPELSCAN_BIN:-}" ]]; then
-  bin="$DOPPELSCAN_BIN"
-else
-  [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] ||
-    fail "the shared binary is currently pinned for Linux x86_64"
-  scratch="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/clone-regression-tool"
-  mkdir -p "$scratch"
-  archive="$scratch/doppelscan.tar.gz"
+# Each invocation extracts from the verified archive into its own scratch
+# directory. Fixture runs may reuse the same archive, never a caller binary.
+[[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] ||
+  fail "the shared binary is currently pinned for Linux x86_64"
+scratch="$(mktemp -d "$report_dir/clone-regression-tool.XXXXXXXX")"
+trap 'rm -rf -- "$scratch"' EXIT
+archive="${5:-$scratch/doppelscan.tar.gz}"
+if [[ ! -f "$archive" ]]; then
   url="https://github.com/CMaintz/doppelscan/releases/download/v${version}/doppelscan-v${version}-${target}.tar.gz"
   curl --fail --location --silent --show-error --retry 3 --connect-timeout 20 --max-time 120 \
-    "$url" --output "$archive"
-  printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --status ||
+    "$url" --output "$scratch/download.tar.gz"
+  printf '%s  %s\n' "$archive_sha256" "$scratch/download.tar.gz" | sha256sum --check --status ||
     fail "doppelscan release archive SHA256 mismatch"
-  tar -xzf "$archive" -C "$scratch" \
-    "doppelscan-v${version}-${target}/doppelscan"
-  bin="$scratch/doppelscan-v${version}-${target}/doppelscan"
+  mv -- "$scratch/download.tar.gz" "$archive"
 fi
+printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --status ||
+  fail "doppelscan release archive SHA256 mismatch"
+tar -xzf "$archive" -C "$scratch" \
+  "doppelscan-v${version}-${target}/doppelscan"
+bin="$scratch/doppelscan-v${version}-${target}/doppelscan"
 
 [[ -x "$bin" ]] || fail "doppelscan is not executable: $bin"
 [[ "$("$bin" --version)" == "doppelscan $version" ]] ||
   fail "unexpected doppelscan version; expected $version"
 
-scan_dir="$(cd "$root/$scan_path" && pwd -P)"
+scan_dir="$root"
 args=(check "$scan_dir" --no-config --min-tokens "$discovery"
   --check-min-tokens "$blocking" --base "$base" --format json)
-if [[ -n "${CLONE_GUARD_LANGUAGES:-}" ]]; then
-  args+=(--only "$CLONE_GUARD_LANGUAGES")
-fi
-# Paths are data, never shell syntax. Empty lines are ignored.
-while IFS= read -r pattern || [[ -n "$pattern" ]]; do
-  [[ -n "$pattern" ]] && args+=(--exclude "$pattern")
-done <<< "${CLONE_GUARD_EXCLUDES:-}"
+for pattern in "${excludes[@]}"; do
+  args+=(--exclude "$pattern")
+done
 
-report="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/doppelscan-report.json"
-raw_report="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/doppelscan-raw-report.json"
+report="$report_dir/doppelscan-report.json"
+raw_report="$report_dir/doppelscan-raw-report.json"
 set +e
 "$bin" "${args[@]}" > "$raw_report"
 status=$?

@@ -67,20 +67,16 @@ sed 's/fn fold_bytes(/fn fold_bytes_legacy(/' "$repo/src/engine.rs" > "$repo/src
 git -C "$repo" add .
 git -C "$repo" commit -qm "baseline: accepted duplicate"
 base="$(git -C "$repo" rev-parse HEAD)"
-export GITHUB_WORKSPACE="$repo"
-export RUNNER_TEMP="$test_dir/run"
+project="$repo"
+run_dir="$test_dir/run"
+pr_head=""
+archive="$test_dir/doppelscan.tar.gz"
 export GITHUB_STEP_SUMMARY="$test_dir/summary.md"
-export CLONE_GUARD_BASE_SHA="$base"
-export CLONE_GUARD_DISCOVERY_TOKENS=50
-export CLONE_GUARD_BLOCKING_TOKENS=80
-export CLONE_GUARD_EXCLUDES=$'tests/**\n**/tests/**'
-export CLONE_GUARD_SCAN_PATH=.
-export CLONE_GUARD_LANGUAGES=rust
 
 check() {
   local case_name="$1" expected="$2" actual
   set +e
-  bash "$script_dir/run-clone-regression.sh" > "$test_dir/$case_name.out" 2> "$test_dir/$case_name.err"
+  bash "$script_dir/run-clone-regression.sh" "$project" "$run_dir" "$base" "$pr_head" "$archive" > "$test_dir/$case_name.out" 2> "$test_dir/$case_name.err"
   actual=$?
   set -e
   if [[ "$actual" -ne "$expected" ]]; then
@@ -88,8 +84,8 @@ check() {
     cat "$test_dir/$case_name.out" "$test_dir/$case_name.err" >&2
     exit 1
   fi
-  jq -e '.summary and (.new|type=="array") and (.smaller|type=="array")' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
-  echo "PASS $case_name (exit $actual; blocking=$(jq '.new|length' "$RUNNER_TEMP/doppelscan-report.json"); advisory=$(jq '.smaller|length' "$RUNNER_TEMP/doppelscan-report.json"))"
+  jq -e '.summary and (.new|type=="array") and (.smaller|type=="array")' "$run_dir/doppelscan-report.json" >/dev/null
+  echo "PASS $case_name (exit $actual; blocking=$(jq '.new|length' "$run_dir/doppelscan-report.json"); advisory=$(jq '.smaller|length' "$run_dir/doppelscan-report.json"))"
 }
 reset_case() {
   git -C "$repo" reset --hard -q "$base"
@@ -97,14 +93,9 @@ reset_case() {
 }
 
 check accepted-baseline 0
-# Once installation has been tested once, reuse that exact pinned binary for
-# the remaining fixture cases.
-if [[ -z "${DOPPELSCAN_BIN:-}" ]]; then
-  export DOPPELSCAN_BIN="$RUNNER_TEMP/clone-regression-tool/doppelscan-v0.9.0-x86_64-unknown-linux-gnu/doppelscan"
-fi
 sed 's/fn fold_bytes(/fn fold_bytes_copy(/' "$repo/src/engine.rs" > "$repo/src/copy.rs"
 check third-copy-blocked 1
-jq -e '.new|length>0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
+jq -e '.new|length>0' "$run_dir/doppelscan-report.json" >/dev/null
 reset_case
 
 # The same logic with different local names must still be reported.
@@ -154,7 +145,7 @@ fn calc_y(a: u32, b: u32, c: u32) -> u32 {
 }
 RUST
 check small-new-copy-passes 0
-jq -e '.smaller|length>0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null ||
+jq -e '.smaller|length>0' "$run_dir/doppelscan-report.json" >/dev/null ||
   { echo "FAIL smaller copy is not in advisory report" >&2; exit 1; }
 reset_case
 # All copies are inside one explicitly annotated Rust unit-test module.
@@ -202,8 +193,8 @@ mod tests {
 }
 RUST
 check inline-rust-unit-test-advisory 0
-jq -e '.smaller|map(select(.policy_tier == "test" and .tokens >= 80))|length>0' \
-  "$RUNNER_TEMP/doppelscan-report.json" >/dev/null || {
+jq -e '.smaller|map(select(.policy_tier == "test" and .tokens >= 100))|length>0' \
+  "$run_dir/doppelscan-report.json" >/dev/null || {
     echo 'FAIL inline Rust unit-test duplication was not classified as advisory' >&2
     exit 1
   }
@@ -217,7 +208,7 @@ reset_case
 } > "$repo/src/mixed.rs"
 check mixed-production-test-clone-blocked 1
 jq -e '.new|map(select(.policy_tier == "production"))|length>0' \
-  "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
+  "$run_dir/doppelscan-report.json" >/dev/null
 reset_case
 
 # Longer test-only clones still block.
@@ -259,7 +250,7 @@ RUST
 } > "$repo/src/large_test.rs"
 check large-test-duplication-blocked 1
 jq -e '.new|map(select(.policy_tier == "test" and .tokens >= 140))|length>0' \
-  "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
+  "$run_dir/doppelscan-report.json" >/dev/null
 reset_case
 
 # Repo configuration may document explicit fingerprint accepts, but may
@@ -273,11 +264,11 @@ check repository-config-cannot-disable-scanner 1
 {
   printf 'min-tokens = 999999\nexclude = ["src/**"]\n'
   jq -r '.new[] | "[[accept]]\nfingerprint = \"" + .fingerprint + "\"\nreason = \"Intentional public ABI duplication in this regression fixture.\""' \
-    "$RUNNER_TEMP/doppelscan-report.json"
+    "$run_dir/doppelscan-report.json"
 } > "$repo/.doppelscan.toml"
 check reviewed-fingerprint-accept-passes 0
-jq -e '.new|length==0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
-jq -e '.accepted|length>0' "$RUNNER_TEMP/doppelscan-report.json" >/dev/null
+jq -e '.new|length==0' "$run_dir/doppelscan-report.json" >/dev/null
+jq -e '.accepted|length>0' "$run_dir/doppelscan-report.json" >/dev/null
 reset_case
 
 # A synthetic PR merge can be generated after the event payload's base
@@ -292,11 +283,11 @@ git -C "$repo" switch -q -c fixture-pr "$base"
 printf 'workflow-only change\n' > "$repo/README.md"
 git -C "$repo" add README.md
 git -C "$repo" commit -qm "PR changes no Rust source"
-pr_head="$(git -C "$repo" rev-parse HEAD)"
+fixture_pr_head="$(git -C "$repo" rev-parse HEAD)"
 git -C "$repo" switch -q fixture-base
 git -C "$repo" merge -q --no-ff -m "synthetic PR merge" fixture-pr
 check stale-event-base-reproduces-false-positive 1
-export CLONE_GUARD_PR_HEAD_SHA="$pr_head"
+pr_head="$fixture_pr_head"
 check actual-merge-parent-passes 0
 [[ "$(git -C "$repo" rev-parse HEAD^1)" == "$actual_base" ]]
 [[ "$(<"$test_dir/actual-merge-parent-passes.out")" == *"using checked-out merge parent $actual_base instead of event base $base"* ]]
@@ -304,16 +295,15 @@ check actual-merge-parent-passes 0
 # Real GitHub checkouts are shallow by default. The first parent must be
 # selected from the raw commit header and fetched if it is absent.
 git clone -q --depth=1 --branch fixture-base "file://$repo" "$test_dir/shallow"
-export GITHUB_WORKSPACE="$test_dir/shallow"
+project="$test_dir/shallow"
 check shallow-merge-parent-passes 0
-export GITHUB_WORKSPACE="$repo"
+project="$repo"
 
 git -C "$repo" switch -q fixture-pr
 sed 's/fn fold_bytes(/fn fold_bytes_pr_copy(/' "$repo/src/engine.rs" > "$repo/src/pr_copy.rs"
 git -C "$repo" add src/pr_copy.rs
 git -C "$repo" commit -qm "PR introduces real duplication"
-CLONE_GUARD_PR_HEAD_SHA="$(git -C "$repo" rev-parse HEAD)"
-export CLONE_GUARD_PR_HEAD_SHA
+pr_head="$(git -C "$repo" rev-parse HEAD)"
 git -C "$repo" switch -q -c fixture-merge "$actual_base"
 git -C "$repo" merge -q --no-ff -m "synthetic PR merge with real clone" fixture-pr
 check actual-pr-duplication-blocked 1
@@ -321,12 +311,20 @@ check actual-pr-duplication-blocked 1
 # A different head means this is not the merge commit for the advertised
 # PR revision. Never accept the unrelated commit as a baseline.
 set +e
-CLONE_GUARD_PR_HEAD_SHA="$base" bash "$script_dir/run-clone-regression.sh" \
+bash "$script_dir/run-clone-regression.sh" "$project" "$run_dir" "$base" "$base" "$archive" \
   > "$test_dir/mismatched-head.out" 2> "$test_dir/mismatched-head.err"
 status=$?
 set -e
 [[ "$status" == 2 ]] || { echo "FAIL mismatched PR head: exit $status" >&2; exit 1; }
 [[ "$(<"$test_dir/mismatched-head.err")" == *"checked-out PR merge commit does not match event head"* ]]
 echo "PASS mismatched PR head rejected"
+
+# Reused archives are verified on every call, not merely when downloaded.
+printf 'invalid archive' > "$test_dir/bad.tar.gz"
+status=0
+bash "$script_dir/run-clone-regression.sh" "$project" "$run_dir" "$base" "$pr_head" "$test_dir/bad.tar.gz" \
+  > "$test_dir/bad-archive.out" 2> "$test_dir/bad-archive.err" || status=$?
+[[ "$status" == 2 && "$(<"$test_dir/bad-archive.err")" == *"archive SHA256 mismatch"* ]]
+echo "PASS corrupted reused archive rejected"
 
 echo "All clone-regression integration cases passed."
