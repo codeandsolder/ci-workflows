@@ -6,7 +6,7 @@ on:
       - "policy-wasm/**"
       - ".github/scripts/test-workflow-concurrency.py"
       - ".github/scripts/test-clone-regression-policy.py"
-      - ".github/scripts/clone-regression-policy.py"
+      - ".github/scripts/clone-regression-oracle.py"
       - ".github/scripts/test-rust-ci-sccache-policy.py"
       - ".github/scripts/rust-ci-sccache-oracle.py"
       - ".github/actions/rust-ci-sccache-policy/**"
@@ -19,7 +19,7 @@ on:
       - "policy-wasm/**"
       - ".github/scripts/test-workflow-concurrency.py"
       - ".github/scripts/test-clone-regression-policy.py"
-      - ".github/scripts/clone-regression-policy.py"
+      - ".github/scripts/clone-regression-oracle.py"
       - ".github/scripts/test-rust-ci-sccache-policy.py"
       - ".github/scripts/rust-ci-sccache-oracle.py"
       - ".github/actions/rust-ci-sccache-policy/**"
@@ -85,6 +85,7 @@ jobs:
           node --test policy-wasm/workspace.test.mjs
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
+          uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
           node policy-wasm/run.mjs policy-wasm/module.json sccache .
           node policy-wasm/run.mjs policy-wasm/module.json concurrency .
       - name: Verify the actual sparse caller checkout
@@ -123,3 +124,4 @@ jobs:
           node --test policy-wasm/workspace.test.mjs
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
+          uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json

@@ -12,7 +12,7 @@ from typing import Any
 
 sys.dont_write_bytecode = True
 
-SCRIPT = Path(__file__).with_name("clone-regression-policy.py")
+SCRIPT = Path(__file__).with_name("clone-regression-oracle.py")
 SPEC = importlib.util.spec_from_file_location("clone_regression_policy", SCRIPT)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("cannot import the clone regression policy source")
@@ -266,6 +266,35 @@ fn prod_after() { let x = "}"; }
             policy.apply(self.report(), self.root, 120, 100)
         if WASM is not None:
             self.assertNotEqual(self.run_wasm(self.report(), 120, 100).returncode, 0)
+
+    def test_scan_scope_and_arbitrary_scanner_fields(self) -> None:
+        scan = self.root / "nested"
+        (scan / "tests").mkdir(parents=True)
+        (scan / "tests" / "a.rs").write_text("fn fixture() {}", encoding="utf-8")
+        (self.root / "tests").mkdir()
+        (self.root / "tests" / "outside.rs").write_text(
+            "fn outside() {}", encoding="utf-8"
+        )
+        inner = group(120, "abcdef123456", ("tests/a.rs", 1, 1))
+        inner["scanner_detail"] = {"nested": [True, 42, None]}
+        inner["occurrences"][0]["snippet"] = "fn fixture() {}"
+        outer = group(120, "abcdef123457", ("../tests/outside.rs", 1, 1))
+        missing = group(120, "abcdef123458", ("tests/missing.rs", 1, 1))
+        raw = self.report(inner, outer)
+        raw["smaller"] = [missing]
+        raw["unrecognized_report_field"] = {"preserve": [1, "string"]}
+        result = self.classify(raw, scan_root=scan)
+        self.assertEqual(
+            [g["fingerprint"] for g in result["new"]], ["abcdef123457", "abcdef123458"]
+        )
+        self.assertEqual(result["smaller"][0]["policy_tier"], "test")
+        self.assertEqual(
+            result["smaller"][0]["scanner_detail"], inner["scanner_detail"]
+        )
+        self.assertEqual(result["smaller"][0]["occurrences"], inner["occurrences"])
+        self.assertEqual(
+            result["unrecognized_report_field"], raw["unrecognized_report_field"]
+        )
 
     def test_mandatory_gate_does_not_expose_weakening_inputs(self) -> None:
         workflow = (
