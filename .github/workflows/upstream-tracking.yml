@@ -26,6 +26,14 @@ on:
         description: Exact Rust toolchain, repository for the quarantined native pin, or empty for non-Rust validation.
         type: string
         default: ""
+      java-version:
+        description: JDK version for a Java or Gradle validator.
+        type: string
+        default: ""
+      vulkan-sdk-version:
+        description: Vulkan SDK version for a graphics validator.
+        type: string
+        default: ""
       go-version-file:
         type: string
         default: ""
@@ -228,6 +236,18 @@ jobs:
           go-version: ${{ inputs.go-version-file == '' && 'stable' || '' }}
           go-version-file: ${{ inputs.go-version-file }}
           cache: ${{ inputs.go-version-file != '' }}
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        if: steps.check.outputs.checked == 'true' && inputs.java-version != ''
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+      - uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa
+        if: steps.check.outputs.checked == 'true' && inputs.vulkan-sdk-version != '' && steps.quarantine.outputs.eligible == 'true'
+        with:
+          vulkan_version: ${{ inputs.vulkan-sdk-version }}
+          install_runtime: false
+          cache: false
+          stripdown: true
       - name: Run reviewed fork validation
         if: steps.check.outputs.checked == 'true' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
         env:
