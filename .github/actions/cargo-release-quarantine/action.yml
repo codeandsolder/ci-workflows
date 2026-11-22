@@ -41,10 +41,9 @@ runs:
       run: |
         set -euo pipefail
         set +e
-        python3 "${GITHUB_ACTION_PATH}/cargo_release_quarantine.py" \
-          --base-ref "${BASE_REF}" \
-          --hours "${HOURS}" \
-          --lockfile "${LOCKFILE}"
+        node "${GITHUB_ACTION_PATH}/../../../policy-wasm/quarantine.mjs" \
+          "${GITHUB_ACTION_PATH}/../../../policy-wasm/module.json" \
+          "${BASE_REF}" "${HOURS}" "${LOCKFILE}"
         status=$?
         set -e
 

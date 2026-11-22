@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn exact_age_boundary_and_failed_metadata() -> Result<(), serde_json::Error> {
         let age: Age = serde_json::from_value(serde_json::json!({
-            "now_ms": 259200001, "hours": 72,
+            "now_ms": 259_200_001, "hours": 72,
             "packages": [
                 {"name": "old", "version": "1", "source": "registry+index.crates.io"},
                 {"name": "young", "version": "1", "source": "registry+index.crates.io"},

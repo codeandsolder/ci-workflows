@@ -150,12 +150,13 @@ export async function lookupPublications(packages, request = fetch) {
   return Object.fromEntries(output);
 }
 
-export async function quarantine(module, root, ref, selector, hours, request = fetch, now = Date.now()) {
+export async function quarantine(module, root, ref, selector, hours, request = fetch, now) {
   if (!Number.isSafeInteger(hours) || hours < 0) throw new Error('hours must be a non-negative integer');
   const packages = guest(module, root, 'quarantine-diff', gather(root, ref, selector));
   if (packages.length === 0) return {issues: [], count: 0};
+  const checkedAt = now ?? Date.now();
   const publications = await lookupPublications(packages, request);
-  const issues = guest(module, root, 'quarantine-age', {now_ms: now, hours, packages, publications});
+  const issues = guest(module, root, 'quarantine-age', {now_ms: checkedAt, hours, packages, publications});
   return {issues, count: packages.length};
 }
 

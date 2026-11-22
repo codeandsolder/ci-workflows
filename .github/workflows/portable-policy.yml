@@ -87,6 +87,7 @@ jobs:
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
+          node policy-wasm/quarantine.test.mjs policy-wasm/module.json
           node policy-wasm/run.mjs policy-wasm/module.json sccache .
           node policy-wasm/run.mjs policy-wasm/module.json concurrency .
       - name: Verify the actual sparse caller checkout
@@ -126,3 +127,4 @@ jobs:
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
+          node policy-wasm/quarantine.test.mjs policy-wasm/module.json
