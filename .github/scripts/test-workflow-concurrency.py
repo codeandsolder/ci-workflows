@@ -30,7 +30,7 @@ def check(files: dict[str, str], expected: str | None = None) -> None:
         workflows = root / ".github/workflows"
         workflows.mkdir(parents=True)
         for name, source in files.items():
-            (workflows / name).write_text(source, encoding="utf-8")
+            (workflows / name).write_text(source, encoding="utf-8", newline="")
         errors = policy.inspect_root(root)
         if WASM is not None:
             result = subprocess.run(
@@ -53,6 +53,7 @@ def check(files: dict[str, str], expected: str | None = None) -> None:
             )
 
             def normalized(violations: list[str]) -> list[str]:
+                violations = [item.replace("\\", "/") for item in violations]
                 return sorted(
                     item.split(": invalid YAML:", 1)[0] + ": invalid YAML"
                     if ": invalid YAML:" in item
@@ -477,3 +478,11 @@ check(
 
 # Full Unicode case folding, not just lowercase, is required for group identity.
 check({"a.yml": workflow(name="Straße"), "b.yml": workflow(name="STRASSE")}, "collides")
+
+check(
+    {
+        "crlf.yml": global_workflow.replace(
+            "concurrency:", GLOBAL_REASON + "\nconcurrency:"
+        ).replace("\n", "\r\n")
+    }
+)

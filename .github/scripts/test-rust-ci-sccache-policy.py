@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,7 +11,7 @@ from tempfile import TemporaryDirectory
 sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / ".github/actions/rust-ci-sccache-policy/check.py"
+SCRIPT = ROOT / ".github/scripts/rust-ci-sccache-oracle.py"
 spec = importlib.util.spec_from_file_location("check_ci_sccache_policy", SCRIPT)
 assert spec is not None and spec.loader is not None
 mod = importlib.util.module_from_spec(spec)
@@ -18,14 +20,45 @@ spec.loader.exec_module(mod)
 SHA = "1" * 40
 STRICT_SHA = "2" * 40
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--wasm", type=Path)
+args = parser.parse_args()
+WASM = args.wasm.resolve() if args.wasm is not None else None
+
+
+def compare(root: Path, expected: list[str], strict_ref: str | None = None) -> None:
+    if WASM is None:
+        return
+    command = [
+        "node",
+        str(ROOT / "policy-wasm/run.mjs"),
+        str(WASM),
+        "sccache",
+        str(root),
+    ]
+    if strict_ref is not None:
+        command.append(strict_ref)
+    result = subprocess.run(command, encoding="utf-8", capture_output=True, check=False)
+    actual = [line[2:] for line in result.stdout.splitlines() if line.startswith("- ")]
+    assert result.returncode == int(bool(expected)), (
+        result.stdout,
+        result.stderr,
+        expected,
+    )
+    assert sorted(actual) == sorted(item.replace("\\", "/") for item in expected), (
+        actual,
+        expected,
+    )
+
 
 def inspect(workflow: str, strict_ref: str | None = None) -> list[str]:
     with TemporaryDirectory() as tmp:
-        root = Path(tmp)
+        root = Path(tmp).resolve()
         path = root / ".github/workflows/ci.yml"
         path.parent.mkdir(parents=True)
-        path.write_text(workflow)
+        path.write_text(workflow, encoding="utf-8")
         result = mod.inspect_root(root, strict_ref)
+        compare(root, result, strict_ref)
         assert isinstance(result, list) and all(
             isinstance(item, str) for item in result
         )
@@ -246,15 +279,16 @@ jobs:
 
 def inspect_tree(workflow: str, files: dict[str, str]) -> list[str]:
     with TemporaryDirectory() as tmp:
-        root = Path(tmp)
+        root = Path(tmp).resolve()
         file = root / ".github/workflows/ci.yml"
         file.parent.mkdir(parents=True)
-        file.write_text(workflow)
+        file.write_text(workflow, encoding="utf-8")
         for name, body in files.items():
             script = root / name
             script.parent.mkdir(parents=True, exist_ok=True)
-            script.write_text(body)
+            script.write_text(body, encoding="utf-8", newline="")
         result = mod.inspect_root(root)
+        compare(root, result)
         assert isinstance(result, list) and all(
             isinstance(item, str) for item in result
         )
@@ -505,3 +539,47 @@ jobs:
 )
 
 print("rust-skills2: nested shell CI sccache policy regressions passed")
+
+# YAML merges must behave like the previous SafeLoader policy, including
+# explicit overrides of merged fields and sequence precedence.
+assert_blocked(
+    """
+defaults: &defaults
+  run: cargo build --locked
+jobs:
+  merged:
+    steps:
+      - <<: *defaults
+""",
+    "missing canonical setup-sccache",
+)
+assert_clean(
+    """
+defaults: &defaults
+  run: cargo build --locked
+jobs:
+  merged:
+    steps:
+      - <<: *defaults
+        run: cargo metadata --no-deps
+"""
+)
+assert_blocked(
+    """
+first: &first
+  run: cargo fmt
+second: &second
+  run: cargo test
+jobs:
+  merged:
+    steps:
+      - <<: [*first, *second]
+""",
+    "missing canonical setup-sccache",
+)
+
+assert_tree_blocked(
+    plain,
+    {"ci/live-altcha-e2e.sh": "#!/bin/sh\r\ncargo \\\r\n build --locked\r\n"},
+    "missing canonical setup-sccache",
+)

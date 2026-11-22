@@ -66,6 +66,70 @@ pub fn fields<'node>(node: &'node Node<'_>, keys: &[&str], out: &mut Vec<&'node 
     }
 }
 
+fn merge_key(key: &Node<'_>) -> bool {
+    match key {
+        Node::Representation(value, style, tag) => tag.as_ref().map_or_else(
+            || *style == saphyr::ScalarStyle::Plain && value == "<<",
+            |tag| tag.handle == "tag:yaml.org,2002" && tag.suffix == "merge",
+        ),
+        _ => false,
+    }
+}
+
+fn normalize_key(key: Node<'_>) -> Node<'_> {
+    match key {
+        Node::Representation(value, _, _) => Node::Value(saphyr::Scalar::String(value)),
+        key => key,
+    }
+}
+
+fn inherit<'a>(out: &mut saphyr::Mapping<'a>, value: Node<'a>) -> Result<(), String> {
+    let Node::Mapping(mapping) = value else {
+        return Err("YAML merge value must be a mapping".into());
+    };
+    for (key, value) in mapping {
+        out.insert(key, value);
+    }
+    Ok(())
+}
+
+// The cache policy historically uses YAML SafeLoader (including merges),
+// whereas the concurrency checker uses BaseLoader. Keep that distinction.
+fn merge_node(node: Node<'_>) -> Result<Node<'_>, String> {
+    match node {
+        Node::Mapping(mapping) => {
+            let mut inherited = saphyr::Mapping::new();
+            let mut explicit = Vec::with_capacity(mapping.len());
+            for (key, value) in mapping {
+                let value = merge_node(value)?;
+                if merge_key(&key) {
+                    if let Node::Sequence(mappings) = value {
+                        for mapping in mappings {
+                            inherit(&mut inherited, mapping)?;
+                        }
+                    } else {
+                        inherit(&mut inherited, value)?;
+                    }
+                } else {
+                    explicit.push((normalize_key(key), value));
+                }
+            }
+            inherited.extend(explicit);
+            Ok(Node::Mapping(inherited))
+        }
+        Node::Sequence(sequence) => sequence
+            .into_iter()
+            .map(merge_node)
+            .collect::<Result<Vec<_>, _>>()
+            .map(Node::Sequence),
+        node => Ok(node),
+    }
+}
+
+pub fn parse_with_merges(source: &str) -> Result<Node<'_>, String> {
+    merge_node(parse(source)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
