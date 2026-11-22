@@ -450,6 +450,48 @@ jobs:
     {},
 )
 
+# Multiline quoted programs and strings are one argument, not commands.
+assert not inspect_tree(
+    plain,
+    {
+        "ci/live-altcha-e2e.sh": """#!/bin/sh
+awk '
+/^name[[:space:]]*=/ { name = $2 }
+/^version/ { print $2 }
+' Cargo.lock
+printf '
+./missing.sh
+cargo build
+'
+"""
+    },
+)
+assert_tree_blocked(
+    """
+jobs:
+  multiline-shell:
+    steps:
+      - run: |
+          bash -c 'echo starting
+          cargo build --locked
+          '
+""",
+    {},
+    "missing canonical setup-sccache",
+)
+assert_tree_blocked(
+    """
+jobs:
+  after-quoted-data:
+    steps:
+      - run: |
+          printf 'data
+          '; cargo build --locked
+""",
+    {},
+    "missing canonical setup-sccache",
+)
+
 # Sourcing shell fragments does not require an executable bit, a suffix or a shebang.
 assert_tree_blocked(
     """

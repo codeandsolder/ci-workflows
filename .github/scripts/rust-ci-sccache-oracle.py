@@ -141,25 +141,7 @@ def shell_line_compiles(line: str) -> bool:
 
 
 def run_mentions_rust(run: str) -> bool:
-    heredoc_terminator: str | None = None
-    for raw_line in run.splitlines():
-        stripped = raw_line.strip()
-        if heredoc_terminator is not None:
-            if stripped == heredoc_terminator:
-                heredoc_terminator = None
-            continue
-        if not stripped or stripped.startswith("#"):
-            continue
-        heredoc = re.search(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?", stripped)
-        if heredoc is not None:
-            heredoc_terminator = str(heredoc.group(1))
-        # Strip the ordinary unquoted shell-comment form. Quoted '#' is unusual
-        # in compiler command lines; keeping this simple avoids pretending to be
-        # a full shell parser.
-        line = re.sub(r"\s+#.*$", "", stripped)
-        if shell_line_compiles(line):
-            return True
-    return False
+    return any(shell_segment_compiles(segment.copy()) for segment in shell_commands(run))
 
 
 SHELL_INTERPRETERS = {"bash", "sh", "dash", "zsh", "ksh"}
@@ -174,28 +156,9 @@ def shell_commands(source: str) -> list[list[str]]:
     shell_stdin = False
     stdin_lines: list[str] = []
     case_depth = 0
+    pending = ""
     for raw_line in source.replace("\\\n", "").splitlines():
         line = raw_line.strip()
-        if re.match(r"^case\s+.+\s+in$", line):
-            case_depth += 1
-            continue
-        if case_depth and line == "esac":
-            case_depth -= 1
-            continue
-        if case_depth:
-            arm = re.match(r"^[^()]*\)\s*(.*)$", line)
-            if arm:
-                # Ignore the pattern, but inspect commands after it.
-                line = arm.group(1).strip()
-                if not line:
-                    continue
-        if array_assignment:
-            if line.startswith(")"):
-                array_assignment = False
-            continue
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=\(\s*", line):
-            array_assignment = True
-            continue
         if terminator is not None:
             if line == terminator:
                 if shell_stdin:
@@ -206,21 +169,42 @@ def shell_commands(source: str) -> list[list[str]]:
             elif shell_stdin:
                 stdin_lines.append(raw_line)
             continue
-        if not line or line.startswith("#"):
-            continue
-        heredoc = re.search(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?", line)
-        if heredoc is not None:
-            terminator = str(heredoc.group(1))
-            shell_stdin = bool(re.match(r"^(?:bash|sh|dash|zsh|ksh)\b", line))
+        if not pending:
+            if re.match(r"^case\s+.+\s+in$", line):
+                case_depth += 1
+                continue
+            if case_depth and line == "esac":
+                case_depth -= 1
+                continue
+            if case_depth:
+                arm = re.match(r"^[^()]*\)\s*(.*)$", line)
+                if arm:
+                    line = arm.group(1).strip()
+            if array_assignment:
+                if line.startswith(")"):
+                    array_assignment = False
+                continue
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=\(\s*", line):
+                array_assignment = True
+                continue
+            if not line or line.startswith("#"):
+                continue
+            pending = line
+        else:
+            pending += "\n" + raw_line
         try:
-            lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
+            lexer = shlex.shlex(pending, posix=True, punctuation_chars=";&|")
             lexer.whitespace_split = True
             lexer.commenters = "#"
             tokens = list(lexer)
         except ValueError:
-            if shell_line_compiles(line):
-                commands.append(["cargo", "build"])
             continue
+        opening = pending.splitlines()[0]
+        heredoc = re.search(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?", opening)
+        if heredoc is not None:
+            terminator = str(heredoc.group(1))
+            shell_stdin = bool(re.match(r"^(?:bash|sh|dash|zsh|ksh)\b", opening))
+        pending = ""
         segment: list[str] = []
         for token in [*tokens, ";"]:
             if token in SHELL_BOUNDARY or (token and set(token) <= {";", "&", "|"}):
@@ -229,6 +213,8 @@ def shell_commands(source: str) -> list[list[str]]:
                 segment = []
             else:
                 segment.append(token)
+    if pending and shell_line_compiles(pending):
+        commands.append(["cargo", "build"])
     return commands
 
 
