@@ -52,8 +52,8 @@ on:
 
 concurrency:
   # One observation, candidate and report at a time per fork.
-  group: upstream-tracking
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('upstream-tracking-pr-{0}', github.event.pull_request.number) || 'upstream-tracking' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -143,7 +143,7 @@ jobs:
 
   validate:
     needs: [observe, prepare]
-    if: ${{ always() && needs.observe.result == 'success' && ((needs.observe.outputs.status == 'ready' && needs.prepare.result == 'success') || needs.observe.outputs.status == 'current') }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || (needs.observe.result == 'success' && ((needs.observe.outputs.status == 'ready' && needs.prepare.result == 'success') || needs.observe.outputs.status == 'current'))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
@@ -171,7 +171,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: steps.check.outputs.checked == 'true'
         with:
-          ref: ${{ needs.observe.outputs.base }}
+          ref: ${{ needs.observe.outputs.base || github.sha }}
           fetch-depth: 0
           fetch-tags: false
           persist-credentials: false
@@ -208,9 +208,9 @@ jobs:
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
         uses: ./.ci-upstream/.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ needs.observe.outputs.base }}
+          base-ref: ${{ needs.observe.outputs.base || github.sha }}
           hours: "72"
-          fail-on-blocked: "false"
+          fail-on-blocked: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
       - uses: dtolnay/rust-toolchain@nightly
         if: steps.check.outputs.checked == 'true' && inputs.nightly-format && steps.quarantine.outputs.eligible == 'true'
         with:
@@ -252,7 +252,7 @@ jobs:
         if: steps.check.outputs.checked == 'true' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
         env:
           UPSTREAM_SHA: ${{ needs.observe.outputs.upstream }}
-          FORK_BASE: ${{ needs.observe.outputs.base }}
+          FORK_BASE: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
         run: |
           bash "$RUNNER_TEMP/validate-upstream.sh" "$UPSTREAM_SHA" "$FORK_BASE"
           git diff --exit-code HEAD --
@@ -352,8 +352,6 @@ jobs:
           done
           if [[ "$DRIFT" == true ]]; then
             maintain "Upstream workflow changes require manual reconciliation" "Incoming workflow changes need a reviewed PR. Fork base: $BASE; upstream: $UPSTREAM. Run: $url"
-          elif [[ "$STATUS" == ready && "$PREPARE" == success ]]; then
-            close "Upstream workflow changes require manual reconciliation"
           fi
           if [[ "$failed" == true ]]; then
             maintain "Upstream tracking failed" "$(printf 'Upstream tracking failed.\n\nObservation: %s\nPreparation: %s\nValidation: %s\nPublication: %s\nFork base: %s\nEligible upstream: %s\nObserved tip: %s\n\nRun: %s\n' "$OBSERVE" "$PREPARE" "$VALIDATE" "$PUBLISH" "$BASE" "$UPSTREAM" "$TIP" "$url")"

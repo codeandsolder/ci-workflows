@@ -70,6 +70,35 @@ prepare squash-rebase preserve
 git merge-base --is-ancestor "$selected" HEAD
 verify
 
+fixture merge-preserve
+# A conflicting reviewed workflow plus new upstream workflow and source must
+# preserve the workflow subtree byte-for-byte without rewriting fork history.
+echo upstream-change > ../upstream/.github/workflows/ci.yml
+echo new-workflow > ../upstream/.github/workflows/extra.yml
+git -C ../upstream add .github/workflows
+git -C ../upstream commit -qm drift
+selected=$(git -C ../upstream rev-parse HEAD)
+prepare merge preserve
+git merge-base --is-ancestor "$base" HEAD
+git merge-base --is-ancestor "$selected" HEAD
+test ! -e .github/workflows/extra.yml
+rg -q '^workflow_drift=true$' "$output"
+verify
+
+fixture merge-preserve-source-conflict
+echo local-conflict > common
+git commit -qam local-conflict
+base=$(git rev-parse HEAD)
+echo upstream-conflict > ../upstream/common
+echo upstream-change > ../upstream/.github/workflows/ci.yml
+git -C ../upstream commit -qam conflicts
+selected=$(git -C ../upstream rev-parse HEAD)
+if prepare merge preserve; then
+  echo "Source conflict treated as workflow-only" >&2
+  exit 1
+fi
+test ! -e "$bundle"
+
 fixture reject
 echo upstream-change > ../upstream/.github/workflows/ci.yml
 git -C ../upstream commit -qam drift
@@ -110,4 +139,4 @@ test "$(cat next)" = subsequent
 test "$(cat .github/upstream-reconciliation/reviewed-source-sha)" = "$selected"
 git merge-base --is-ancestor "$base" HEAD
 verify
-echo "All six real Git integration scenarios passed"
+echo "All eight real Git integration scenarios passed"
