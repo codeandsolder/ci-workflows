@@ -226,6 +226,47 @@
       ]
     },
     {
+      "name": "codeandsolder/rs-linux-exporter",
+      "requiredChecks": [
+        [
+          "CI",
+          "Rust Linux checks and tests / rust"
+        ],
+        [
+          "CI",
+          "Strict Rust / Strict Rust + Python policy"
+        ],
+        [
+          "CI",
+          "Python tooling"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ],
+        [
+          "build-deb",
+          "build (ubuntu2204, ubuntu:22.04)"
+        ],
+        [
+          "build-deb",
+          "build (ubuntu2404, ubuntu:24.04)"
+        ],
+        [
+          "build-deb",
+          "build (ubuntu2604, ubuntu:26.04)"
+        ],
+        [
+          "build-deb",
+          "build (debian12, debian:12)"
+        ],
+        [
+          "build-deb",
+          "build (debian13, debian:13)"
+        ]
+      ]
+    },
+    {
       "name": "codeandsolder/ci-workflows",
       "requiredChecks": [
         [

@@ -168,9 +168,21 @@ function createCandidate(current, channel) {
       throw Error('existing rollout branch requires review: ' + repo);
     }
   }
-  console.log(gh(['pr','create','--repo',repo,'--head',branch,'--base',current.base,'--draft',
-    '--title','Fleet compiler: ' + channel,
-    '--body',markerOf(channel) + '\n\nCoordinated dated nightly promotion. All enrolled repositories must pass their real PR validation before the coordinator merges any change.']));
+  const pr = createDraftPR(api, current, channel);
+  console.log(pr.html_url);
+}
+
+// GitHub App installations can create pull requests through the REST endpoint;
+// gh pr create uses a GraphQL mutation unavailable to some installations.
+export function createDraftPR(request, current, channel) {
+  const pr = request(endpoint(current.repo, 'pulls'), 'POST', {
+    head: branchOf(channel), base: current.base, draft: true,
+    title: 'Fleet compiler: ' + channel,
+    body: markerOf(channel) + '\n\nCoordinated dated nightly promotion. All enrolled repositories must pass their real PR validation before the coordinator merges any change.'
+  });
+  if (!pr.number || !pr.html_url || !pr.draft || pr.head?.ref !== branchOf(channel) ||
+      pr.base?.ref !== current.base) throw Error('unexpected pull request creation response: ' + current.repo);
+  return pr;
 }
 
 export function activeCandidate(branches) {
@@ -179,6 +191,13 @@ export function activeCandidate(branches) {
   for (const channel of candidates) nightlyDate(channel);
   if (candidates.length > 1) throw Error('multiple active fleet compiler candidates');
   return candidates[0] || null;
+}
+
+export function verifyBaseline(states, approved) {
+  nightlyDate(approved);
+  const divergent = states.filter(state => state.file.channel !== approved);
+  if (divergent.length) throw Error('cohort compiler drift:\n' +
+    divergent.map(state => state.repo + ': ' + state.file.channel + ' (expected ' + approved + ')').join('\n'));
 }
 
 async function tick(apply) {
@@ -197,10 +216,14 @@ async function tick(apply) {
     return;
   }
   const central = snapshot(COORDINATOR);
+  verifyBaseline(repos.map(entry => entry.name === COORDINATOR ? central : snapshot(entry.name)), central.file.channel);
   const last = api(endpoint(COORDINATOR, 'commits?path=' + FILE + '&sha=' + central.head + '&per_page=1'))[0];
   const lastChange = Date.parse(last?.commit?.committer?.date);
   if (!Number.isFinite(lastChange)) throw Error('cannot establish last promotion time');
-  if (Date.now() - lastChange < WEEK) return;
+  if (Date.now() - lastChange < WEEK) {
+    console.log('approved pin ' + central.file.channel + '; all ' + repos.length + ' repositories synchronized; weekly cadence not elapsed');
+    return;
+  }
   const next = await latestCandidate(central.file.channel);
   if (next) await run(['prepare', next, ...flags]);
 }
@@ -260,7 +283,10 @@ async function run(args) {
         console.log(state.current.repo + ': ' + state.pr.url + ' (' + state.pr.state + ')');
         if (apply && state.pr.state === 'OPEN') {
           const diff = api(endpoint(state.current.repo,'compare/' + state.current.head + '...' + state.pr.headRefOid));
-          if (diff.behind_by !== 0) gh(['pr','update-branch','--repo',state.current.repo,String(state.pr.number)]);
+          if (diff.behind_by !== 0) {
+            api(endpoint(state.current.repo, 'pulls/' + state.pr.number + '/update-branch'), 'PUT',
+              { expected_head_sha: state.pr.headRefOid });
+          }
         }
       }
     }
