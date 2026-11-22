@@ -8,7 +8,7 @@ after its failure log proves every new crates.io version has aged at least
 72 hours, plus a 15-minute margin. The actual CI gate runs again; normal
 Renovate automerge alone handles successful PRs.
 
-- Discover nonarchived codeandsolder repositories in the GitHub App installation, excluding contribution-only OXC and Hayro.
+- Discover nonarchived codeandsolder repositories in the GitHub App installation, excluding contribution-only Anubis, OXC and Hayro (shared scripts/fleet-scope.mjs).
 - Inspect only open Renovate PRs at the exact current head.
 - Select completed failed GitHub Actions jobs, regardless of caller-facing job name.
 - Require every failed check to have only Cargo quarantine failure steps, with every reported external crate past its minimum age.

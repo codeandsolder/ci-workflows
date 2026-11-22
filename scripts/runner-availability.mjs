@@ -4,6 +4,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import { isContributionOnly, isMaintainedRepo } from './fleet-scope.mjs';
 
 const exec = promisify(execFile);
 const active = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending']);
@@ -100,6 +101,7 @@ export async function auditRepository(repo, get = api) {
 function repoName(value) {
   if (!/^codeandsolder\/[A-Za-z0-9_.-]+$/.test(value ?? ''))
     throw new Error('Expected codeandsolder/REPO');
+  if (isContributionOnly(value)) throw new Error('Contribution-only fork: ' + value);
   return value;
 }
 
@@ -117,8 +119,7 @@ async function main(args) {
   if (command === 'audit') {
     const repos = rest.length ? rest.map(repoName) :
       (await pages('/installation/repositories', 'repositories'))
-        .filter(repo => repo.owner.login === 'codeandsolder' &&
-          !repo.archived && !repo.disabled && !['oxc', 'hayro'].includes(repo.name))
+        .filter(isMaintainedRepo)
         .map(repo => repo.full_name);
     const results = await concurrent(repos, async repo => {
       try { return await auditRepository(repo); }

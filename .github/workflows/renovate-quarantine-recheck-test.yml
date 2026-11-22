@@ -3,11 +3,13 @@ name: Renovate expired-quarantine recheck tests
 on:
   pull_request:
     paths:
+      - "scripts/fleet-scope.mjs"
       - "scripts/renovate-quarantine-recheck*.mjs"
       - ".github/workflows/renovate-quarantine-recheck-test.yml"
   push:
     branches: [main]
     paths:
+      - "scripts/fleet-scope.mjs"
       - "scripts/renovate-quarantine-recheck*.mjs"
       - ".github/workflows/renovate-quarantine-recheck-test.yml"
 
