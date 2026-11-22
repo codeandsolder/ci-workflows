@@ -140,7 +140,7 @@ jobs:
           STRATEGY: ${{ inputs.strategy }}
           WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
         run: |
-          bash .ci-upstream/.github/actions/upstream-tracking/prepare.sh "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$STRATEGY" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle"
+          node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$STRATEGY" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: steps.prepare.outputs.changed == 'true'
         with:
@@ -224,12 +224,12 @@ jobs:
         with:
           components: rustfmt
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+        if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           components: rustfmt, clippy
-      - uses: ./.ci-upstream/.github/actions/setup-sccache
-        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
+        if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -237,7 +237,7 @@ jobs:
         with:
           go-version: ${{ inputs.go-version-file == '' && 'stable' || '' }}
           go-version-file: ${{ inputs.go-version-file }}
-          cache: false
+          cache: ${{ inputs.go-version-file != '' }}
       - name: Run reviewed fork validation
         if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
         env:
@@ -257,8 +257,8 @@ jobs:
           retention-days: 14
           if-no-files-found: error
       - name: Finalize mandatory sccache
-        if: always() && steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
-        uses: ./.ci-upstream/.github/actions/finalize-sccache
+        if: always()
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
 
   publish:
     needs: [observe, prepare, validate]

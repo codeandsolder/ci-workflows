@@ -36,7 +36,7 @@ fixture() {
 }
 
 prepare() {
-  GITHUB_OUTPUT="$output" bash "$here/prepare.sh" example/project main "$selected" "$base" "$1" "$2" "$bundle"
+  GITHUB_OUTPUT="$output" node "$here/prepare.mjs" example/project main "$selected" "$base" "$1" "$2" "$bundle"
 }
 
 verify() {
