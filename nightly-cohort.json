@@ -175,6 +175,57 @@
       ]
     },
     {
+      "name": "codeandsolder/hashwx-rs",
+      "requiredChecks": [
+        [
+          "CI",
+          "verify / rust"
+        ],
+        [
+          "CI",
+          "wasm-wide-arithmetic-tripwire"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
+      "name": "codeandsolder/html-to-text-comparison",
+      "requiredChecks": [
+        [
+          "CI",
+          "Rust / rust"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust / Strict Rust + Python policy"
+        ]
+      ]
+    },
+    {
+      "name": "codeandsolder/warpproxy",
+      "requiredChecks": [
+        [
+          "CI",
+          "Rust / rust"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
       "name": "codeandsolder/ci-workflows",
       "requiredChecks": [
         [
