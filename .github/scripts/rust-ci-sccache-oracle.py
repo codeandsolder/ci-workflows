@@ -141,7 +141,9 @@ def shell_line_compiles(line: str) -> bool:
 
 
 def run_mentions_rust(run: str) -> bool:
-    return any(shell_segment_compiles(segment.copy()) for segment in shell_commands(run))
+    return any(
+        shell_segment_compiles(segment.copy()) for segment in shell_commands(run)
+    )
 
 
 SHELL_INTERPRETERS = {"bash", "sh", "dash", "zsh", "ksh"}
