@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { replacePin, validateCohort, checkBlockers, promotionBlockers, activeCandidate } from './nightly-cohort.mjs';
+import { replacePin, validateCohort, checkBlockers, promotionBlockers, activeCandidate, createDraftPR, verifyBaseline } from './nightly-cohort.mjs';
 const from = 'nightly-2026-11-12';
 const to = 'nightly-2026-11-19';
 const checks = [['CI','tests'],['CI','strict']];
@@ -43,4 +43,28 @@ test('daily tick resumes a single cohort candidate and rejects competing or malf
   assert.equal(activeCandidate(['automation/fleet-nightly-2026-11-19','automation/fleet-nightly-2026-11-19']), to);
   assert.throws(() => activeCandidate(['automation/fleet-nightly-2026-11-19','automation/fleet-nightly-2026-11-20']));
   assert.throws(() => activeCandidate(['automation/fleet-nightly-invalid']));
+});
+
+test('draft creation uses REST for installation-token compatibility and verifies identity', () => {
+  const current = {repo:'codeandsolder/public-example',base:'master'};
+  const expected = 'automation/fleet-nightly-2026-11-19';
+  const pr = {number:42,html_url:'https://github.com/codeandsolder/public-example/pull/42',draft:true,
+    head:{ref:expected},base:{ref:'master'}};
+  const calls = [];
+  const request = (...args) => {calls.push(args); return pr;};
+  assert.equal(createDraftPR(request,current,to),pr);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0][0],'repos/codeandsolder/public-example/pulls');
+  assert.equal(calls[0][1],'POST');
+  assert.equal(calls[0][2].head,expected);
+  assert.equal(calls[0][2].base,'master');
+  assert.equal(calls[0][2].draft,true);
+  assert.match(calls[0][2].body,/fleet-nightly-promotion:nightly-2026-11-19/);
+  assert.throws(()=>createDraftPR(()=>({...pr,draft:false}),current,to));
+  assert.throws(()=>createDraftPR(()=>({...pr,head:{ref:'wrong'}}),current,to));
+});
+test('idle scheduler detects all out-of-cohort compiler changes rather than silently accepting drift', () => {
+  const state = (repo,channel) => ({repo,file:{channel}});
+  assert.doesNotThrow(()=>verifyBaseline([state('a',to),state('b',to)],to));
+  assert.throws(()=>verifyBaseline([state('a',from),state('b','stable')],to),/a: nightly-2026-11-12[\s\S]*b: stable/);
 });
