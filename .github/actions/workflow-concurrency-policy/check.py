@@ -1,4 +1,4 @@
-"""Require safe PR supersession settings on every GitHub Actions workflow."""
+"""Require safe workflow concurrency and portable runner selection."""
 
 from __future__ import annotations
 
@@ -160,6 +160,70 @@ def validate(
     return problems
 
 
+# Identity labels belong to runner inventory, not job requirements. Capability
+# labels (including licensed tools and dedicated benchmark hardware) remain
+# legitimate; those are verified separately by runner inventory admission.
+HOST_IDENTITIES = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?:acer|asus)(?![A-Za-z0-9_.-])")
+HOST_INPUT = re.compile(r"(?<![A-Za-z0-9_.-])/(?:home/jan|srv/ci/toolchains|srv/scratch)(?:/|\b)")
+MATRIX_REF = re.compile(r"\bmatrix\.([A-Za-z_][A-Za-z0-9_-]*)")
+
+
+def scalar_strings(value: object):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, list):
+        for item in value:
+            yield from scalar_strings(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from scalar_strings(item)
+
+
+def validate_portability(path: Path, doc: dict[str, Any]) -> list[str]:
+    problems = []
+    jobs = doc.get("jobs")
+    if not isinstance(jobs, dict):
+        return problems
+    for name, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        # A reusable-workflow caller may expose the runner as an input.
+        with_inputs = job.get("with")
+        selectors = [job.get("runs-on")]
+        if isinstance(with_inputs, dict):
+            selectors.append(with_inputs.get("runner"))
+        values = list(scalar_strings(selectors))
+        referenced = {
+            key for value in values for key in MATRIX_REF.findall(value)
+        }
+        matrix = job.get("strategy", {})
+        matrix = matrix.get("matrix", {}) if isinstance(matrix, dict) else {}
+        if isinstance(matrix, dict):
+            for key in referenced:
+                values.extend(scalar_strings(matrix.get(key)))
+                for collection in ("include", "exclude"):
+                    entries = matrix.get(collection, [])
+                    if isinstance(entries, list):
+                        for entry in entries:
+                            if isinstance(entry, dict):
+                                values.extend(scalar_strings(entry.get(key)))
+        if any(HOST_IDENTITIES.search(value) for value in values):
+            problems.append(
+                f"{path}: job {name}: physical host selector; use a declared runner capability instead"
+            )
+        # Hard-coded user workspace or build-input paths in workflow execution
+        # are not portable. Canonical system-level cache paths are not banned.
+        paths = [doc.get("env"), job.get("env"), job.get("defaults")]
+        for step in job.get("steps", []):
+            if isinstance(step, dict):
+                paths.extend(step.get(field) for field in ("env", "run", "with"))
+        if any(HOST_INPUT.search(value) for value in scalar_strings(paths)):
+            problems.append(
+                f"{path}: job {name}: host-local build path; use runner temporary storage or a verified artifact"
+            )
+    return problems
+
+
 def inspect_root(root: Path) -> list[str]:
     directory = root / ".github/workflows"
     if not directory.is_dir():
@@ -182,6 +246,7 @@ def inspect_root(root: Path) -> list[str]:
             problems.append(f"{rel}: expected YAML mapping")
             continue
         events = triggers(doc)
+        problems.extend(validate_portability(rel, doc))
         problems.extend(validate(rel, doc, events, source))
         if not any(itertools.starmap(needs_pr_cancellation, events.items())):
             continue
@@ -211,11 +276,11 @@ def main() -> int:
     args = parser.parse_args()
     problems = inspect_root(args.root.resolve())
     if problems:
-        print("Shared CI: PR workflow supersession policy failures:")
+        print("Shared CI: workflow policy failures:")
         for problem in problems:
             print("- " + problem)
         return 1
-    print("Shared CI: every PR-triggered workflow has safe run-level cancellation")
+    print("Shared CI: workflows satisfy cancellation and portable runner policy")
     return 0
 
 
