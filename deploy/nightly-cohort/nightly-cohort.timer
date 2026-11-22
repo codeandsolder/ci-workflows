@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily fleet Rust nightly promotion check
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=5min
+AccuracySec=1min
+Persistent=true
+Unit=nightly-cohort.service
+
+[Install]
+WantedBy=timers.target

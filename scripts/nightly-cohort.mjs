@@ -173,7 +173,43 @@ function createCandidate(current, channel) {
     '--body',markerOf(channel) + '\n\nCoordinated dated nightly promotion. All enrolled repositories must pass their real PR validation before the coordinator merges any change.']));
 }
 
+export function activeCandidate(branches) {
+  const candidates = [...new Set(branches.filter(branch => branch.startsWith(PREFIX))
+    .map(branch => 'nightly-' + branch.slice(PREFIX.length)))];
+  for (const channel of candidates) nightlyDate(channel);
+  if (candidates.length > 1) throw Error('multiple active fleet compiler candidates');
+  return candidates[0] || null;
+}
+
+async function tick(apply) {
+  const config = JSON.parse(readFileSync(new URL('../nightly-cohort.json', import.meta.url),'utf8'));
+  const repos = validateCohort(config);
+  const branches = repos.flatMap(entry => {
+    const open = JSON.parse(gh(['pr','list','--repo',entry.name,'--state','open','--limit','1000','--json','headRefName']));
+    if (open.length === 1000) throw Error('too many open PRs to establish unique candidate');
+    return open.map(pr => pr.headRefName);
+  });
+  const candidate = activeCandidate(branches);
+  const flags = apply ? ['--apply'] : [];
+  if (candidate) {
+    await run(['prepare', candidate, ...flags]);
+    await run(['promote', candidate, ...flags]);
+    return;
+  }
+  const central = snapshot(COORDINATOR);
+  const last = api(endpoint(COORDINATOR, 'commits?path=' + FILE + '&sha=' + central.head + '&per_page=1'))[0];
+  const lastChange = Date.parse(last?.commit?.committer?.date);
+  if (!Number.isFinite(lastChange)) throw Error('cannot establish last promotion time');
+  if (Date.now() - lastChange < WEEK) return;
+  const next = await latestCandidate(central.file.channel);
+  if (next) await run(['prepare', next, ...flags]);
+}
+
 async function run(args) {
+  if (args[0] === 'tick') {
+    if (args.length > 2 || (args.length === 2 && args[1] !== '--apply')) throw Error('usage: nightly-cohort.mjs tick [--apply]');
+    return tick(args.length === 2);
+  }
   const [mode, channel, ...flags] = args;
   const apply = flags.length === 1 && flags[0] === '--apply';
   if (!['select','prepare','status','promote'].includes(mode) ||

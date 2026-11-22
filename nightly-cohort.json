@@ -1,26 +1,82 @@
 {
   "repositories": [
     {
+      "name": "codeandsolder/quiescence",
+      "requiredChecks": [
+        [
+          "CI",
+          "rust / rust"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
       "name": "codeandsolder/rust-skills2",
       "requiredChecks": [
-        ["CI", "Validate & compile-check"],
-        ["CI", "Strict reusable gate self-test"],
-        ["Package skill", "Build packed skill"],
-        ["Duplicate-code regression", "duplicates / New duplicated code"]
+        [
+          "CI",
+          "Validate & compile-check"
+        ],
+        [
+          "CI",
+          "Strict reusable gate self-test"
+        ],
+        [
+          "Package skill",
+          "Build packed skill"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
       ]
     },
     {
       "name": "codeandsolder/ci-workflows",
       "requiredChecks": [
-        ["Fleet Rust toolchain policy", "Nightly quarantine and promotion tests"],
-        ["Persistent Actions sccache smoke", "isolated-daemon / rust"],
-        ["Persistent Actions sccache smoke", "prime (ubuntu-24.04) / rust"],
-        ["Persistent Actions sccache smoke", "prime (ubuntu-24.04-arm) / rust"],
-        ["Persistent Actions sccache smoke", "prime (macos-15) / rust"],
-        ["Persistent Actions sccache smoke", "prime (windows-2025) / rust"],
-        ["Persistent Actions sccache smoke", "assert-release-tier-skipped"],
-        ["Strict Rust", "strict-rust-smoke-cache / Strict Rust + Python policy"],
-        ["Shared workflow concurrency policy", "Check PR workflow cancellation"]
+        [
+          "Fleet Rust toolchain policy",
+          "Nightly quarantine and promotion tests"
+        ],
+        [
+          "Persistent Actions sccache smoke",
+          "isolated-daemon / rust"
+        ],
+        [
+          "Persistent Actions sccache smoke",
+          "prime (ubuntu-24.04) / rust"
+        ],
+        [
+          "Persistent Actions sccache smoke",
+          "prime (ubuntu-24.04-arm) / rust"
+        ],
+        [
+          "Persistent Actions sccache smoke",
+          "prime (macos-15) / rust"
+        ],
+        [
+          "Persistent Actions sccache smoke",
+          "prime (windows-2025) / rust"
+        ],
+        [
+          "Persistent Actions sccache smoke",
+          "assert-release-tier-skipped"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust-smoke-cache / Strict Rust + Python policy"
+        ],
+        [
+          "Shared workflow concurrency policy",
+          "Check PR workflow cancellation"
+        ]
       ]
     }
   ]

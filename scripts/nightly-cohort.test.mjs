@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { replacePin, validateCohort, checkBlockers, promotionBlockers } from './nightly-cohort.mjs';
+import { replacePin, validateCohort, checkBlockers, promotionBlockers, activeCandidate } from './nightly-cohort.mjs';
 const from = 'nightly-2026-11-12';
 const to = 'nightly-2026-11-19';
 const checks = [['CI','tests'],['CI','strict']];
@@ -36,4 +36,11 @@ test('enrollment requires explicit checks and coordinator last', () => {
   for (const repositories of [[c,a],[a,a,c],[{...a,requiredChecks:[]},c]]) {
     assert.throws(()=>validateCohort({repositories}));
   }
+});
+
+test('daily tick resumes a single cohort candidate and rejects competing or malformed candidates', () => {
+  assert.equal(activeCandidate(['feature/a']), null);
+  assert.equal(activeCandidate(['automation/fleet-nightly-2026-11-19','automation/fleet-nightly-2026-11-19']), to);
+  assert.throws(() => activeCandidate(['automation/fleet-nightly-2026-11-19','automation/fleet-nightly-2026-11-20']));
+  assert.throws(() => activeCandidate(['automation/fleet-nightly-invalid']));
 });
