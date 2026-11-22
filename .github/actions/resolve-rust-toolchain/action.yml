@@ -1,0 +1,30 @@
+name: Resolve quarantined Rust toolchain
+description: Resolve one exact compiler for routine CI, with age verification.
+inputs:
+  rust-toolchain:
+    description: Optional explicit toolchain; must agree with the repository pin for routine builds.
+    default: ""
+  validation-tier:
+    description: routine or release
+    default: routine
+  repository-path:
+    description: Caller repository root relative to the workspace.
+    default: "."
+outputs:
+  channel:
+    description: Exact compiler channel
+    value: ${{ steps.resolve.outputs.channel }}
+runs:
+  using: composite
+  steps:
+    - name: Resolve and quarantine compiler
+      id: resolve
+      shell: bash
+      env:
+        REQUESTED: ${{ inputs.rust-toolchain }}
+        TIER: ${{ inputs.validation-tier }}
+        CALLER: ${{ inputs.repository-path }}
+      run: |
+        set -euo pipefail
+        channel=$(node "$GITHUB_ACTION_PATH/select.mjs" resolve "$TIER" "$REQUESTED" "$CALLER" "$GITHUB_ACTION_PATH/../../../rust-toolchain.toml")
+        printf 'channel=%s\n' "$channel" >> "$GITHUB_OUTPUT"

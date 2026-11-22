@@ -2,7 +2,7 @@
 
 ## Two-tier Rust CI and stale-run cancellation
 
-The standard lane uses `rust-sccache.yml` with the current project Rust toolchain (default `1.99.1`) and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.
+The standard lane uses `rust-sccache.yml` with the repository's fleet-approved dated nightly and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.
 
 The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners; other architectures get no CPU override. Explicit `rustflags` are passed through unchanged. Cross-compilation from an X64 runner to another architecture must explicitly set `rustflags: ""` or its own target-appropriate flags. sccache keys use the resolved effective flags, not the `auto` placeholder.
 
@@ -82,13 +82,13 @@ Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate
 | --- | --- |
 | Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks, after the applicable release-age check; compatible Cargo minor/patch updates are grouped |
 | Pre-1.0 patch | PR automerge after green checks and applicable release-age check |
-| Rust toolchain (stable and nightly) | PR for review; do not silently change pinned compiler versions or project MSRV |
+| Rust compiler | Coordinated nightly cohort promotion; stable release compatibility pins remain review-only |
 | Pre-1.0 minor, major, replacement | PR for review |
 | Third-party GitHub Actions digest/pinning | PR automerge after green checks |
 | `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped; PR automerge after consumer CI succeeds |
 | Lockfile maintenance | Weekly, PR automerge after green checks including newly introduced external crates.io versions |
 
-When a workflow uses one pinned Rust nightly for several steps (such as cache identity, `dtolnay/rust-toolchain` and `cargo +...`), declare `RUST_NIGHTLY_TOOLCHAIN: nightly-YYYY-MM-DD` once in the workflow `env`. Reference `${{ env.RUST_NIGHTLY_TOOLCHAIN }}` in action inputs and `"$RUST_NIGHTLY_TOOLCHAIN"` in shell commands. The fleet Renovate regex manager tracks that env declaration as the same review-only `rust`/`rust-version` dependency as explicit `rust-toolchain:` inputs; it prevents drift between the cache key, installed compiler and executed compiler.
+Direct workflows resolve the native root Rust toolchain manifest with the shared resolve-rust-toolchain action, and pass its channel output to setup-sccache and rustup. Do not maintain multiple version literals or workflow environment pins. The promotion controller owns dated nightly updates.
 
 Use immutable SHA references to shared workflows and actions with a tracking `# main` suffix:
 
@@ -348,3 +348,47 @@ Tracking failures open/update a single issue including the upstream tip,
 eligible revision, fork base and run URL. Quarantine is a pending state, not an
 error. A successful retry closes the old failure issue. Do not force the cursor
 or edit first-observed timestamps to bypass the quarantine.
+
+## Fleet compiler promotion
+
+Routine Rust work uses one dated nightly, not moving nightly or independently
+selected stable versions. The canonical fleet selection is this repository's
+root rust-toolchain.toml; enrolled repositories carry that same date in their
+native root toolchain file so local Cargo, normal tests, Clippy and the compiler
+cache agree. Routine shared CI requires and reads the caller's native root pin; a missing manifest is a migration error, not a floating fallback. A caller's explicit routine
+compiler input must agree with that selection. Stable is reserved for an
+explicit release compatibility lane with a downstream requirement.
+
+The resolver checks the official dated nightly manifest's publication timestamp
+against an elapsed 72-hour quarantine. Normal Rustup installation must succeed,
+including Clippy, rustfmt and any caller-required targets/components. Upstream
+issue labels or counts are not promotion criteria. Code with an applicable
+compiler regression should acquire a regression test rather than an issue filter.
+
+The promotion controller (scripts/nightly-cohort.mjs) is run with the authorized
+fleet GitHub App's gh authentication. Enrollment in nightly-cohort.json requires
+normal PR tests and strict lint checks to use the native repository pin, and
+explicitly lists the real runtime/build/lint checks that must succeed. The
+controller never treats absent, skipped, neutral, or failed required checks as
+success. Every cohort member's candidate must be green before publication
+begins; ordinary merge protections still apply. The central provider merges last.
+Cross-repository merges are sequential, not atomic; an interrupted promotion
+resumes against the same candidate. A failed or missing candidate holds the old
+central selection.
+
+Examples (all mutating commands require --apply):
+
+    node scripts/nightly-cohort.mjs select
+    node scripts/nightly-cohort.mjs prepare nightly-YYYY-MM-DD
+    node scripts/nightly-cohort.mjs prepare nightly-YYYY-MM-DD --apply
+    node scripts/nightly-cohort.mjs status nightly-YYYY-MM-DD
+    node scripts/nightly-cohort.mjs promote nightly-YYYY-MM-DD --apply
+
+Selection and promotion are limited to once per week to avoid needless cache
+invalidation. Prepare creates or refreshes dedicated draft pin-only PRs. Promote
+requires real green PR checks on the current base, rechecks candidate identity
+before each merge, and refuses to overwrite unrelated work. If the toolchain
+fails compilation or tests, leave the candidate unpublished and investigate the
+failure, then test a suitable candidate. Renovate must not independently change
+nightly pins. Compatibility jobs whose purpose is validating other toolchains
+remain separate release-tier jobs.

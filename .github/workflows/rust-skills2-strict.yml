@@ -13,7 +13,19 @@ permissions:
   contents: read
 
 jobs:
+  pin:
+    runs-on: ubuntu-26.04
+    outputs:
+      channel: ${{ steps.compiler.outputs.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/resolve-rust-toolchain
+        id: compiler
   strict-rust-smoke-cache:
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@3e700b97d5dc72ee78c43107b8098da3b4ad3e40 # main
+    needs: pin
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@99ef0355febb9c05e35732bd4045c47ae7432b7b # main
     with:
       working-directory: smoke-cache
+      rust-toolchain: ${{ needs.pin.outputs.channel }}

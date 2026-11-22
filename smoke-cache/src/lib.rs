@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 /// Deterministic function used by the cross-client sccache acceptance test.
-#[must_use]
+#[must_use = "the returned mixed value is the result of the computation"]
 pub const fn mix(value: u64) -> u64 {
     value.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(17) ^ 0xD1B5_4A32_D192_ED03
 }
