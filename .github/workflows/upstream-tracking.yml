@@ -200,7 +200,7 @@ jobs:
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git show "HEAD:$GENERATOR" > "$RUNNER_TEMP/generate-upstream.sh"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: upstream-candidate
           path: ${{ runner.temp }}
@@ -238,7 +238,7 @@ jobs:
         uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
         with:
           validation-tier: routine
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         if: inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
@@ -325,7 +325,7 @@ jobs:
         run: |
           set -euo pipefail
           git show "HEAD:$VALIDATOR" > "$RUNNER_TEMP/validate-upstream.sh"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         if: needs.prepare.outputs.changed == 'true'
         with:
           name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
@@ -357,7 +357,7 @@ jobs:
           base-ref: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
           hours: "72"
           fail-on-blocked: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@6a52aad76a94a5fbc50d567bb5be24419801c1fb # nightly
         if: steps.check.outputs.checked == 'true' && inputs.nightly-format && steps.quarantine.outputs.eligible == 'true'
         with:
           components: rustfmt
@@ -367,7 +367,7 @@ jobs:
         uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
         with:
           validation-tier: routine
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
@@ -443,7 +443,7 @@ jobs:
           path: .ci-upstream
           persist-credentials: false
           sparse-checkout: .github/actions/upstream-tracking
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
           path: ${{ runner.temp }}
