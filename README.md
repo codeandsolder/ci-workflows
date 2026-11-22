@@ -2,7 +2,7 @@
 
 ## Two-tier Rust CI and stale-run cancellation
 
-The standard lane uses `rust-sccache.yml` with the current project Rust toolchain (default `1.99.1`) and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.
+The standard lane uses `rust-sccache.yml` with the repository's fleet-approved dated nightly and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.
 
 The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners; other architectures get no CPU override. Explicit `rustflags` are passed through unchanged. Cross-compilation from an X64 runner to another architecture must explicitly set `rustflags: ""` or its own target-appropriate flags. sccache keys use the resolved effective flags, not the `auto` placeholder.
 
@@ -82,13 +82,13 @@ Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate
 | --- | --- |
 | Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks, after the applicable release-age check; compatible Cargo minor/patch updates are grouped |
 | Pre-1.0 patch | PR automerge after green checks and applicable release-age check |
-| Rust toolchain (stable and nightly) | PR for review; do not silently change pinned compiler versions or project MSRV |
+| Rust compiler | Coordinated nightly cohort promotion; stable release compatibility pins remain review-only |
 | Pre-1.0 minor, major, replacement | PR for review |
 | Third-party GitHub Actions digest/pinning | PR automerge after green checks |
 | `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped; PR automerge after consumer CI succeeds |
 | Lockfile maintenance | Weekly, PR automerge after green checks including newly introduced external crates.io versions |
 
-When a workflow uses one pinned Rust nightly for several steps (such as cache identity, `dtolnay/rust-toolchain` and `cargo +...`), declare `RUST_NIGHTLY_TOOLCHAIN: nightly-YYYY-MM-DD` once in the workflow `env`. Reference `${{ env.RUST_NIGHTLY_TOOLCHAIN }}` in action inputs and `"$RUST_NIGHTLY_TOOLCHAIN"` in shell commands. The fleet Renovate regex manager tracks that env declaration as the same review-only `rust`/`rust-version` dependency as explicit `rust-toolchain:` inputs; it prevents drift between the cache key, installed compiler and executed compiler.
+Direct workflows resolve the native root Rust toolchain manifest with the shared resolve-rust-toolchain action, and pass its channel output to setup-sccache and rustup. Do not maintain multiple version literals or workflow environment pins. The promotion controller owns dated nightly updates.
 
 Use immutable SHA references to shared workflows and actions with a tracking `# main` suffix:
 
@@ -355,8 +355,7 @@ Routine Rust work uses one dated nightly, not moving nightly or independently
 selected stable versions. The canonical fleet selection is this repository's
 root rust-toolchain.toml; enrolled repositories carry that same date in their
 native root toolchain file so local Cargo, normal tests, Clippy and the compiler
-cache agree. Routine shared CI reads the caller's pin, or the provider pin when
-the caller has not yet adopted a native manifest. A caller's explicit routine
+cache agree. Routine shared CI requires and reads the caller's native root pin; a missing manifest is a migration error, not a floating fallback. A caller's explicit routine
 compiler input must agree with that selection. Stable is reserved for an
 explicit release compatibility lane with a downstream requirement.
 

@@ -18,7 +18,8 @@ test('literal dated manifest pin and strict calendar validation', () => {
 test('routine compile and lint consume same repository pin; release exceptions are explicit', () => {
   const base = { tier: 'routine', requested: '', caller: candidate, fleet: pin };
   assert.equal(chooseToolchain(base), candidate);
-  assert.equal(chooseToolchain({...base, caller: null}), pin);
+  assert.throws(() => chooseToolchain({...base, caller: null}), /requires a root/);
+  assert.throws(() => chooseToolchain({...base, tier: 'release', caller: null}), /requires/);
   assert.throws(() => chooseToolchain({...base, caller: 'stable'}));
   assert.throws(() => chooseToolchain({...base, requested: pin}));
   assert.equal(chooseToolchain({...base, tier: 'release', requested: '1.100.0'}), '1.100.0');

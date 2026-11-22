@@ -151,12 +151,20 @@ jobs:
             echo "Rust toolchain $RUST_TOOLCHAIN is already installed on the runner."
           fi
 
-          read -r -a components <<< "$RUST_COMPONENTS"
-          if [[ "$VALIDATION_TIER" == routine ]]; then
-            components+=(clippy rustfmt)
-          fi
-          if (( ${#components[@]} )); then
+          if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" ]]; then
+            read -r -a components <<< "$RUST_COMPONENTS"
+            if [[ "$VALIDATION_TIER" == routine ]]; then
+              components+=(clippy rustfmt)
+            fi
             rustup component add --toolchain "$RUST_TOOLCHAIN" "${components[@]}"
+          fi
+
+          # Rustup's native manifest may declare additional components/targets.
+          # Honor it in routine jobs rather than treating workflow inputs as a
+          # second, incomplete toolchain configuration.
+          if [[ "$VALIDATION_TIER" == routine ]]; then
+            rustup show active-toolchain
+            test "$(rustc --version)" = "$(rustup run "$RUST_TOOLCHAIN" rustc --version)"
           fi
 
           if [[ -n "$RUST_TARGETS" ]]; then

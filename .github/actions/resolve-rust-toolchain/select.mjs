@@ -27,10 +27,13 @@ export function chooseToolchain({ tier, requested, caller, fleet }) {
   nightlyDate(fleet);
   if (tier === 'release') {
     // Explicit external compatibility contracts may still be tested at release.
-    return requested || caller || fleet;
+    const selected = requested || caller;
+    if (!selected) throw Error('release CI requires an explicit compatibility compiler or a native repository pin');
+    return selected;
   }
   if (tier !== 'routine') throw Error('unknown validation tier: ' + tier);
-  const selected = caller || fleet;
+  if (!caller) throw Error('routine CI requires a root rust-toolchain.toml');
+  const selected = caller;
   nightlyDate(selected);
   if (requested && requested !== selected) throw Error('routine CI compiler must match the repository pin: ' + selected);
   return selected;
