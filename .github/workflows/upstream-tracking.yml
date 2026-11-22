@@ -21,7 +21,7 @@ on:
       validation-script:
         description: Fork-owned validation script (read from the current target branch).
         type: string
-        default: ""
+        required: true
       rust-toolchain:
         type: string
         default: ""
@@ -31,14 +31,6 @@ on:
       go:
         type: boolean
         default: false
-      required-pr-checks:
-        description: Newline-separated regular expressions for checks that must succeed before PR publication.
-        type: string
-        default: ""
-      publish-mode:
-        description: direct or pull-request
-        type: string
-        default: direct
       nightly-format:
         type: boolean
         default: false
@@ -48,10 +40,6 @@ on:
       timeout-minutes:
         type: number
         default: 90
-    secrets:
-      upstream-pr-token:
-        description: Optional token capable of triggering the normal PR checks.
-        required: false
 
 concurrency:
   # One observation, candidate and report at a time per fork.
@@ -93,18 +81,13 @@ jobs:
           UPSTREAM_REPOSITORY: ${{ inputs.upstream-repository }}
           UPSTREAM_BRANCH: ${{ inputs.upstream-branch }}
           STRATEGY: ${{ inputs.strategy }}
-          MODE: ${{ inputs.publish-mode }}
           VALIDATION: ${{ inputs.validation-script }}
           WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
         run: |
           set -euo pipefail
           case "$STRATEGY" in merge|rebase|squash-rebase|source-merge) ;; *) exit 2;; esac
           case "$WORKFLOW_POLICY" in reject|preserve) ;; *) exit 2;; esac
-          case "$MODE" in
-            direct) test -n "$VALIDATION" ;;
-            pull-request) test "$STRATEGY" = merge ;;
-            *) exit 2 ;;
-          esac
+          test -n "$VALIDATION"
           node .ci-upstream/.github/actions/upstream-tracking/observe.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$STRATEGY"
 
   prepare:
@@ -184,7 +167,7 @@ jobs:
           fetch-tags: false
           persist-credentials: false
       - name: Read reviewed validator
-        if: steps.check.outputs.checked == 'true' && inputs.validation-script != ''
+        if: steps.check.outputs.checked == 'true'
         env:
           VALIDATOR: ${{ inputs.validation-script }}
         run: |
@@ -224,12 +207,12 @@ jobs:
         with:
           components: rustfmt
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           components: rustfmt, clippy
       - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
-        if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -239,7 +222,7 @@ jobs:
           go-version-file: ${{ inputs.go-version-file }}
           cache: ${{ inputs.go-version-file != '' }}
       - name: Run reviewed fork validation
-        if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
+        if: steps.check.outputs.checked == 'true' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
         env:
           UPSTREAM_SHA: ${{ needs.observe.outputs.upstream }}
           FORK_BASE: ${{ needs.observe.outputs.base }}
@@ -264,17 +247,22 @@ jobs:
     needs: [observe, prepare, validate]
     if: ${{ needs.prepare.outputs.changed == 'true' && needs.validate.result == 'success' && (inputs.rust-toolchain == '' || needs.validate.outputs.eligible == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 10
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.target-branch }}
           fetch-depth: 0
           fetch-tags: false
-          token: ${{ secrets.upstream-pr-token || github.token }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-upstream
+          persist-credentials: false
+          sparse-checkout: .github/actions/upstream-tracking
       - uses: actions/download-artifact@v4
         with:
           name: upstream-candidate
@@ -285,62 +273,8 @@ jobs:
           BASE: ${{ needs.observe.outputs.base }}
           HEAD: ${{ needs.prepare.outputs.head }}
           STRATEGY: ${{ inputs.strategy }}
-          MODE: ${{ inputs.publish-mode }}
-          REQUIRED_CHECKS: ${{ inputs.required-pr-checks }}
-          GH_TOKEN: ${{ secrets.upstream-pr-token || github.token }}
         run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$BASE"
-          git fetch "$RUNNER_TEMP/candidate.bundle" HEAD
-          test "$(git rev-parse FETCH_HEAD)" = "$HEAD"
-          git checkout --detach "$HEAD"
-          if [[ "$MODE" == direct ]]; then
-            if [[ "$STRATEGY" == merge || "$STRATEGY" == source-merge ]]; then
-              git merge-base --is-ancestor "$BASE" HEAD
-              git push origin "HEAD:refs/heads/$TARGET"
-            else
-              git push --force-with-lease="refs/heads/$TARGET:$BASE" origin "HEAD:refs/heads/$TARGET"
-            fi
-          elif [[ "$MODE" == pull-request ]]; then
-            # No PR check may be bypassed when a token cannot create or
-            # trigger an ordinary pull request. Report the failure instead.
-            test -n "$REQUIRED_CHECKS"
-            branch=automation/upstream-sync
-            previous=$(git ls-remote --refs origin "refs/heads/$branch" | cut -f1)
-            git push --force-with-lease="refs/heads/$branch:$previous" origin "HEAD:refs/heads/$branch"
-            pr=$(gh pr list --head "$branch" --base "$TARGET" --state open --json number --jq '.[0].number // empty')
-            if [[ -z "$pr" ]]; then
-              gh pr create --base "$TARGET" --head "$branch" --title "Sync quarantined upstream snapshot" --body "Automated update; publication requires normal fork PR checks."
-              pr=$(gh pr list --head "$branch" --base "$TARGET" --state open --json number --jq '.[0].number')
-            fi
-            # Wait for the actual mandatory CI jobs, not just whichever
-            # ancillary status check happens to register first.
-            checks_present() {
-              local rollup pattern
-              rollup=$(gh pr view "$pr" --json statusCheckRollup --jq '.statusCheckRollup')
-              while IFS= read -r pattern; do
-                [[ -z "$pattern" ]] && continue
-                jq -e --arg pattern "$pattern" 'any(.[]; (.name // "") | test($pattern))' <<<"$rollup" >/dev/null || return 1
-              done <<<"$REQUIRED_CHECKS"
-            }
-            for _ in $(seq 1 60); do
-              if checks_present; then break; fi
-              sleep 5
-            done
-            checks_present
-            gh pr checks "$pr" --watch --fail-fast
-            rollup=$(gh pr view "$pr" --json statusCheckRollup --jq '.statusCheckRollup')
-            while IFS= read -r pattern; do
-              [[ -z "$pattern" ]] && continue
-              jq -e --arg pattern "$pattern" 'any(.[]; ((.name // "") | test($pattern)) and .conclusion == "SUCCESS")' <<<"$rollup" >/dev/null
-            done <<<"$REQUIRED_CHECKS"
-            test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$HEAD"
-            test "$(git ls-remote origin "refs/heads/$TARGET" | cut -f1)" = "$BASE"
-            gh pr merge "$pr" --match-head-commit "$HEAD" --merge --delete-branch
-          else
-            echo "Unknown publication mode: $MODE" >&2
-            exit 2
-          fi
+          node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/candidate.bundle"
 
   report:
     needs: [observe, prepare, validate, publish]

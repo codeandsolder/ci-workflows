@@ -32,3 +32,5 @@ jobs:
         run: bash .github/actions/upstream-tracking/observe.integration.test.sh
       - name: Test real merge and rebase scenarios
         run: bash .github/actions/upstream-tracking/prepare.test.sh
+      - name: Test exact-revision publication and concurrent changes
+        run: bash .github/actions/upstream-tracking/publish.test.sh
