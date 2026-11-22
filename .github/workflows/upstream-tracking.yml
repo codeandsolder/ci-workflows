@@ -208,7 +208,7 @@ jobs:
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
         uses: ./.ci-upstream/.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ needs.observe.outputs.base || github.sha }}
+          base-ref: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
           hours: "72"
           fail-on-blocked: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
       - uses: dtolnay/rust-toolchain@nightly
