@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Fleet-wide CI-gated automerge with a 72-hour external crates.io release-age quarantine; first-party Git dependencies and trust roots are exempt.",
+  "description": "Fleet-wide CI-gated automerge with a 72-hour external crates.io release-age quarantine and weekly quarantined Rust nightly updates; first-party Git dependencies and trust roots are exempt.",
   "extends": [
     "config:recommended",
     "helpers:pinGitHubActionDigests",
@@ -21,21 +21,6 @@
     "automerge": true,
     "automergeType": "pr"
   },
-  "customManagers": [
-    {
-      "customType": "regex",
-      "managerFilePatterns": [
-        "/^\\.github\\/workflows\\/[^/]+\\.ya?ml$/"
-      ],
-      "matchStrings": [
-        "(?:^|\\r?\\n)[ \\t]*rust-toolchain:[ \\t]*[\"']?(?<currentValue>nightly-[^\"'\\s]+)",
-        "(?:^|\\r?\\n)[ \\t]*RUST_NIGHTLY_TOOLCHAIN:[ \\t]*[\"']?(?<currentValue>nightly-[^\"'\\s]+)"
-      ],
-      "depNameTemplate": "rust",
-      "datasourceTemplate": "rust-version",
-      "versioningTemplate": "rust-release-channel"
-    }
-  ],
   "packageRules": [
     {
       "description": "Automerge compatible 1.x+ minor and patch updates, pins and digests after required CI",
@@ -108,24 +93,6 @@
       "automerge": false
     },
     {
-      "description": "Dated nightly pins are promoted as one tested cohort by nightly-cohort.mjs, never by independent Renovate PRs.",
-      "matchDatasources": [
-        "rust-version"
-      ],
-      "matchDepNames": [
-        "rust"
-      ],
-      "groupName": "Pinned Rust nightly",
-      "groupSlug": "pinned-rust-nightly",
-      "automerge": false,
-      "matchManagers": [
-        "rust-toolchain",
-        "custom.regex"
-      ],
-      "matchCurrentVersion": "/^nightly-/",
-      "enabled": false
-    },
-    {
       "description": "Clear inherited generic age delays; the following rule enforces the external registry crate quarantine.",
       "matchPackageNames": [
         "/.*/"
@@ -143,6 +110,35 @@
       ],
       "minimumReleaseAge": "3 days",
       "minimumReleaseAgeBehaviour": "timestamp-required"
+    },
+    {
+      "description": "Weekly CI-gated native dated nightly updates. Rust's datasource timestamps have date-only precision; four calendar days conservatively cover the three elapsed days enforced by shared CI.",
+      "matchManagers": [
+        "rust-toolchain"
+      ],
+      "matchDatasources": [
+        "rust-version"
+      ],
+      "matchDepNames": [
+        "rust"
+      ],
+      "matchFileNames": [
+        "/^rust-toolchain\\.toml$/"
+      ],
+      "matchCurrentValue": "/^nightly-\\d{4}-\\d{2}-\\d{2}$/",
+      "allowedVersions": "/^nightly-\\d{4}-\\d{2}-\\d{2}$/",
+      "groupName": "Pinned Rust nightly",
+      "groupSlug": "pinned-rust-nightly",
+      "schedule": [
+        "* * * * 1"
+      ],
+      "timezone": "Etc/UTC",
+      "updateNotScheduled": false,
+      "minimumReleaseAge": "4 days",
+      "minimumReleaseAgeBehaviour": "timestamp-required",
+      "ignoreUnstable": false,
+      "automerge": true,
+      "automergeType": "pr"
     }
   ],
   "platformAutomerge": false,

@@ -26,5 +26,5 @@ runs:
         CALLER: ${{ inputs.repository-path }}
       run: |
         set -euo pipefail
-        channel=$(node "$GITHUB_ACTION_PATH/select.mjs" resolve "$TIER" "$REQUESTED" "$CALLER" "$GITHUB_ACTION_PATH/../../../rust-toolchain.toml")
+        channel=$(node "$GITHUB_ACTION_PATH/select.mjs" resolve "$TIER" "$REQUESTED" "$CALLER")
         printf 'channel=%s\n' "$channel" >> "$GITHUB_OUTPUT"

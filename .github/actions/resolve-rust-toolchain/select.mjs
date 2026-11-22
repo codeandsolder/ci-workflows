@@ -23,8 +23,7 @@ export function readPin(text) {
   return pins[0].match(/=[ \t]*["']([^"']+)["']/)[1];
 }
 
-export function chooseToolchain({ tier, requested, caller, fleet }) {
-  nightlyDate(fleet);
+export function chooseToolchain({ tier, requested, caller }) {
   if (tier === 'release') {
     // Explicit external compatibility contracts may still be tested at release.
     const selected = requested || caller;
@@ -65,19 +64,6 @@ export async function requireAge(channel, now = Date.now(), lookup = publication
   return published;
 }
 
-export async function latestCandidate(current, now = Date.now(), lookup = publication) {
-  const currentDate = nightlyDate(current);
-  // A compiler change invalidates cache entries. Do not rotate more often than weekly.
-  // The selected date must itself be at least seven days newer than the approved pin.
-  for (let date = Math.floor((now - QUARANTINE) / DAY) * DAY;
-    date >= currentDate + 7 * DAY; date -= DAY) {
-    const channel = 'nightly-' + new Date(date).toISOString().slice(0,10);
-    const published = await lookup(channel, now);
-    if (published !== null && now - published >= QUARANTINE) return channel;
-  }
-  return null;
-}
-
 export function loadCaller(path) {
   const manifest = join(path, 'rust-toolchain.toml');
   const legacy = join(path, 'rust-toolchain');
@@ -90,16 +76,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const [mode, ...args] = process.argv.slice(2);
     if (mode === 'age' && args.length === 1) {
       console.log(new Date(await requireAge(args[0])).toISOString());
-    } else if (mode === 'candidate' && args.length === 1) {
-      console.log(await latestCandidate(args[0]) || '');
-    } else if (mode === 'resolve' && args.length === 4) {
-      const [tier, requested, callerDir, fleetManifest] = args;
-      const channel = chooseToolchain({ tier, requested, caller: loadCaller(callerDir),
-        fleet: readPin(readFileSync(fleetManifest, 'utf8')) });
+    } else if (mode === 'resolve' && args.length === 3) {
+      const [tier, requested, callerDir] = args;
+      const channel = chooseToolchain({ tier, requested, caller: loadCaller(callerDir) });
       if (channel.startsWith('nightly')) await requireAge(channel);
       console.log(channel);
     } else {
-      throw Error('usage: select.mjs age CHANNEL | candidate CURRENT | resolve TIER REQUESTED CALLER_DIR FLEET_MANIFEST');
+      throw Error('usage: select.mjs age CHANNEL | resolve TIER REQUESTED CALLER_DIR');
     }
   } catch (error) {
     console.error(error.message);

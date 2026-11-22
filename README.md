@@ -82,7 +82,7 @@ Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate
 | --- | --- |
 | Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks, after the applicable release-age check; compatible Cargo minor/patch updates are grouped |
 | Pre-1.0 patch | PR automerge after green checks and applicable release-age check |
-| Rust compiler | Coordinated nightly cohort promotion; stable release compatibility pins remain review-only |
+| Rust compiler | Weekly Renovate dated-nightly updates with CI-gated automerge; stable release compatibility pins remain review-only |
 | Pre-1.0 minor, major, replacement | PR for review |
 | Third-party GitHub Actions digest/pinning | PR automerge after green checks |
 | `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped; PR automerge after consumer CI succeeds |
@@ -349,46 +349,36 @@ eligible revision, fork base and run URL. Quarantine is a pending state, not an
 error. A successful retry closes the old failure issue. Do not force the cursor
 or edit first-observed timestamps to bypass the quarantine.
 
-## Fleet compiler promotion
+## Fleet Rust compiler updates
 
-Routine Rust work uses one dated nightly, not moving nightly or independently
-selected stable versions. The canonical fleet selection is this repository's
-root rust-toolchain.toml; enrolled repositories carry that same date in their
-native root toolchain file so local Cargo, normal tests, Clippy and the compiler
-cache agree. Routine shared CI requires and reads the caller's native root pin; a missing manifest is a migration error, not a floating fallback. A caller's explicit routine
-compiler input must agree with that selection. Stable is reserved for an
-explicit release compatibility lane with a downstream requirement.
+Routine Rust work uses a native root rust-toolchain.toml with a dated nightly.
+The fleet shares the same Renovate update policy and initial pin, not a
+global transaction or cross-repository rollback. Local Cargo, tests, Clippy
+and compiler-cache selection all use that repository's native pin. Routine
+shared CI requires it and rejects a mismatching explicit compiler input.
+Stable toolchains remain review-only and are reserved for explicit release
+compatibility contracts.
 
-The resolver checks the official dated nightly manifest's publication timestamp
-against an elapsed 72-hour quarantine. Normal Rustup installation must succeed,
-including Clippy, rustfmt and any caller-required targets/components. Upstream
-issue labels or counts are not promotion criteria. Code with an applicable
-compiler regression should acquire a regression test rather than an issue filter.
+Renovate's built-in rust-toolchain manager proposes a separate compiler PR
+for each repository on Mondays (UTC), with CI-gated PR automerge after
+successful checks. An unsuccessful repository stays on its previous pin
+without blocking the others. Existing PRs can merge when green; compiler
+update commits are limited to the weekly window. Normal shared CI uses the
+caller's pin rather than the provider's own pin, so temporary differences
+are permitted.
 
-The promotion controller (scripts/nightly-cohort.mjs) is run with the authorized
-fleet GitHub App's gh authentication. Enrollment in nightly-cohort.json requires
-normal PR tests and strict lint checks to use the native repository pin, and
-explicitly lists the real runtime/build/lint checks that must succeed. The
-controller never treats absent, skipped, neutral, or failed required checks as
-success. Every cohort member's candidate must be green before publication
-begins; ordinary merge protections still apply. The central provider merges last.
-Cross-repository merges are sequential, not atomic; an interrupted promotion
-resumes against the same candidate. A failed or missing candidate holds the old
-central selection.
+Renovate's Rust datasource supplies publication dates rather than exact times.
+Its four-day minimum release age accounts conservatively for that precision;
+the shared resolver independently enforces the real 72 elapsed hours using
+the official dated manifest's publication timestamp. Normal Rustup installation
+and Clippy, rustfmt, required targets and components must succeed. Upstream
+issue labels are not promotion criteria. A compiler regression should acquire
+a regression test rather than an issue filter.
 
-Examples (all mutating commands require --apply):
-
-    node scripts/nightly-cohort.mjs select
-    node scripts/nightly-cohort.mjs prepare nightly-YYYY-MM-DD
-    node scripts/nightly-cohort.mjs prepare nightly-YYYY-MM-DD --apply
-    node scripts/nightly-cohort.mjs status nightly-YYYY-MM-DD
-    node scripts/nightly-cohort.mjs promote nightly-YYYY-MM-DD --apply
-
-Selection and promotion are limited to once per week to avoid needless cache
-invalidation. Prepare creates or refreshes dedicated draft pin-only PRs. Promote
-requires real green PR checks on the current base, rechecks candidate identity
-before each merge, and refuses to overwrite unrelated work. If the toolchain
-fails compilation or tests, leave the candidate unpublished and investigate the
-failure, then test a suitable candidate. Renovate must not independently change
-nightly pins. Compatibility jobs whose purpose is validating other toolchains
-remain separate release-tier jobs.
+Only the native root dated nightly is automatically updated by this policy.
+Do not duplicate compiler versions in environment variables, workflow inputs,
+or scripts. Every normal check must use the native pin, and required tests,
+strict lint and any relevant package or cross-target checks must run on
+compiler-pin-only PRs. No special scheduler, credentials or cohort registry
+are required. Stable or independently pinned release compatibility jobs stay
+separate and review-only.

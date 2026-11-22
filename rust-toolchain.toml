@@ -1,4 +1,4 @@
-# Centrally selected fleet compiler. Promote only through the nightly cohort gate.
+# Native dated compiler pin. Renovate proposes weekly age- and CI-gated updates.
 [toolchain]
 channel = "nightly-2026-11-19"
 profile = "minimal"
