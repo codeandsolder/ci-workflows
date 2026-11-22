@@ -34,18 +34,35 @@ def check(files: dict[str, str], expected: str | None = None) -> None:
         errors = policy.inspect_root(root)
         if WASM is not None:
             result = subprocess.run(
-                ["node", str(ROOT / "policy-wasm/run.mjs"), str(WASM), "concurrency", str(root)],
-                text=True, encoding="utf-8", capture_output=True, check=False,
+                [
+                    "node",
+                    str(ROOT / "policy-wasm/run.mjs"),
+                    str(WASM),
+                    "concurrency",
+                    str(root),
+                ],
+                text=True,
+                encoding="utf-8",
+                capture_output=True,
+                check=False,
             )
-            assert result.returncode == int(bool(errors)), (result.stdout, result.stderr, errors)
+            assert result.returncode == int(bool(errors)), (
+                result.stdout,
+                result.stderr,
+                errors,
+            )
 
             def normalized(violations: list[str]) -> list[str]:
                 return sorted(
                     item.split(": invalid YAML:", 1)[0] + ": invalid YAML"
-                    if ": invalid YAML:" in item else item
+                    if ": invalid YAML:" in item
+                    else item
                     for item in violations
                 )
-            actual = [line[2:] for line in result.stdout.splitlines() if line.startswith("- ")]
+
+            actual = [
+                line[2:] for line in result.stdout.splitlines() if line.startswith("- ")
+            ]
             assert normalized(actual) == normalized(errors), (actual, errors)
         if expected is None:
             assert not errors, errors
