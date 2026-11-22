@@ -95,6 +95,57 @@ class QuarantineTest(unittest.TestCase):
         self.git("add", "-A")
         self.assertEqual(quarantine.compare_lockfiles(ref, "auto"), [])
 
+    def prepare_standalone_package(self) -> str:
+        self.write(
+            "package/Cargo.toml",
+            "[package]\nname='example'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        self.write("package/src/lib.rs", "")
+        self.write("package/Cargo.lock", make_lock(("serde", "1.0.0")))
+        return self.baseline()
+
+    def test_consolidated_workspace_lock_preserves_union_age_check(self) -> None:
+        ref = self.prepare_standalone_package()
+        Path("package/Cargo.lock").unlink()
+        self.write("Cargo.toml", "[workspace]\nmembers=['package']\nresolver='3'\n")
+        self.write("Cargo.lock", make_lock(("serde", "1.0.0"), ("zstd", "0.9.2")))
+        self.git("add", "-A")
+        changed = quarantine.compare_lockfiles(ref, "auto")
+        self.assertEqual(
+            [(p["name"], p["version"]) for p in changed], [("zstd", "0.9.2")]
+        )
+
+    def test_unrelated_parent_lock_cannot_cover_removed_lock(self) -> None:
+        ref = self.prepare_standalone_package()
+        Path("package/Cargo.lock").unlink()
+        self.write(
+            "Cargo.toml",
+            "[workspace]\nmembers=[]\nexclude=['package']\nresolver='3'\n",
+        )
+        self.write("Cargo.lock", make_lock(("serde", "1.0.0")))
+        self.git("add", "-A")
+        with self.assertRaisesRegex(ValueError, "still exists"):
+            quarantine.compare_lockfiles(ref, "auto")
+
+    def test_untracked_replacement_lock_is_rejected(self) -> None:
+        ref = self.prepare_standalone_package()
+        Path("package/Cargo.lock").unlink()
+        self.write("Cargo.toml", "[workspace]\nmembers=['package']\nresolver='3'\n")
+        self.git("add", "-A")
+        self.write("Cargo.lock", make_lock(("serde", "1.0.0")))
+        with self.assertRaisesRegex(ValueError, "still exists"):
+            quarantine.compare_lockfiles(ref, "auto")
+
+    def test_untracked_symlink_to_unrelated_lock_is_rejected(self) -> None:
+        ref = self.prepare_standalone_package()
+        Path("package/Cargo.lock").unlink()
+        self.write("Cargo.toml", "[workspace]\nmembers=['package']\nresolver='3'\n")
+        self.write("other/Cargo.lock", make_lock(("serde", "1.0.0")))
+        self.git("add", "-A")
+        Path("Cargo.lock").symlink_to("other/Cargo.lock")
+        with self.assertRaisesRegex(ValueError, "still exists"):
+            quarantine.compare_lockfiles(ref, "auto")
+
     def test_entire_deleted_workspace_is_allowed(self) -> None:
         self.write("package/Cargo.toml", "[workspace]\n")
         self.write("package/Cargo.lock", make_lock(("serde", "1.0.0")))
