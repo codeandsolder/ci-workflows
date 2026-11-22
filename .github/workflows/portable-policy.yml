@@ -79,6 +79,38 @@ jobs:
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
           node policy-wasm/run.mjs policy-wasm/module.json sccache .
           node policy-wasm/run.mjs policy-wasm/module.json concurrency .
+      - name: Verify the actual sparse caller checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          gate="$RUNNER_TEMP/sparse-ci-policy"
+          git clone --shared --no-checkout "$GITHUB_WORKSPACE" "$gate"
+          awk '$0 == "          sparse-checkout: |" { reading=1; next } reading && /^            / { sub(/^            /, ""); print; next } reading { exit }' .github/workflows/workflow-concurrency.yml |
+            git -C "$gate" sparse-checkout set --no-cone --stdin
+          git -C "$gate" checkout --detach "$(git rev-parse HEAD)"
+          test ! -e "$gate/policy-wasm/src"
+          node "$gate/policy-wasm/run.mjs" "$gate/policy-wasm/module.json" concurrency "$GITHUB_WORKSPACE"
       - name: Finalize mandatory sccache
         if: always()
         uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@f1499fe94abf45faacae7992670e5163109225f0 # main
+
+  portable-runtime:
+    name: Portable CI policy (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          enable-cache: false
+      - name: Validate the same policy binary on each platform
+        shell: bash
+        run: |
+          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
+          uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json

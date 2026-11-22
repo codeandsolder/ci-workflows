@@ -42,6 +42,7 @@ const NON_COMPILING: &[&str] = &[
 
 pub struct Scanner {
     assignment: Regex,
+    continuation: Regex,
     heredoc: Regex,
     case_start: Regex,
     case_arm: Regex,
@@ -287,6 +288,7 @@ pub fn working_dir(root: &Path, path: &str) -> Option<PathBuf> {
 impl Scanner {
     pub fn new() -> Result<Self, regex::Error> {
         Ok(Self {
+            continuation: Regex::new(r"\\\r?\n")?,
             assignment: Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")?,
             heredoc: Regex::new(r#"<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?"#)?,
             case_start: Regex::new(r"^case\s+.+\s+in$")?,
@@ -365,7 +367,7 @@ impl Scanner {
     }
 
     fn commands(&self, source: &str) -> Vec<Segment> {
-        let source = source.replace("\\\n", "");
+        let source = self.continuation.replace_all(source, "");
         let mut commands = Vec::new();
         let mut terminator: Option<&str> = None;
         let mut stdin = Vec::new();

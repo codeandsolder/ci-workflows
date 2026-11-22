@@ -40,7 +40,7 @@ impl Patterns {
             reference: Regex::new(r"github\.[A-Za-z_][A-Za-z0-9_.]*")?,
             ref_name_condition: Regex::new(r#"^github\.ref_name *!= *['"][^'"]+['"]$"#)?,
             global_snapshot: Regex::new(
-                r"(?m)^# ci-workflow-supersession: global-snapshot; [^\n]{25,}\nconcurrency:[ \t]*$",
+                r"(?m)^# ci-workflow-supersession: global-snapshot; [^\r\n]{25,}\r?\nconcurrency:[ \t]*\r?$",
             )?,
             host_identity: Regex::new(r"(?i)acer|asus")?,
             host_input: Regex::new(r"/(?:home/jan|srv/ci/toolchains|srv/scratch)(?:/|\b)")?,

@@ -45,7 +45,10 @@ def compare(root: Path, expected: list[str], strict_ref: str | None = None) -> N
         result.stderr,
         expected,
     )
-    assert sorted(actual) == sorted(expected), (actual, expected)
+    assert sorted(actual) == sorted(item.replace("\\", "/") for item in expected), (
+        actual,
+        expected,
+    )
 
 
 def inspect(workflow: str, strict_ref: str | None = None) -> list[str]:
@@ -53,7 +56,7 @@ def inspect(workflow: str, strict_ref: str | None = None) -> list[str]:
         root = Path(tmp)
         path = root / ".github/workflows/ci.yml"
         path.parent.mkdir(parents=True)
-        path.write_text(workflow)
+        path.write_text(workflow, encoding="utf-8")
         result = mod.inspect_root(root, strict_ref)
         compare(root, result, strict_ref)
         assert isinstance(result, list) and all(
@@ -279,11 +282,11 @@ def inspect_tree(workflow: str, files: dict[str, str]) -> list[str]:
         root = Path(tmp)
         file = root / ".github/workflows/ci.yml"
         file.parent.mkdir(parents=True)
-        file.write_text(workflow)
+        file.write_text(workflow, encoding="utf-8")
         for name, body in files.items():
             script = root / name
             script.parent.mkdir(parents=True, exist_ok=True)
-            script.write_text(body)
+            script.write_text(body, encoding="utf-8", newline="")
         result = mod.inspect_root(root)
         compare(root, result)
         assert isinstance(result, list) and all(
@@ -572,5 +575,11 @@ jobs:
     steps:
       - <<: [*first, *second]
 """,
+    "missing canonical setup-sccache",
+)
+
+assert_tree_blocked(
+    plain,
+    {"ci/live-altcha-e2e.sh": "#!/bin/sh\r\ncargo \\\r\n build --locked\r\n"},
     "missing canonical setup-sccache",
 )
