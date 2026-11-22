@@ -37,6 +37,8 @@ jobs:
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: false
+      - name: Check baseline Git transport
+        run: node --test .github/actions/cargo-release-quarantine/fetch_baseline.test.mjs
       - name: Check multi-workspace quarantine invariants
         run: uv run --project .github --locked python -B -m unittest discover -v -s .github/actions/cargo-release-quarantine -p 'test_*.py'
       - name: Check portable quarantine behavior
