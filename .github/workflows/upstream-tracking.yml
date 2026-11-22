@@ -256,6 +256,13 @@ jobs:
           ref: ${{ inputs.target-branch }}
           fetch-depth: 0
           fetch-tags: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-upstream
+          persist-credentials: false
+          sparse-checkout: .github/actions/upstream-tracking
       - uses: actions/download-artifact@v4
         with:
           name: upstream-candidate
@@ -267,17 +274,7 @@ jobs:
           HEAD: ${{ needs.prepare.outputs.head }}
           STRATEGY: ${{ inputs.strategy }}
         run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$BASE"
-          git fetch "$RUNNER_TEMP/candidate.bundle" HEAD
-          test "$(git rev-parse FETCH_HEAD)" = "$HEAD"
-          git checkout --detach "$HEAD"
-          if [[ "$STRATEGY" == merge || "$STRATEGY" == source-merge ]]; then
-            git merge-base --is-ancestor "$BASE" HEAD
-          fi
-          # Atomic compare-and-swap for all strategies, including fast-forward
-          # candidates: concurrent changes must never be silently overwritten.
-          git push --force-with-lease="refs/heads/$TARGET:$BASE" origin "HEAD:refs/heads/$TARGET"
+          node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/candidate.bundle"
 
   report:
     needs: [observe, prepare, validate, publish]
