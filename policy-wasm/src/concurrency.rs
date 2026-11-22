@@ -1,10 +1,10 @@
-use crate::yaml::{Node, field, fields, get, parse, scalar, workflow_paths};
+use crate::yaml::{Node, field, fields, get, parse, scalar};
 use caseless::default_case_fold_str;
 use regex::Regex;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 const PR_EVENTS: [&str; 2] = ["pull_request", "pull_request_target"];
@@ -358,11 +358,14 @@ fn validate_portability(
     }
 }
 
-pub fn inspect(root: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn inspect(
+    root: &Path,
+    paths: Vec<PathBuf>,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let patterns = Patterns::new()?;
     let mut problems = Vec::new();
     let mut groups = BTreeMap::<String, String>::new();
-    for path in workflow_paths(root)? {
+    for path in paths {
         let relative = path.strip_prefix(root)?.display().to_string();
         let source = fs::read_to_string(&path)?;
         let doc = match parse(&source) {

@@ -32,6 +32,7 @@ jobs:
           sparse-checkout: |
             .github/actions/workflow-concurrency-policy
             policy-wasm/run.mjs
+            policy-wasm/workspace.mjs
             policy-wasm/module.mjs
             policy-wasm/module.json
             policy-wasm/module.wasm.gz

@@ -1,11 +1,11 @@
 use crate::{
     shell::{Scanner, cargo_action_compiles, working_dir},
-    yaml::{Node, field, get, parse_with_merges, scalar, workflow_paths},
+    yaml::{Node, field, get, parse_with_merges, scalar},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 const WORKFLOW: &str = "codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@";
@@ -225,10 +225,11 @@ fn inspect_job(
 pub fn inspect(
     root: &Path,
     strict_ref: Option<&str>,
+    paths: Vec<PathBuf>,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let scanner = Scanner::new()?;
     let mut violations = Vec::new();
-    for path in workflow_paths(root)? {
+    for path in paths {
         let relative = path.strip_prefix(root)?.display();
         let source = fs::read_to_string(&path)?;
         let doc = match parse_with_merges(&source) {

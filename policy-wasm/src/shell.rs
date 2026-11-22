@@ -1,9 +1,10 @@
 //! Static shell-command discovery; never executes scripts.
+use crate::workspace::{Kind, resolve};
 use regex::Regex;
 use std::{
     collections::BTreeSet,
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 const INTERPRETERS: &[&str] = &["bash", "sh", "dash", "zsh", "ksh"];
@@ -224,65 +225,11 @@ fn dynamic_path(value: &str) -> bool {
     value.is_empty() || value.starts_with('~') || value.contains(['$', '*', '?', '\x60'])
 }
 
-// Resolve path components and symlinks inside the guest preopen. WASI
-// does not offer a portable host realpath operation.
-fn repo_path(root: &Path, cwd: Option<&Path>, value: &str) -> Option<PathBuf> {
-    if dynamic_path(value) {
-        return None;
-    }
-    let value = Path::new(value);
-    let absolute = if value.is_absolute() {
-        value.to_owned()
-    } else {
-        cwd?.join(value)
-    };
-    let relative = absolute.strip_prefix(root).ok()?;
-    let mut current = root.to_owned();
-    let mut pending: Vec<_> = relative
-        .components()
-        .map(|c| c.as_os_str().to_owned())
-        .rev()
-        .collect();
-    let mut links = 0;
-    while let Some(part) = pending.pop() {
-        match Path::new(&part).components().next()? {
-            Component::CurDir => (),
-            Component::ParentDir => {
-                if current == root || !current.pop() {
-                    return None;
-                }
-            }
-            Component::Normal(name) => {
-                let next = current.join(name);
-                if let Ok(target) = fs::read_link(&next) {
-                    links += 1;
-                    if links > 40 {
-                        return None;
-                    }
-                    let target = if target.is_absolute() {
-                        root.clone_into(&mut current);
-                        target.strip_prefix(root).ok()?.to_owned()
-                    } else {
-                        target
-                    };
-                    pending.extend(target.components().rev().map(|c| c.as_os_str().to_owned()));
-                } else {
-                    if fs::symlink_metadata(&next)
-                        .is_ok_and(|metadata| metadata.file_type().is_symlink())
-                    {
-                        return None;
-                    }
-                    current = next;
-                }
-            }
-            _ => return None,
-        }
-    }
-    Some(current)
-}
-
 pub fn working_dir(root: &Path, path: &str) -> Option<PathBuf> {
-    repo_path(root, Some(root), path)
+    (!dynamic_path(path))
+        .then(|| crate::workspace::resolve(root, Some(root), path))
+        .flatten()
+        .map(|entry| entry.path)
 }
 
 impl Scanner {
@@ -488,7 +435,11 @@ impl Scanner {
             }
             if command == "cd" {
                 if let Some(destination) = args.first() {
-                    cwd = repo_path(root, cwd.as_deref(), destination).filter(|path| path.is_dir());
+                    cwd = (!dynamic_path(destination))
+                        .then(|| resolve(root, cwd.as_deref(), destination))
+                        .flatten()
+                        .filter(|entry| entry.kind == Kind::Directory)
+                        .map(|entry| entry.path);
                 }
                 continue;
             }
@@ -511,7 +462,11 @@ impl Scanner {
                 }
                 Script::Path(path) => path,
             };
-            let Some(path) = repo_path(root, cwd.as_deref(), script).filter(|path| path.is_file())
+            let Some(path) = (!dynamic_path(script))
+                .then(|| resolve(root, cwd.as_deref(), script))
+                .flatten()
+                .filter(|entry| entry.kind == Kind::File)
+                .map(|entry| entry.path)
             else {
                 findings
                     .unresolved

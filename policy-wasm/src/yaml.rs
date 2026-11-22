@@ -1,9 +1,5 @@
 use saphyr::{Yaml, YamlLoader};
 use saphyr_parser::Parser;
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
 
 pub type Node<'a> = Yaml<'a>;
 
@@ -68,27 +64,6 @@ pub fn fields<'node>(node: &'node Node<'_>, keys: &[&str], out: &mut Vec<&'node 
             strings(value, out);
         }
     }
-}
-
-pub fn workflow_paths(root: &Path) -> io::Result<Vec<PathBuf>> {
-    let directory = root.join(".github/workflows");
-    if !directory.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut paths = Vec::new();
-    for entry in fs::read_dir(directory)? {
-        let path = entry?.path();
-        if path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|ext| matches!(ext, "yml" | "yaml"))
-            && path.is_file()
-        {
-            paths.push(path);
-        }
-    }
-    paths.sort_unstable();
-    Ok(paths)
 }
 
 fn merge_key(key: &Node<'_>) -> bool {
