@@ -284,6 +284,23 @@
       ]
     },
     {
+      "name": "codeandsolder/sentinelO2-cloud-core",
+      "requiredChecks": [
+        [
+          ".github/workflows/ci.yml",
+          "Rust Linux tests / rust"
+        ],
+        [
+          ".github/workflows/rust-skills2-strict.yml",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          ".github/workflows/clone-regression.yml",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
       "name": "codeandsolder/ci-workflows",
       "requiredChecks": [
         [
