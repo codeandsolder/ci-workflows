@@ -1,0 +1,14 @@
+[package]
+name = "ci-policy"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+caseless = "0.2.2"
+regex = "1"
+saphyr = { version = "0.3.3", default-features = false }
+saphyr-parser = "0.3.3"
+
+[profile.release]
+lto = "thin"

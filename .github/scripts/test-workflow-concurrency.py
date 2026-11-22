@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -16,6 +18,11 @@ spec.loader.exec_module(policy)
 GROUP = "${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}"
 CANCEL = "${{ github.event_name == 'pull_request' }}"
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--wasm", type=Path)
+args = parser.parse_args()
+WASM = args.wasm.resolve() if args.wasm is not None else None
+
 
 def check(files: dict[str, str], expected: str | None = None) -> None:
     with TemporaryDirectory() as tmp:
@@ -23,8 +30,22 @@ def check(files: dict[str, str], expected: str | None = None) -> None:
         workflows = root / ".github/workflows"
         workflows.mkdir(parents=True)
         for name, source in files.items():
-            (workflows / name).write_text(source)
+            (workflows / name).write_text(source, encoding="utf-8")
         errors = policy.inspect_root(root)
+        if WASM is not None:
+            result = subprocess.run(
+                ["node", str(ROOT / "policy-wasm/run.mjs"), str(WASM), "concurrency", str(root)],
+                text=True, encoding="utf-8", capture_output=True, check=False,
+            )
+            assert result.returncode == int(bool(errors)), (result.stdout, result.stderr, errors)
+            def normalized(violations: list[str]) -> list[str]:
+                return sorted(
+                    item.split(": invalid YAML:", 1)[0] + ": invalid YAML"
+                    if ": invalid YAML:" in item else item
+                    for item in violations
+                )
+            actual = [line[2:] for line in result.stdout.splitlines() if line.startswith("- ")]
+            assert normalized(actual) == normalized(errors), (actual, errors)
         if expected is None:
             assert not errors, errors
         else:
@@ -435,3 +456,6 @@ check(
         + "# /srv/ci/toolchains/kernel.tar.zst\n"
     }
 )
+
+# Full Unicode case folding, not just lowercase, is required for group identity.
+check({"a.yml": workflow(name="Straße"), "b.yml": workflow(name="STRASSE")}, "collides")
