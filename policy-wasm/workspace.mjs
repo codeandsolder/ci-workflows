@@ -89,17 +89,25 @@ export function workspace(root) {
   };
   return {
     root: canonical,
+    lookup,
     workflowPaths() {
       let entries;
       try {
-        entries = readdirSync(path.join(canonical, '.github', 'workflows'));
+        const directory = lookup(mount + "/.github/workflows");
+        if (directory === null) throw new Error("workflow directory escapes the checkout");
+        if (directory[0] !== "d") return [];
+        entries = readdirSync(path.join(canonical, directory.slice(mount.length + 2)));
       } catch (error) {
         if (missing(error)) return [];
         throw error;
       }
       return entries.filter((name) => /\.(ya?ml)$/.test(name))
         .map((name) => mount + '/.github/workflows/' + name)
-        .filter((file) => lookup(file)?.startsWith('f'))
+        .filter((file) => {
+          const item = lookup(file);
+          if (item === null) throw new Error("workflow path escapes the checkout: " + file);
+          return item.startsWith("f");
+        })
         .sort();
     },
     imports(getMemory) {

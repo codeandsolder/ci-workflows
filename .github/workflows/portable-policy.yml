@@ -69,12 +69,15 @@ jobs:
           path: ${{ runner.temp }}/ci-policy/wasm32-wasip1/release/ci-policy.wasm
           if-no-files-found: error
       - name: Compare portable workflow policy with existing fixtures
+        # The host filesystem bridge and bundle are tested separately.
         shell: bash
         run: |
+          node --test policy-wasm/workspace.test.mjs
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache .
           node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
+          node --test policy-wasm/workspace.test.mjs
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
           node policy-wasm/run.mjs policy-wasm/module.json sccache .
@@ -112,5 +115,6 @@ jobs:
       - name: Validate the same policy binary on each platform
         shell: bash
         run: |
+          node --test policy-wasm/workspace.test.mjs
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
