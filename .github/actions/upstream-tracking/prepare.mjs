@@ -55,9 +55,24 @@ if (!["reject", "preserve"].includes(workflowPolicy)) throw new Error("Unknown w
 function restoreWorkflows(source) {
   git("restore", "--source=" + source, "--staged", "--worktree", WORKFLOWS);
 }
+function mergePreservingWorkflows() {
+  try {
+    git("merge", "--no-ff", "--no-commit", upstream);
+  } catch (error) {
+    if (error.status !== 1 || git("rev-parse", "--verify", "MERGE_HEAD") !== upstream) throw error;
+    // Do not mistake a non-workflow conflict for a reviewable CI-only conflict.
+    // Read the raw NUL-delimited names, including rename and deletion conflicts.
+    const conflicts = execFileSync("git", ["diff", "--name-only", "--diff-filter=U", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
+    if (conflicts.length === 0 || conflicts.some(path => path !== WORKFLOWS && !path.startsWith(WORKFLOWS + "/"))) throw error;
+  }
+  restoreWorkflows(base);
+  if (git("ls-files", "--unmerged")) throw new Error("Unresolved source merge conflicts");
+  git("commit", "--no-edit");
+}
 switch (strategy) {
   case "merge":
-    git("merge", "--no-ff", "--no-edit", upstream);
+    if (drift && workflowPolicy === "preserve") mergePreservingWorkflows();
+    else git("merge", "--no-ff", "--no-edit", upstream);
     break;
   case "source-merge":
     if (!reviewed) {
