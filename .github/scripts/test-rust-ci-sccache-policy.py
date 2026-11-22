@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / ".github/actions/rust-ci-sccache-policy/check.py"
+SCRIPT = ROOT / ".github/scripts/rust-ci-sccache-oracle.py"
 spec = importlib.util.spec_from_file_location("check_ci_sccache_policy", SCRIPT)
 assert spec is not None and spec.loader is not None
 mod = importlib.util.module_from_spec(spec)

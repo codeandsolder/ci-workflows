@@ -5,6 +5,8 @@ on:
     paths:
       - ".github/actions/rust-ci-sccache-policy/**"
       - ".github/scripts/test-rust-ci-sccache-policy.py"
+      - ".github/scripts/rust-ci-sccache-oracle.py"
+      - "policy-wasm/**"
       - ".github/pyproject.toml"
       - ".github/uv.lock"
       - ".github/workflows/rust-ci-sccache-policy.yml"
@@ -13,6 +15,8 @@ on:
     paths:
       - ".github/actions/rust-ci-sccache-policy/**"
       - ".github/scripts/test-rust-ci-sccache-policy.py"
+      - ".github/scripts/rust-ci-sccache-oracle.py"
+      - "policy-wasm/**"
       - ".github/pyproject.toml"
       - ".github/uv.lock"
       - ".github/workflows/rust-ci-sccache-policy.yml"
@@ -35,6 +39,6 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: Verify Rust CI sccache regression fixtures
-        run: uv run --project .github --locked python .github/scripts/test-rust-ci-sccache-policy.py
+        run: uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
       - name: Enforce Rust CI sccache rules on provider workflows
         uses: ./.github/actions/rust-ci-sccache-policy
