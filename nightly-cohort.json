@@ -209,6 +209,23 @@
       ]
     },
     {
+      "name": "codeandsolder/warpproxy",
+      "requiredChecks": [
+        [
+          "CI",
+          "Rust / rust"
+        ],
+        [
+          "Strict Rust",
+          "strict-rust / Strict Rust + Python policy"
+        ],
+        [
+          "Duplicate-code regression",
+          "duplicates / New duplicated code"
+        ]
+      ]
+    },
+    {
       "name": "codeandsolder/ci-workflows",
       "requiredChecks": [
         [
