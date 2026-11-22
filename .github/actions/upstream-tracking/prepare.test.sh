@@ -82,7 +82,8 @@ prepare merge preserve
 git merge-base --is-ancestor "$base" HEAD
 git merge-base --is-ancestor "$selected" HEAD
 test ! -e .github/workflows/extra.yml
-rg -q '^workflow_drift=true$' "$output"
+read -r recorded_drift < "$output"
+test "$recorded_drift" = workflow_drift=true
 verify
 
 fixture merge-preserve-source-conflict
