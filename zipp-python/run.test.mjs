@@ -56,3 +56,17 @@ test('missing inputs and symlinks fail closed', async t => {
   }
   await assert.rejects(runTask(root,{entry:'main.py',read:['link.py']},[]),/refusing symlink/);
 });
+
+test('binary and scratch VFS files preserve bytes without publishing scratch writes', async t => {
+  const root = fixture(t, 'from pathlib import Path\nassert Path("data.bin").read_bytes() == bytes([0, 255, 128, 1])\nPath("scratch").mkdir()\nPath("scratch/result.txt").write_text("ephemeral")\n');
+  writeFileSync(path.join(root,'data.bin'),Buffer.from([0,255,128,1]));
+  await runTask(root,{entry:'main.py',read:['data.bin'],scratch:['scratch/**']},[]);
+  assert.equal(existsSync(path.join(root,'scratch')),false);
+});
+
+test('git metadata cannot be read or written even through task configuration', async t => {
+  const root = fixture(t,'print("not reached")');
+  mkdirSync(path.join(root,'.git'));
+  writeFileSync(path.join(root,'.git/config'),'not for guest');
+  await assert.rejects(runTask(root,{entry:'main.py',read:['.git/config']},[]),/invalid checkout-relative path/);
+});
