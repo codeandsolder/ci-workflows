@@ -314,3 +314,37 @@ non-self-hosted jobs and unresolved selectors. API failures are reported as erro
 not empty inventories. Explicitly pass repository names to limit the audit.
 
 Contribution-only forks (Anubis, Hayro, OXC) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.
+
+## Upstream-tracking forks
+
+Use the pinned reusable workflow `.github/workflows/upstream-tracking.yml` with
+one daily UTC cron (manual dispatch is also age- and daily-rate-limited).
+Do not introduce independent sync, rebase, or upstream parity schedules.
+
+The observer stores an append-only Git state history on
+`automation/upstream-observations`; the state tree contains only observation
+metadata, not upstream code. The cursor selects the newest **actually observed**
+upstream snapshot that has aged at least 72 hours and is still reachable from
+the fetched upstream branch. A newly pushed backdated commit cannot bypass the
+quarantine. The initial observation ages for three days before it can be
+adopted; continuously moving upstreams continue to advance on mature
+snapshots. Force-pushed-away observations are discarded. The UTC-day attempt
+is recorded before fetching and is not reset on failure.
+
+Callers retain their explicit strategy (`merge`, `rebase`, `squash-rebase`, or
+`source-merge` for a separately reviewed source checkpoint) and reviewed
+validation script. Preparation creates an exact Git bundle; validation and
+publication use that same immutable candidate and distinct read/write jobs.
+Rust candidates also run the existing 72-hour external crates.io release gate
+and mandatory sccache setup. Workflow edits require explicit review; the
+Cargo patch stack can retain its reviewed workflow subtree and file a separate
+workflow-drift issue. Publication uses fast-forward or an explicit expected
+base lease; the PR mode waits for the declared normal CI checks, never merging
+when checks are missing or failing. PR mode accepts a narrowly scoped
+`upstream-pr-token` secret if the default workflow token cannot create PRs or
+trigger their CI.
+
+Tracking failures open/update a single issue including the upstream tip,
+eligible revision, fork base and run URL. Quarantine is a pending state, not an
+error. A successful retry closes the old failure issue. Do not force the cursor
+or edit first-observed timestamps to bypass the quarantine.

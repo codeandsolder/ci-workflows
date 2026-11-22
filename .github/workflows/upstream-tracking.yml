@@ -1,0 +1,404 @@
+name: Shared upstream tracking
+
+on:
+  workflow_call:
+    inputs:
+      upstream-repository:
+        required: true
+        type: string
+      upstream-branch:
+        required: true
+        type: string
+      target-branch:
+        required: true
+        type: string
+      strategy:
+        type: string
+        default: merge
+      workflow-policy:
+        type: string
+        default: reject
+      validation-script:
+        description: Fork-owned validation script (read from the current target branch).
+        type: string
+        default: ""
+      rust-toolchain:
+        type: string
+        default: ""
+      go-version-file:
+        type: string
+        default: ""
+      go:
+        type: boolean
+        default: false
+      required-pr-checks:
+        description: Newline-separated regular expressions for checks that must succeed before PR publication.
+        type: string
+        default: ""
+      publish-mode:
+        description: direct or pull-request
+        type: string
+        default: direct
+      nightly-format:
+        type: boolean
+        default: false
+      cargo-artifact:
+        type: boolean
+        default: false
+      timeout-minutes:
+        type: number
+        default: 90
+    secrets:
+      upstream-pr-token:
+        description: Optional token capable of triggering the normal PR checks.
+        required: false
+
+concurrency:
+  # One observation, candidate and report at a time per fork.
+  group: upstream-tracking
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    # Calling workflows may only run on the reviewed target branch, never a PR.
+    if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', inputs.target-branch) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      status: ${{ steps.observe.outputs.status }}
+      base: ${{ steps.observe.outputs.base }}
+      upstream: ${{ steps.observe.outputs.upstream }}
+      tip: ${{ steps.observe.outputs.tip }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.target-branch }}
+          fetch-depth: 0
+          fetch-tags: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-upstream
+          persist-credentials: false
+          sparse-checkout: .github/actions/upstream-tracking
+      - name: Observe upstream and select a 72-hour-old snapshot
+        id: observe
+        env:
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream-repository }}
+          UPSTREAM_BRANCH: ${{ inputs.upstream-branch }}
+          STRATEGY: ${{ inputs.strategy }}
+          MODE: ${{ inputs.publish-mode }}
+          VALIDATION: ${{ inputs.validation-script }}
+          WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
+        run: |
+          set -euo pipefail
+          case "$STRATEGY" in merge|rebase|squash-rebase|source-merge) ;; *) exit 2;; esac
+          case "$WORKFLOW_POLICY" in reject|preserve) ;; *) exit 2;; esac
+          case "$MODE" in
+            direct) test -n "$VALIDATION" ;;
+            pull-request) test "$STRATEGY" = merge ;;
+            *) exit 2 ;;
+          esac
+          node .ci-upstream/.github/actions/upstream-tracking/observe.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$STRATEGY"
+
+  prepare:
+    needs: observe
+    if: needs.observe.outputs.status == 'ready'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      head: ${{ steps.prepare.outputs.head }}
+      changed: ${{ steps.prepare.outputs.changed }}
+      drift: ${{ steps.prepare.outputs.workflow_drift }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.observe.outputs.base }}
+          fetch-depth: 0
+          fetch-tags: false
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-upstream
+          persist-credentials: false
+          sparse-checkout: .github/actions/upstream-tracking
+      - name: Construct exact candidate from mature snapshot
+        id: prepare
+        env:
+          UPSTREAM_REPOSITORY: ${{ inputs.upstream-repository }}
+          UPSTREAM_BRANCH: ${{ inputs.upstream-branch }}
+          UPSTREAM: ${{ needs.observe.outputs.upstream }}
+          BASE: ${{ needs.observe.outputs.base }}
+          STRATEGY: ${{ inputs.strategy }}
+          WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
+        run: |
+          node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$STRATEGY" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: steps.prepare.outputs.changed == 'true'
+        with:
+          name: upstream-candidate
+          path: ${{ runner.temp }}/candidate.bundle
+          retention-days: 2
+          if-no-files-found: error
+
+  validate:
+    needs: [observe, prepare]
+    if: ${{ always() && needs.observe.result == 'success' && ((needs.observe.outputs.status == 'ready' && needs.prepare.result == 'success') || needs.observe.outputs.status == 'current') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      eligible: ${{ steps.quarantine.outputs.eligible }}
+      checked: ${{ steps.check.outputs.checked }}
+    steps:
+      - name: Decide whether validation is necessary
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ needs.observe.outputs.status }}
+        run: |
+          set -euo pipefail
+          if [[ "$STATUS" == current ]]; then
+            issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number,title --jq '.[] | select(.title == "Upstream tracking failed" or .title == "Automated upstream parity failure") | .number')
+            if [[ -z "$issue" ]]; then
+              echo checked=false >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo checked=true >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: steps.check.outputs.checked == 'true'
+        with:
+          ref: ${{ needs.observe.outputs.base }}
+          fetch-depth: 0
+          fetch-tags: false
+          persist-credentials: false
+      - name: Read reviewed validator
+        if: steps.check.outputs.checked == 'true' && inputs.validation-script != ''
+        env:
+          VALIDATOR: ${{ inputs.validation-script }}
+        run: |
+          set -euo pipefail
+          git show "HEAD:$VALIDATOR" > "$RUNNER_TEMP/validate-upstream.sh"
+      - uses: actions/download-artifact@v4
+        if: needs.prepare.outputs.changed == 'true'
+        with:
+          name: upstream-candidate
+          path: ${{ runner.temp }}
+      - name: Check out exact candidate
+        if: needs.prepare.outputs.changed == 'true'
+        env:
+          EXPECTED: ${{ needs.prepare.outputs.head }}
+        run: |
+          git fetch "$RUNNER_TEMP/candidate.bundle" HEAD
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED"
+          git checkout --detach "$EXPECTED"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .ci-upstream
+          persist-credentials: false
+          sparse-checkout: .github/actions
+      - name: Enforce external crate release age as well
+        id: quarantine
+        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
+        uses: ./.ci-upstream/.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ needs.observe.outputs.base }}
+          hours: "72"
+          fail-on-blocked: "false"
+      - uses: dtolnay/rust-toolchain@nightly
+        if: steps.check.outputs.checked == 'true' && inputs.nightly-format && steps.quarantine.outputs.eligible == 'true'
+        with:
+          components: rustfmt
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+          components: rustfmt, clippy
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
+        if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+        with:
+          rust-toolchain: ${{ inputs.rust-toolchain }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        if: steps.check.outputs.checked == 'true' && inputs.go
+        with:
+          go-version: ${{ inputs.go-version-file == '' && 'stable' || '' }}
+          go-version-file: ${{ inputs.go-version-file }}
+          cache: ${{ inputs.go-version-file != '' }}
+      - name: Run reviewed fork validation
+        if: steps.check.outputs.checked == 'true' && inputs.validation-script != '' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
+        env:
+          UPSTREAM_SHA: ${{ needs.observe.outputs.upstream }}
+          FORK_BASE: ${{ needs.observe.outputs.base }}
+        run: |
+          bash "$RUNNER_TEMP/validate-upstream.sh" "$UPSTREAM_SHA" "$FORK_BASE"
+          git diff --exit-code HEAD --
+      - name: Upload validated Cargo binary
+        if: inputs.cargo-artifact && steps.check.outputs.checked == 'true' && steps.quarantine.outputs.eligible == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: cargo-ephemeral-linux-x86_64
+          path: |
+            target/release/cargo
+            cargo-ephemeral-build.txt
+          retention-days: 14
+          if-no-files-found: error
+      - name: Finalize mandatory sccache
+        if: always()
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
+
+  publish:
+    needs: [observe, prepare, validate]
+    if: ${{ needs.prepare.outputs.changed == 'true' && needs.validate.result == 'success' && (inputs.rust-toolchain == '' || needs.validate.outputs.eligible == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.target-branch }}
+          fetch-depth: 0
+          fetch-tags: false
+          token: ${{ secrets.upstream-pr-token || github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: upstream-candidate
+          path: ${{ runner.temp }}
+      - name: Publish exactly the validated revision
+        env:
+          TARGET: ${{ inputs.target-branch }}
+          BASE: ${{ needs.observe.outputs.base }}
+          HEAD: ${{ needs.prepare.outputs.head }}
+          STRATEGY: ${{ inputs.strategy }}
+          MODE: ${{ inputs.publish-mode }}
+          REQUIRED_CHECKS: ${{ inputs.required-pr-checks }}
+          GH_TOKEN: ${{ secrets.upstream-pr-token || github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BASE"
+          git fetch "$RUNNER_TEMP/candidate.bundle" HEAD
+          test "$(git rev-parse FETCH_HEAD)" = "$HEAD"
+          git checkout --detach "$HEAD"
+          if [[ "$MODE" == direct ]]; then
+            if [[ "$STRATEGY" == merge || "$STRATEGY" == source-merge ]]; then
+              git merge-base --is-ancestor "$BASE" HEAD
+              git push origin "HEAD:refs/heads/$TARGET"
+            else
+              git push --force-with-lease="refs/heads/$TARGET:$BASE" origin "HEAD:refs/heads/$TARGET"
+            fi
+          elif [[ "$MODE" == pull-request ]]; then
+            # No PR check may be bypassed when a token cannot create or
+            # trigger an ordinary pull request. Report the failure instead.
+            test -n "$REQUIRED_CHECKS"
+            branch=automation/upstream-sync
+            previous=$(git ls-remote --refs origin "refs/heads/$branch" | cut -f1)
+            git push --force-with-lease="refs/heads/$branch:$previous" origin "HEAD:refs/heads/$branch"
+            pr=$(gh pr list --head "$branch" --base "$TARGET" --state open --json number --jq '.[0].number // empty')
+            if [[ -z "$pr" ]]; then
+              gh pr create --base "$TARGET" --head "$branch" --title "Sync quarantined upstream snapshot" --body "Automated update; publication requires normal fork PR checks."
+              pr=$(gh pr list --head "$branch" --base "$TARGET" --state open --json number --jq '.[0].number')
+            fi
+            # Wait for the actual mandatory CI jobs, not just whichever
+            # ancillary status check happens to register first.
+            checks_present() {
+              local rollup pattern
+              rollup=$(gh pr view "$pr" --json statusCheckRollup --jq '.statusCheckRollup')
+              while IFS= read -r pattern; do
+                [[ -z "$pattern" ]] && continue
+                jq -e --arg pattern "$pattern" 'any(.[]; (.name // "") | test($pattern))' <<<"$rollup" >/dev/null || return 1
+              done <<<"$REQUIRED_CHECKS"
+            }
+            for _ in $(seq 1 60); do
+              if checks_present; then break; fi
+              sleep 5
+            done
+            checks_present
+            gh pr checks "$pr" --watch --fail-fast
+            rollup=$(gh pr view "$pr" --json statusCheckRollup --jq '.statusCheckRollup')
+            while IFS= read -r pattern; do
+              [[ -z "$pattern" ]] && continue
+              jq -e --arg pattern "$pattern" 'any(.[]; ((.name // "") | test($pattern)) and .conclusion == "SUCCESS")' <<<"$rollup" >/dev/null
+            done <<<"$REQUIRED_CHECKS"
+            test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$HEAD"
+            test "$(git ls-remote origin "refs/heads/$TARGET" | cut -f1)" = "$BASE"
+            gh pr merge "$pr" --match-head-commit "$HEAD" --merge --delete-branch
+          else
+            echo "Unknown publication mode: $MODE" >&2
+            exit 2
+          fi
+
+  report:
+    needs: [observe, prepare, validate, publish]
+    if: ${{ always() && !cancelled() && needs.observe.result != 'skipped' && needs.observe.outputs.status != 'already-run' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Maintain tracking and workflow-drift issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OBSERVE: ${{ needs.observe.result }}
+          PREPARE: ${{ needs.prepare.result }}
+          VALIDATE: ${{ needs.validate.result }}
+          PUBLISH: ${{ needs.publish.result }}
+          STATUS: ${{ needs.observe.outputs.status }}
+          ELIGIBLE: ${{ needs.validate.outputs.eligible }}
+          CHECKED: ${{ needs.validate.outputs.checked }}
+          DRIFT: ${{ needs.prepare.outputs.drift }}
+          BASE: ${{ needs.observe.outputs.base }}
+          UPSTREAM: ${{ needs.observe.outputs.upstream }}
+          TIP: ${{ needs.observe.outputs.tip }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          url="$GITHUB_SERVER_URL/$repo/actions/runs/$GITHUB_RUN_ID"
+          lookup() {
+            gh issue list --repo "$repo" --state open --limit 100 --json number,title --jq ".[] | select(.title == \"$1\") | .number"
+          }
+          maintain() {
+            local title=$1 body=$2 issue
+            issue=$(lookup "$title")
+            if [[ -n "$issue" ]]; then
+              gh issue edit "$issue" --repo "$repo" --body "$body"
+            else
+              gh issue create --repo "$repo" --title "$title" --body "$body"
+            fi
+          }
+          close() {
+            local issue
+            issue=$(lookup "$1")
+            if [[ -n "$issue" ]]; then gh issue close "$issue" --repo "$repo" --comment "Recovered: $url"; fi
+          }
+          failed=false
+          for result in "$OBSERVE" "$PREPARE" "$VALIDATE" "$PUBLISH"; do
+            if [[ "$result" == failure || "$result" == cancelled ]]; then failed=true; fi
+          done
+          if [[ "$DRIFT" == true ]]; then
+            maintain "Upstream workflow changes require manual reconciliation" "Incoming workflow changes need a reviewed PR. Fork base: $BASE; upstream: $UPSTREAM. Run: $url"
+          elif [[ "$STATUS" == ready && "$PREPARE" == success ]]; then
+            close "Upstream workflow changes require manual reconciliation"
+          fi
+          if [[ "$failed" == true ]]; then
+            maintain "Upstream tracking failed" "$(printf 'Upstream tracking failed.\n\nObservation: %s\nPreparation: %s\nValidation: %s\nPublication: %s\nFork base: %s\nEligible upstream: %s\nObserved tip: %s\n\nRun: %s\n' "$OBSERVE" "$PREPARE" "$VALIDATE" "$PUBLISH" "$BASE" "$UPSTREAM" "$TIP" "$url")"
+            exit 1
+          fi
+          if [[ "$CHECKED" == true && "$VALIDATE" == success && "$ELIGIBLE" != false ]]; then
+            close "Upstream tracking failed"
+            close "Automated upstream parity failure"
+          fi
