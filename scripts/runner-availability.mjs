@@ -8,6 +8,11 @@ import { pathToFileURL } from 'node:url';
 const exec = promisify(execFile);
 const active = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending']);
 const norm = values => new Set(values.map(value => value.toLowerCase()));
+// Personal repositories have ordinary GitHub-hosted and repo-registered
+// runners, not organization-specific larger-runner groups. Custom labels
+// need a matching registration even without an explicit self-hosted label.
+const standardHosted = labels => labels.length === 1 &&
+  /^(?:ubuntu-(?:latest|slim|[0-9]+[.][0-9]+)(?:-arm)?|windows-(?:latest|[0-9]+)(?:-arm)?|macos-(?:latest|[0-9]+)(?:-large|-xlarge|-intel)?|ubuntu-latest-m|macos-latest-xlarge)$/i.test(labels[0]);
 
 export function classifyRunnerAvailability(labels, runners) {
   if (!Array.isArray(labels) || !labels.length ||
@@ -77,7 +82,7 @@ export async function auditRepository(repo, get = api) {
     .filter(job => ['queued', 'waiting', 'pending', 'requested'].includes(job.status))
     .map(job => ({ run: run.id, branch: run.head_branch, job: job.id, name: job.name,
       createdAt: job.created_at, labels: job.labels, status: job.status })));
-  const runners = waiting.some(job => job.labels?.some(label => label.toLowerCase() === 'self-hosted'))
+  const runners = waiting.some(job => job.labels?.length && !standardHosted(job.labels))
     ? await pages(endpoint + 'runners', 'runners', get) : [];
   return {
     repo, workflowRuns: runs.size,
@@ -85,9 +90,9 @@ export async function auditRepository(repo, get = api) {
     waiting: waiting.map(job => ({
       ...job,
       availability: !job.labels?.length ? { status: 'unresolved' } :
-        job.labels.some(label => label.toLowerCase() === 'self-hosted')
-          ? classifyRunnerAvailability(job.labels, runners)
-          : { status: 'not-self-hosted' },
+        standardHosted(job.labels)
+          ? { status: 'not-self-hosted' }
+          : classifyRunnerAvailability(job.labels, runners),
     })),
   };
 }

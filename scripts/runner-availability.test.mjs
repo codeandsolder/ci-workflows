@@ -31,6 +31,7 @@ test('uses GitHub-resolved labels and inspects jobs in running workflow', async 
       {id:2, status:'queued', labels:['ubuntu-26.04'],name:'public'},
       {id:3, status:'queued', labels:[],name:'not resolved'},
       {id:4, status:'in_progress', labels:local,name:'running'},
+      {id:5, status:'queued', labels:['benchmark','X64'], name:'custom-only'},
     ]};
     if (path.includes('/runners?')) return {runners:[runner('acer','online',false,local)]};
     throw Error(path);
@@ -38,5 +39,5 @@ test('uses GitHub-resolved labels and inspects jobs in running workflow', async 
   const result = await auditRepository('codeandsolder/example', get);
   assert.equal(result.workflowRuns, 1);
   assert.deepEqual(result.waiting.map(job => job.availability.status),
-    ['unregistered','not-self-hosted','unresolved']);
+    ['unregistered','not-self-hosted','unresolved','unregistered']);
 });
