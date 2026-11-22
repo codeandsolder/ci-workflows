@@ -136,6 +136,16 @@ class QuarantineTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "still exists"):
             quarantine.compare_lockfiles(ref, "auto")
 
+    def test_untracked_symlink_to_unrelated_lock_is_rejected(self) -> None:
+        ref = self.prepare_standalone_package()
+        Path("package/Cargo.lock").unlink()
+        self.write("Cargo.toml", "[workspace]\nmembers=['package']\nresolver='3'\n")
+        self.write("other/Cargo.lock", make_lock(("serde", "1.0.0")))
+        self.git("add", "-A")
+        Path("Cargo.lock").symlink_to("other/Cargo.lock")
+        with self.assertRaisesRegex(ValueError, "still exists"):
+            quarantine.compare_lockfiles(ref, "auto")
+
     def test_entire_deleted_workspace_is_allowed(self) -> None:
         self.write("package/Cargo.toml", "[workspace]\n")
         self.write("package/Cargo.lock", make_lock(("serde", "1.0.0")))

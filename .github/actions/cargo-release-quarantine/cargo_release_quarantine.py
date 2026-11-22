@@ -153,7 +153,7 @@ def member_has_tracked_workspace_lock(
             stderr=subprocess.PIPE,
         )
         metadata = cast(WorkspaceMetadata, json.loads(output))
-        root_lock = (Path(metadata["workspace_root"]) / "Cargo.lock").resolve()
+        root_lock = Path(metadata["workspace_root"]).resolve() / "Cargo.lock"
         relative_lock = root_lock.relative_to(Path.cwd().resolve()).as_posix()
     except (OSError, subprocess.CalledProcessError, ValueError, KeyError):
         return False
