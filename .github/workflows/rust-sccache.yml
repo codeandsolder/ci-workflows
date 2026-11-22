@@ -17,6 +17,11 @@ on:
         required: false
         default: "routine"
         type: string
+      uv-version:
+        description: Exact uv version to provision for callers using independent Python reference tools; empty skips installation
+        required: false
+        default: ""
+        type: string
       rust-components:
         description: Space-separated rustup components to install
         required: false
@@ -216,6 +221,13 @@ jobs:
           target_dir="$RUNNER_TEMP/cargo-target"
           mkdir -p "$target_dir"
           echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
+
+      - name: Provision explicitly requested uv
+        if: ${{ inputs.uv-version != '' }}
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: ${{ inputs.uv-version }}
+          enable-cache: false
 
       - name: Run caller command
         shell: bash
