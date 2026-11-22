@@ -42,8 +42,16 @@ jobs:
           ref: ${{ job.workflow_sha }}
           path: .ci-workflows-quarantine
           persist-credentials: false
-          sparse-checkout: .github/actions/cargo-release-quarantine
-          sparse-checkout-cone-mode: true
+          sparse-checkout: |
+            .github/actions/cargo-release-quarantine/action.yml
+            .github/actions/cargo-release-quarantine/fetch_baseline.sh
+            policy-wasm/run.mjs
+            policy-wasm/workspace.mjs
+            policy-wasm/module.mjs
+            policy-wasm/module.json
+            policy-wasm/module.wasm.gz
+            policy-wasm/quarantine.mjs
+          sparse-checkout-cone-mode: false
 
       - name: Enforce crates.io release-age quarantine
         uses: ./.ci-workflows-quarantine/.github/actions/cargo-release-quarantine

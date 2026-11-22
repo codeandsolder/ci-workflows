@@ -11,7 +11,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-_SCRIPT = Path(__file__).with_name("cargo_release_quarantine.py")
+_SCRIPT = (
+    Path(__file__).resolve().parents[2]
+    / "scripts"
+    / "cargo-release-quarantine-oracle.py"
+)
 _SPEC = importlib.util.spec_from_file_location("cargo_quarantine", _SCRIPT)
 assert _SPEC is not None and _SPEC.loader is not None
 quarantine = importlib.util.module_from_spec(_SPEC)

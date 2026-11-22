@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - ".github/actions/cargo-release-quarantine/**"
+      - ".github/scripts/cargo-release-quarantine-oracle.py"
+      - "policy-wasm/**"
       - ".github/workflows/cargo-release-quarantine.yml"
       - ".github/workflows/cargo-release-quarantine-smoke.yml"
   push:
     branches: [main]
     paths:
       - ".github/actions/cargo-release-quarantine/**"
+      - ".github/scripts/cargo-release-quarantine-oracle.py"
+      - "policy-wasm/**"
       - ".github/workflows/cargo-release-quarantine.yml"
       - ".github/workflows/cargo-release-quarantine-smoke.yml"
 
@@ -30,8 +34,13 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          enable-cache: false
       - name: Check multi-workspace quarantine invariants
-        run: python3 -m unittest discover -v -s .github/actions/cargo-release-quarantine -p 'test_*.py'
+        run: uv run --project .github --locked python -B -m unittest discover -v -s .github/actions/cargo-release-quarantine -p 'test_*.py'
+      - name: Check portable quarantine behavior
+        run: node policy-wasm/quarantine.test.mjs policy-wasm/module.json
 
       - name: Assert PR base is available without Git credentials
         if: github.event_name == 'pull_request'
@@ -39,6 +48,19 @@ jobs:
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha }}
         run: git cat-file -e "${BASE_REF}^{commit}"
+
+      - name: Validate the real sparse provider checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          gate="$RUNNER_TEMP/sparse-quarantine"
+          git clone --shared --no-checkout "$GITHUB_WORKSPACE" "$gate"
+          awk '$0 == "          sparse-checkout: |" { reading=1; next } reading && /^            / { sub(/^            /, ""); print; next } reading { exit }' .github/workflows/cargo-release-quarantine.yml |
+            git -C "$gate" sparse-checkout set --no-cone --stdin
+          git -C "$gate" checkout --detach "$(git rev-parse HEAD)"
+          test ! -e "$gate/policy-wasm/src"
+          test ! -e "$gate/.github/scripts/cargo-release-quarantine-oracle.py"
+          node "$gate/policy-wasm/quarantine.mjs" "$gate/policy-wasm/module.json" HEAD 72 .quarantine-smoke/not-present.lock
 
       - name: Create synthetic introduced crates.io entry
         shell: bash
