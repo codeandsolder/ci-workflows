@@ -35,17 +35,41 @@ export function validateCohort(config) {
     if (!/^codeandsolder\/[A-Za-z0-9_.-]+$/.test(repo.name) ||
         !Array.isArray(repo.requiredChecks) || !repo.requiredChecks.length ||
         repo.requiredChecks.some(pair => !Array.isArray(pair) || pair.length !== 2 ||
-          pair.some(name => typeof name !== 'string' || !name))) {
+          pair.some(name => typeof name !== 'string' || !name) || !/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(pair[0]))) {
       throw Error('invalid cohort repository or required check: ' + repo.name);
     }
   }
   return repos;
 }
 
+// GitHub's rollup workflowName is a display label and is not always stable.
+// Credit only Actions PR jobs of the exact candidate branch/head, with their
+// originating workflow file resolved from the official run records.
+export function identifyWorkflowChecks(checks, runs, repo, pr) {
+  const repository = repo.toLowerCase();
+  const matchingRuns = new Map(runs.filter(run =>
+    run.event === 'pull_request' &&
+    run.head_sha === pr.headRefOid && run.head_branch === pr.headRefName &&
+    run.repository?.full_name?.toLowerCase() === repository &&
+    run.head_repository?.full_name?.toLowerCase() === repository &&
+    (!run.pull_requests?.length || run.pull_requests.some(item => item.number === pr.number))
+  ).map(run => [String(run.id), run.path]));
+  return checks.map(check => {
+    let workflowPath;
+    try {
+      const url = new URL(check.detailsUrl);
+      const match = url.pathname.match(/^\/([^/]+\/[^/]+)\/actions\/runs\/(\d+)\/job\/\d+\/?$/);
+      if (url.protocol === 'https:' && url.hostname === 'github.com' &&
+          match?.[1].toLowerCase() === repository) workflowPath = matchingRuns.get(match[2]);
+    } catch { /* Non-Actions checks may still block; they never satisfy a required CI job. */ }
+    return {...check, workflowPath};
+  });
+}
+
 export function checkBlockers(checks, required) {
   const blockers = [];
   for (const [workflow, name] of required) {
-    const matches = checks.filter(check => check.workflowName === workflow && check.name === name);
+    const matches = checks.filter(check => check.workflowPath === workflow && check.name === name);
     if (!matches.length || matches.some(check => check.status !== 'COMPLETED' || check.conclusion !== 'SUCCESS')) {
       blockers.push('required check not successful: ' + workflow + ' / ' + name);
     }
@@ -139,7 +163,13 @@ function verifyState(entry, channel) {
   verifyPR(current, pr, channel);
   if (pr.state === 'MERGED') return { name: entry.name, blockers: [], merged: true, current, pr };
   const comparison = api(endpoint(entry.name, 'compare/' + current.head + '...' + pr.headRefOid));
-  const blockers = checkBlockers(pr.statusCheckRollup, entry.requiredChecks);
+  const runs = api(endpoint(entry.name, 'actions/runs?event=pull_request&per_page=100&head_sha=' +
+    encodeURIComponent(pr.headRefOid)));
+  if (!Array.isArray(runs.workflow_runs) || runs.total_count > runs.workflow_runs.length) {
+    throw Error('incomplete Actions run listing: ' + entry.name);
+  }
+  const checks = identifyWorkflowChecks(pr.statusCheckRollup, runs.workflow_runs, entry.name, pr);
+  const blockers = checkBlockers(checks, entry.requiredChecks);
   if (comparison.behind_by !== 0) blockers.push('candidate branch is behind the current base; refresh and retest');
   if (pr.mergeStateStatus === 'DIRTY') blockers.push('merge conflict');
   return { name: entry.name, blockers, current, pr };
