@@ -141,8 +141,9 @@ fn triggers<'node, 'source>(
         return BTreeMap::new();
     };
     if let Some(event) = scalar(value) {
-        BTreeMap::from([(event, None)])
-    } else if let Some(events) = value.as_vec() {
+        return BTreeMap::from([(event, None)]);
+    }
+    if let Some(events) = value.as_vec() {
         events
             .iter()
             .filter_map(scalar)
