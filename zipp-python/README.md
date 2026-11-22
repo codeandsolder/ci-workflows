@@ -21,6 +21,8 @@ to the checkout. A guest never sees incidental repository files, host
 processes or network. Input symlinks are rejected; guest write reports are
 validated before publication, and failed runs publish no changes. A task may
 not access Git metadata. Scratch changes are discarded. Inputs are limited
+A task can declare a virtual `stdin` filename; host stdin is exposed only as
+that file, without materializing it in the checkout.
 by the embedded engine's size and execution budgets.
 
 The host adapter deliberately does not implement missing Python standard

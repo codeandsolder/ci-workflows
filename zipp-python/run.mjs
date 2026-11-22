@@ -137,11 +137,18 @@ function guestFile(name, bytes) {
 
 export async function runTask(root, spec, args, emit = row => {
   (row.stream === 'stderr' ? process.stderr : process.stdout).write(row.text + '\n');
-}) {
+}, stdin) {
   root = realpathSync(root);
   const allowed = (spec.write ?? []).map(pattern);
   const scratch = (spec.scratch ?? []).map(pattern);
   const files = snapshot(root, spec);
+  if (spec.stdin !== undefined) {
+    const name = safeName(spec.stdin);
+    if (!Buffer.isBuffer(stdin) || files.has(name)) throw new Error('invalid or colliding stdin VFS input: ' + name);
+    files.set(name, stdin);
+  } else if (stdin !== undefined) {
+    throw new Error('task has no declared stdin VFS input');
+  }
   const inputs = Object.fromEntries([...files].map(([name, bytes]) => [
     name, guestFile(name, bytes),
   ]));
@@ -169,7 +176,19 @@ async function main() {
   if (!task || !manifest || !root) throw new Error('usage: node run.mjs ROOT MANIFEST TASK [ARGS...]');
   const config = JSON.parse(readFileSync(manifest, 'utf8'));
   if (!Object.hasOwn(config, task)) throw new Error('unknown Zipp task: ' + task);
-  await runTask(root, config[task], args);
+  const spec = config[task];
+  let stdin;
+  if (spec.stdin !== undefined) {
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of process.stdin) {
+      size += chunk.length;
+      if (size > 16 * 1024 * 1024) throw new Error('stdin exceeds Zipp VFS input limit');
+      chunks.push(chunk);
+    }
+    stdin = Buffer.concat(chunks);
+  }
+  await runTask(root, spec, args, undefined, stdin);
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {

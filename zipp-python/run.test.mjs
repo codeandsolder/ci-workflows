@@ -70,3 +70,11 @@ test('git metadata cannot be read or written even through task configuration', a
   writeFileSync(path.join(root,'.git/config'),'not for guest');
   await assert.rejects(runTask(root,{entry:'main.py',read:['.git/config']},[]),/invalid checkout-relative path/);
 });
+
+test('a declared stdin stream becomes one explicit virtual input file', async t => {
+  const root = fixture(t,'from pathlib import Path\nassert Path("stdin.json").read_text() == \'{"message":"hello"}\'\n');
+  await runTask(root,{entry:'main.py',stdin:'stdin.json'},[],undefined,Buffer.from('{"message":"hello"}'));
+  assert.equal(existsSync(path.join(root,'stdin.json')),false);
+  await assert.rejects(runTask(root,{entry:'main.py',stdin:'stdin.json'},[]),/invalid or colliding/);
+  await assert.rejects(runTask(root,{entry:'main.py'},[],undefined,Buffer.from('x')),/no declared stdin/);
+});
