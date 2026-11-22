@@ -143,19 +143,17 @@ fn triggers<'node, 'source>(
     if let Some(event) = scalar(value) {
         return BTreeMap::from([(event, None)]);
     }
-    if let Some(events) = value.as_vec() {
-        events
+    match value {
+        Node::Sequence(events) => events
             .iter()
             .filter_map(scalar)
             .map(|name| (name, None))
-            .collect()
-    } else if let Some(events) = value.as_mapping() {
-        events
+            .collect(),
+        Node::Mapping(events) => events
             .iter()
             .filter_map(|(event, settings)| scalar(event).map(|name| (name, Some(settings))))
-            .collect()
-    } else {
-        BTreeMap::new()
+            .collect(),
+        _ => BTreeMap::new(),
     }
 }
 
