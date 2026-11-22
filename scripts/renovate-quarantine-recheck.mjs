@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Rerun a completed Renovate CI job only when its *sole* failure is an expired
 // Cargo publication-age hold. GitHub Actions performs the real quarantine again.
+import { isContributionOnly, isMaintainedRepo } from './fleet-scope.mjs';
 import { execFileSync } from 'node:child_process';
 
 export const BOT_LOGINS = new Set(['renovate[bot]', 'renovate']);
@@ -118,11 +119,10 @@ function optionsOf(args) {
 async function main() {
   const opts = optionsOf(process.argv.slice(2));
   const now = Date.now();
+  if (opts.repo && isContributionOnly(opts.repo)) throw Error('Contribution-only fork: ' + opts.repo);
   const repos = opts.repo
     ? [{ full_name: opts.repo, archived: false }]
-    : pages('installation/repositories').filter(r => !r.archived && !r.disabled &&
-      r.full_name.startsWith('codeandsolder/') &&
-      !['codeandsolder/oxc', 'codeandsolder/hayro'].includes(r.full_name));
+    : pages('installation/repositories').filter(isMaintainedRepo);
   let actions = 0, candidates = 0, failures = 0;
   for (const repo of repos) {
     const full = repo.full_name;

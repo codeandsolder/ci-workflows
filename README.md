@@ -312,3 +312,5 @@ jobs, using GitHub's resolved labels (not a homemade matrix evaluator), and
 distinguishes missing registrations, offline pools, busy pools, available capacity,
 non-self-hosted jobs and unresolved selectors. API failures are reported as errors,
 not empty inventories. Explicitly pass repository names to limit the audit.
+
+Contribution-only forks (Anubis, Hayro, OXC) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.

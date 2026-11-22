@@ -2,11 +2,13 @@ name: Runner availability tests
 on:
   pull_request:
     paths:
+      - "scripts/fleet-scope.mjs"
       - scripts/runner-availability*.mjs
       - .github/workflows/runner-availability-test.yml
   push:
     branches: [main]
     paths:
+      - "scripts/fleet-scope.mjs"
       - scripts/runner-availability*.mjs
       - .github/workflows/runner-availability-test.yml
 concurrency:
