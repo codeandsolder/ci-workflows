@@ -1,10 +1,10 @@
-use crate::yaml::{Node, field, fields, get, parse, scalar};
+use crate::yaml::{Node, field, fields, get, parse, scalar, workflow_paths};
 use caseless::default_case_fold_str;
 use regex::Regex;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs, io,
-    path::{Path, PathBuf},
+    fs,
+    path::Path,
 };
 
 const PR_EVENTS: [&str; 2] = ["pull_request", "pull_request_target"];
@@ -356,27 +356,6 @@ fn validate_portability(
             problems.push(format!("{path}: job {name}: host-local build path; use runner temporary storage or a verified artifact"));
         }
     }
-}
-
-fn workflow_paths(root: &Path) -> io::Result<Vec<PathBuf>> {
-    let directory = root.join(".github/workflows");
-    if !directory.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut paths = Vec::new();
-    for entry in fs::read_dir(directory)? {
-        let path = entry?.path();
-        if path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|ext| matches!(ext, "yml" | "yaml"))
-            && path.is_file()
-        {
-            paths.push(path);
-        }
-    }
-    paths.sort_unstable();
-    Ok(paths)
 }
 
 pub fn inspect(root: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {

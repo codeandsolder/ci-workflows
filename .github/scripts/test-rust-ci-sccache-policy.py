@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -18,6 +20,33 @@ spec.loader.exec_module(mod)
 SHA = "1" * 40
 STRICT_SHA = "2" * 40
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--wasm", type=Path)
+args = parser.parse_args()
+WASM = args.wasm.resolve() if args.wasm is not None else None
+
+
+def compare(root: Path, expected: list[str], strict_ref: str | None = None) -> None:
+    if WASM is None:
+        return
+    command = [
+        "node",
+        str(ROOT / "policy-wasm/run.mjs"),
+        str(WASM),
+        "sccache",
+        str(root),
+    ]
+    if strict_ref is not None:
+        command.append(strict_ref)
+    result = subprocess.run(command, encoding="utf-8", capture_output=True, check=False)
+    actual = [line[2:] for line in result.stdout.splitlines() if line.startswith("- ")]
+    assert result.returncode == int(bool(expected)), (
+        result.stdout,
+        result.stderr,
+        expected,
+    )
+    assert sorted(actual) == sorted(expected), (actual, expected)
+
 
 def inspect(workflow: str, strict_ref: str | None = None) -> list[str]:
     with TemporaryDirectory() as tmp:
@@ -26,6 +55,7 @@ def inspect(workflow: str, strict_ref: str | None = None) -> list[str]:
         path.parent.mkdir(parents=True)
         path.write_text(workflow)
         result = mod.inspect_root(root, strict_ref)
+        compare(root, result, strict_ref)
         assert isinstance(result, list) and all(
             isinstance(item, str) for item in result
         )
@@ -255,6 +285,7 @@ def inspect_tree(workflow: str, files: dict[str, str]) -> list[str]:
             script.parent.mkdir(parents=True, exist_ok=True)
             script.write_text(body)
         result = mod.inspect_root(root)
+        compare(root, result)
         assert isinstance(result, list) and all(
             isinstance(item, str) for item in result
         )
@@ -505,3 +536,41 @@ jobs:
 )
 
 print("rust-skills2: nested shell CI sccache policy regressions passed")
+
+# YAML merges must behave like the previous SafeLoader policy, including
+# explicit overrides of merged fields and sequence precedence.
+assert_blocked(
+    """
+defaults: &defaults
+  run: cargo build --locked
+jobs:
+  merged:
+    steps:
+      - <<: *defaults
+""",
+    "missing canonical setup-sccache",
+)
+assert_clean(
+    """
+defaults: &defaults
+  run: cargo build --locked
+jobs:
+  merged:
+    steps:
+      - <<: *defaults
+        run: cargo metadata --no-deps
+"""
+)
+assert_blocked(
+    """
+first: &first
+  run: cargo fmt
+second: &second
+  run: cargo test
+jobs:
+  merged:
+    steps:
+      - <<: [*first, *second]
+""",
+    "missing canonical setup-sccache",
+)
