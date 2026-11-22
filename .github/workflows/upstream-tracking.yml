@@ -23,6 +23,7 @@ on:
         type: string
         required: true
       rust-toolchain:
+        description: Exact Rust toolchain, repository for the quarantined native pin, or empty for non-Rust validation.
         type: string
         default: ""
       go-version-file:
@@ -206,15 +207,21 @@ jobs:
         if: steps.check.outputs.checked == 'true' && inputs.nightly-format && steps.quarantine.outputs.eligible == 'true'
         with:
           components: rustfmt
+      - name: Resolve quarantined repository nightly
+        id: repository-compiler
+        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain == 'repository' && steps.quarantine.outputs.eligible == 'true'
+        uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
+        with:
+          validation-tier: routine
       - uses: dtolnay/rust-toolchain@stable
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
-          toolchain: ${{ inputs.rust-toolchain }}
+          toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
           components: rustfmt, clippy
       - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
-          rust-toolchain: ${{ inputs.rust-toolchain }}
+          rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         if: steps.check.outputs.checked == 'true' && inputs.go
         with:
