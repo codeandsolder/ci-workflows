@@ -1,0 +1,85 @@
+use saphyr::{Yaml, YamlLoader};
+use saphyr_parser::Parser;
+
+pub type Node<'a> = Yaml<'a>;
+
+pub fn parse(source: &str) -> Result<Node<'_>, String> {
+    // Use the YAML representation rather than coercing scalars to integers or
+    // booleans. Actions' on key, expressions and runner labels are strings.
+    let mut parser = Parser::new_from_str(source);
+    let mut loader = YamlLoader::<Node<'_>>::default();
+    loader.early_parse(false);
+    parser
+        .load(&mut loader, true)
+        .map_err(|error| error.to_string())?;
+    if let Some(error) = loader.error() {
+        return Err(error.to_string());
+    }
+    let mut documents = loader.into_documents().into_iter();
+    let document = documents
+        .next()
+        .ok_or_else(|| "expected YAML mapping".to_owned())?;
+    if documents.next().is_some() {
+        return Err("multiple YAML documents".into());
+    }
+    Ok(document)
+}
+
+pub fn scalar<'node>(node: &'node Node<'_>) -> Option<&'node str> {
+    if let Yaml::Representation(value, _, _) = node {
+        Some(value.as_ref())
+    } else {
+        node.as_str()
+    }
+}
+
+pub fn get<'node, 'source>(node: &'node Node<'source>, key: &str) -> Option<&'node Node<'source>> {
+    node.as_mapping()?
+        .iter()
+        .rev()
+        .find_map(|(name, value)| (scalar(name) == Some(key)).then_some(value))
+}
+
+pub fn field<'node>(node: &'node Node<'_>, key: &str) -> Option<&'node str> {
+    get(node, key).and_then(scalar)
+}
+
+pub fn strings<'node>(node: &'node Node<'_>, out: &mut Vec<&'node str>) {
+    if let Some(value) = scalar(node) {
+        out.push(value);
+    } else if let Some(sequence) = node.as_vec() {
+        for item in sequence {
+            strings(item, out);
+        }
+    } else if let Some(mapping) = node.as_mapping() {
+        for value in mapping.values() {
+            strings(value, out);
+        }
+    }
+}
+
+pub fn fields<'node>(node: &'node Node<'_>, keys: &[&str], out: &mut Vec<&'node str>) {
+    for key in keys {
+        if let Some(value) = get(node, key) {
+            strings(value, out);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actions_scalars_and_anchors() -> Result<(), String> {
+        let source = "on: [pull_request]\nrunner: &runner [self-hosted, Linux]\njob:\n  runs-on: *runner\n  cancel: true\n";
+        let doc = parse(source)?;
+        assert!(get(&doc, "on").is_some());
+        let job = get(&doc, "job").ok_or("missing job")?;
+        assert_eq!(field(job, "cancel"), Some("true"));
+        let mut values = Vec::new();
+        fields(job, &["runs-on"], &mut values);
+        assert_eq!(values, ["self-hosted", "Linux"]);
+        Ok(())
+    }
+}

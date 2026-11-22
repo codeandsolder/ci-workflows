@@ -5,6 +5,8 @@ on:
     paths:
       - ".github/actions/workflow-concurrency-policy/**"
       - ".github/scripts/test-workflow-concurrency.py"
+      - ".github/scripts/workflow-concurrency-oracle.py"
+      - "policy-wasm/**"
       - ".github/pyproject.toml"
       - ".github/uv.lock"
       - ".github/workflows/**"
@@ -14,6 +16,8 @@ on:
     paths:
       - ".github/actions/workflow-concurrency-policy/**"
       - ".github/scripts/test-workflow-concurrency.py"
+      - ".github/scripts/workflow-concurrency-oracle.py"
+      - "policy-wasm/**"
       - ".github/pyproject.toml"
       - ".github/uv.lock"
       - ".github/workflows/**"
@@ -38,6 +42,6 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: Verify policy fixtures
-        run: uv run --project .github --locked python .github/scripts/test-workflow-concurrency.py
+        run: uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
       - name: Verify all shared CI workflows
         uses: ./.github/actions/workflow-concurrency-policy

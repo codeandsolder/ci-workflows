@@ -1,0 +1,74 @@
+name: Portable shared CI policy
+
+on:
+  pull_request:
+    paths:
+      - "policy-wasm/**"
+      - ".github/scripts/test-workflow-concurrency.py"
+      - ".github/scripts/workflow-concurrency-oracle.py"
+      - ".github/workflows/portable-policy.yml"
+      - rust-toolchain.toml
+  push:
+    branches: [main]
+    paths:
+      - "policy-wasm/**"
+      - ".github/scripts/test-workflow-concurrency.py"
+      - ".github/scripts/workflow-concurrency-oracle.py"
+      - ".github/workflows/portable-policy.yml"
+      - rust-toolchain.toml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-release-age:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/cargo-release-quarantine.yml
+  validate:
+    name: Validate portable shared CI module
+    runs-on: ubuntu-26.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          enable-cache: false
+      - uses: ./.github/actions/resolve-rust-toolchain
+        id: compiler
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: ${{ steps.compiler.outputs.channel }}
+          targets: wasm32-wasip1
+          components: clippy,rustfmt
+      - name: Setup mandatory sccache
+        uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@f1499fe94abf45faacae7992670e5163109225f0 # main
+        with:
+          rust-toolchain: ${{ steps.compiler.outputs.channel }}
+          rustflags: ""
+      - name: Build and test portable module
+        shell: bash
+        run: |
+          cargo test --manifest-path policy-wasm/Cargo.toml --locked --target-dir "$RUNNER_TEMP/ci-policy"
+          cargo build --manifest-path policy-wasm/Cargo.toml --locked --release --target wasm32-wasip1 --target-dir "$RUNNER_TEMP/ci-policy"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ci-policy-wasm
+          path: ${{ runner.temp }}/ci-policy/wasm32-wasip1/release/ci-policy.wasm
+          if-no-files-found: error
+      - name: Compare portable workflow policy with existing fixtures
+        shell: bash
+        run: |
+          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
+          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
+          node policy-wasm/run.mjs policy-wasm/module.json concurrency .
+      - name: Finalize mandatory sccache
+        if: always()
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@f1499fe94abf45faacae7992670e5163109225f0 # main

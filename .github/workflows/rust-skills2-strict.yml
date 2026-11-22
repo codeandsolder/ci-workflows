@@ -25,7 +25,13 @@ jobs:
         id: compiler
   strict-rust-smoke-cache:
     needs: pin
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@99ef0355febb9c05e35732bd4045c47ae7432b7b # main
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@850404feb20042e5225cfbdd5ee397b5fc441392 # main
     with:
       working-directory: smoke-cache
+      rust-toolchain: ${{ needs.pin.outputs.channel }}
+  strict-rust-portable-policy:
+    needs: pin
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@850404feb20042e5225cfbdd5ee397b5fc441392 # main
+    with:
+      working-directory: policy-wasm
       rust-toolchain: ${{ needs.pin.outputs.channel }}
