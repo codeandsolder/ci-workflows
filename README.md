@@ -348,3 +348,48 @@ Tracking failures open/update a single issue including the upstream tip,
 eligible revision, fork base and run URL. Quarantine is a pending state, not an
 error. A successful retry closes the old failure issue. Do not force the cursor
 or edit first-observed timestamps to bypass the quarantine.
+
+## Fleet compiler promotion
+
+Routine Rust work uses one dated nightly, not moving nightly or independently
+selected stable versions. The canonical fleet selection is this repository's
+root rust-toolchain.toml; enrolled repositories carry that same date in their
+native root toolchain file so local Cargo, normal tests, Clippy and the compiler
+cache agree. Routine shared CI reads the caller's pin, or the provider pin when
+the caller has not yet adopted a native manifest. A caller's explicit routine
+compiler input must agree with that selection. Stable is reserved for an
+explicit release compatibility lane with a downstream requirement.
+
+The resolver checks the official dated nightly manifest's publication timestamp
+against an elapsed 72-hour quarantine. Normal Rustup installation must succeed,
+including Clippy, rustfmt and any caller-required targets/components. Upstream
+issue labels or counts are not promotion criteria. Code with an applicable
+compiler regression should acquire a regression test rather than an issue filter.
+
+The promotion controller (scripts/nightly-cohort.mjs) is run with the authorized
+fleet GitHub App's gh authentication. Enrollment in nightly-cohort.json requires
+normal PR tests and strict lint checks to use the native repository pin, and
+explicitly lists the real runtime/build/lint checks that must succeed. The
+controller never treats absent, skipped, neutral, or failed required checks as
+success. Every cohort member's candidate must be green before publication
+begins; ordinary merge protections still apply. The central provider merges last.
+Cross-repository merges are sequential, not atomic; an interrupted promotion
+resumes against the same candidate. A failed or missing candidate holds the old
+central selection.
+
+Examples (all mutating commands require --apply):
+
+    node scripts/nightly-cohort.mjs select
+    node scripts/nightly-cohort.mjs prepare nightly-YYYY-MM-DD
+    node scripts/nightly-cohort.mjs prepare nightly-YYYY-MM-DD --apply
+    node scripts/nightly-cohort.mjs status nightly-YYYY-MM-DD
+    node scripts/nightly-cohort.mjs promote nightly-YYYY-MM-DD --apply
+
+Selection and promotion are limited to once per week to avoid needless cache
+invalidation. Prepare creates or refreshes dedicated draft pin-only PRs. Promote
+requires real green PR checks on the current base, rechecks candidate identity
+before each merge, and refuses to overwrite unrelated work. If the toolchain
+fails compilation or tests, leave the candidate unpublished and investigate the
+failure, then test a suitable candidate. Renovate must not independently change
+nightly pins. Compatibility jobs whose purpose is validating other toolchains
+remain separate release-tier jobs.

@@ -108,7 +108,7 @@
       "automerge": false
     },
     {
-      "description": "Group reusable-workflow Rust compiler inputs with the native rust-toolchain.toml pin; compiler upgrades remain review-only",
+      "description": "Dated nightly pins are promoted as one tested cohort by nightly-cohort.mjs, never by independent Renovate PRs.",
       "matchDatasources": [
         "rust-version"
       ],
@@ -122,7 +122,8 @@
         "rust-toolchain",
         "custom.regex"
       ],
-      "matchCurrentVersion": "/^nightly-/"
+      "matchCurrentVersion": "/^nightly-/",
+      "enabled": false
     },
     {
       "description": "Clear inherited generic age delays; the following rule enforces the external registry crate quarantine.",

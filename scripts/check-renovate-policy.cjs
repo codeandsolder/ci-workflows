@@ -124,6 +124,7 @@ assert.deepEqual(nightlyGroup.matchDatasources,['rust-version']);
 assert.deepEqual(nightlyGroup.matchManagers,['rust-toolchain','custom.regex']);
 assert.equal(nightlyGroup.matchCurrentVersion,'/^nightly-/');
 assert.equal(nightlyGroup.automerge,false);
+assert.equal(nightlyGroup.enabled,false,'nightly changes belong to the coordinated promotion controller');
 assert(fleet.packageRules.indexOf(nightlyGroup)>fleet.packageRules.indexOf(toolchain));
 assert.equal(fleet.lockFileMaintenance.automerge,true);
 console.log('Shared fleet Renovate configuration and trust-root precedence invariants: PASS');
