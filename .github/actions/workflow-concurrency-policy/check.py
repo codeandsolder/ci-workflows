@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -168,7 +169,7 @@ HOST_INPUT = re.compile(r"(?<![A-Za-z0-9_.-])/(?:home/jan|srv/ci/toolchains|srv/
 MATRIX_REF = re.compile(r"\bmatrix\.([A-Za-z_][A-Za-z0-9_-]*)")
 
 
-def scalar_strings(value: object):
+def scalar_strings(value: object) -> Iterator[str]:
     if isinstance(value, str):
         yield value
     elif isinstance(value, list):
