@@ -107,6 +107,23 @@
       ]
     },
     {
+      "name": "codeandsolder/step-p21-fast",
+      "requiredChecks": [
+        [
+          "Rust CI",
+          "Test, lint, docs, EXPRESS regression / rust"
+        ],
+        [
+          "Rust CI",
+          "Strict Rust / Strict Rust + Python policy"
+        ],
+        [
+          "Documentation links",
+          "markdown-link-check"
+        ]
+      ]
+    },
+    {
       "name": "codeandsolder/ci-workflows",
       "requiredChecks": [
         [
