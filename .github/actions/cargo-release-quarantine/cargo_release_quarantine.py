@@ -122,6 +122,49 @@ def selected_lockfiles(ref: str, selector: str) -> tuple[set[str], set[str]]:
     return before, after
 
 
+class WorkspacePackage(TypedDict):
+    id: str
+    manifest_path: str
+
+
+class WorkspaceMetadata(TypedDict):
+    workspace_root: str
+    workspace_members: list[str]
+    packages: list[WorkspacePackage]
+
+
+def member_has_tracked_workspace_lock(
+    manifest: Path, tracked_lockfiles: set[str]
+) -> bool:
+    """Recognize a former standalone package absorbed into a locked workspace."""
+    try:
+        output = subprocess.check_output(
+            [
+                "cargo",
+                "metadata",
+                "--manifest-path",
+                str(manifest),
+                "--format-version",
+                "1",
+                "--no-deps",
+                "--offline",
+                "--locked",
+            ],
+            stderr=subprocess.PIPE,
+        )
+        metadata = cast(WorkspaceMetadata, json.loads(output))
+        root_lock = (Path(metadata["workspace_root"]) / "Cargo.lock").resolve()
+        relative_lock = root_lock.relative_to(Path.cwd().resolve()).as_posix()
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError):
+        return False
+
+    return relative_lock in tracked_lockfiles and any(
+        package["id"] in metadata["workspace_members"]
+        and Path(package["manifest_path"]).resolve() == manifest.resolve()
+        for package in metadata["packages"]
+    )
+
+
 def compare_lockfiles(ref: str, selector: str) -> list[LockPackage]:
     """Return new crate versions across the union of all tracked lockfiles."""
     before_files, after_files = selected_lockfiles(ref, selector)
@@ -133,11 +176,13 @@ def compare_lockfiles(ref: str, selector: str) -> list[LockPackage]:
 
     for removed in sorted(before_files - after_files):
         manifest = Path(removed).with_name("Cargo.toml")
-        if manifest.is_file():
+        if manifest.is_file() and not member_has_tracked_workspace_lock(
+            manifest, after_files
+        ):
             raise ValueError(
                 f"tracked lockfile {removed} was removed but workspace manifest "
                 f"{manifest} still exists; restore the lockfile or remove the "
-                "workspace explicitly"
+                "workspace explicitly, or integrate it into a workspace with a tracked lockfile"
             )
 
     before = {
