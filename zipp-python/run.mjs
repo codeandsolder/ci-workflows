@@ -117,6 +117,11 @@ function publish(root, changes) {
       rmSync(destination, {force: true});
       continue;
     }
+    try {
+      if (readFileSync(destination).equals(bytes)) continue;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
     mkdirSync(path.dirname(destination), {recursive: true});
     const temporary = destination + '.zipp-' + randomUUID();
     writeFileSync(temporary, bytes, {flag: 'wx'});
