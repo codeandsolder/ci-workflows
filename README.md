@@ -272,3 +272,20 @@ renamed clones, accepted changes, moves, test-only advisory findings, production
 copies inside tests, larger test clones, malformed configuration, and reviewed
 fingerprint accepts. The policy module has additional lexer and classification
 unit tests.
+
+### Portable CI runners and inputs
+
+Ordinary jobs must not select physical host identity labels such as `acer`
+or `asus`. Use `[self-hosted, Linux, X64, local-ci]` for private Linux
+builds, or a real prerequisite capability when a job genuinely needs a
+specific platform, licensed application or benchmark hardware. Confirm
+that matching runners exist before enabling a new private gate or an
+automatic specialized job. Physical labels remain useful in inventory.
+
+Do not refer to developer home directories, scratch paths or host-only
+prepared toolchains from workflows. Use the runner's temporary directory,
+digest-pinned containers, checked-in versioned inputs, or authenticated
+artifact downloads with content verification. Clean job-owned temporary
+files and containers after upload. The existing managed sccache paths
+are the shared runner contract, not a project-specific cache provisioning
+mechanism.

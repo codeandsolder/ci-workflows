@@ -366,3 +366,72 @@ check(
 )
 
 print("Shared CI: generalized upstream workflow cases PASS")
+
+# Physical machine identity is rejected even if hidden in a matrix or a
+# reusable workflow argument. Valid capabilities are not physical identity.
+for selector in (
+    "[self-hosted, Linux, X64, local-ci, acer]",
+    "asus",
+    '${{ fromJSON(\'["self-hosted","Asus"]\') }}',
+):
+    check(
+        {"ci.yml": workflow().replace("ubuntu-24.04", selector)},
+        "physical host selector",
+    )
+check(
+    {
+        "ci.yml": workflow().replace(
+            "ubuntu-24.04", "[self-hosted, Linux, X64, local-ci]"
+        )
+    }
+)
+check({"ci.yml": workflow().replace("ubuntu-24.04", "[self-hosted, Linux, hopper]")})
+check(
+    {
+        "ci.yml": workflow().replace(
+            "    runs-on: ubuntu-24.04",
+            """    strategy:
+      matrix:
+        include:
+          - os: [self-hosted, Linux, acer]
+    runs-on: ${{ matrix.os }}""",
+        )
+    },
+    "physical host selector",
+)
+check(
+    {
+        "ci.yml": workflow().replace(
+            "    runs-on: ubuntu-24.04",
+            """    uses: example/repo/.github/workflows/ci.yml@main
+    with:
+      runner: '["self-hosted","asus"]'""",
+        )
+    },
+    "physical host selector",
+)
+check(
+    {
+        "ci.yml": workflow().replace(
+            "echo pass", "cat /srv/ci/toolchains/kernel.tar.zst"
+        )
+    },
+    "host-local build path",
+)
+check(
+    {"ci.yml": workflow().replace("echo pass", "echo /home/jan/build/output")},
+    "host-local build path",
+)
+check(
+    {
+        "ci.yml": workflow().replace(
+            "echo pass", "echo /usr/local/libexec/sccache-client"
+        )
+    }
+)
+check(
+    {
+        "ci.yml": workflow().replace("echo pass", "echo a")
+        + "# /srv/ci/toolchains/kernel.tar.zst\n"
+    }
+)
