@@ -29,10 +29,6 @@
           "Strict reusable gate self-test"
         ],
         [
-          "Package skill",
-          "Build packed skill"
-        ],
-        [
           "Duplicate-code regression",
           "duplicates / New duplicated code"
         ]
@@ -72,10 +68,6 @@
         [
           "Strict Rust",
           "strict-rust-smoke-cache / Strict Rust + Python policy"
-        ],
-        [
-          "Shared workflow concurrency policy",
-          "Check PR workflow cancellation"
         ]
       ]
     }
