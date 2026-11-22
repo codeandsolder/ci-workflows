@@ -365,16 +365,46 @@ including Clippy, rustfmt and any caller-required targets/components. Upstream
 issue labels or counts are not promotion criteria. Code with an applicable
 compiler regression should acquire a regression test rather than an issue filter.
 
-The promotion controller (scripts/nightly-cohort.mjs) is run with the authorized
-fleet GitHub App's gh authentication. Enrollment in nightly-cohort.json requires
-normal PR tests and strict lint checks to use the native repository pin, and
-explicitly lists the real runtime/build/lint checks that must succeed. The
-controller never treats absent, skipped, neutral, or failed required checks as
-success. Every cohort member's candidate must be green before publication
-begins; ordinary merge protections still apply. The central provider merges last.
-Cross-repository merges are sequential, not atomic; an interrupted promotion
-resumes against the same candidate. A failed or missing candidate holds the old
-central selection.
+The promotion controller (scripts/nightly-cohort.mjs) runs on a GitHub-hosted
+runner from the Fleet nightly promotion workflow, daily at 03:17 UTC or by
+manual dispatch. The scheduler does not need a self-hosted runner, a server,
+or the distributed compiler cache. It uses a short-lived GitHub App token
+restricted to the repositories explicitly enrolled in nightly-cohort.json.
+Manual dispatch defaults to read-only; scheduled and manual runs share one
+non-cancelling concurrency group.
+
+Enrollment requires normal PR tests and strict lint checks to use the native
+repository pin. Every required check is specified by its workflow file path
+and job name and matched to the actual Actions PR run for the candidate head.
+The controller never treats absent, skipped, neutral, or failed required
+checks as success. Every cohort member's candidate must be green before
+publication begins; ordinary merge protections still apply. The central
+provider merges last. Cross-repository merges are sequential, not atomic;
+an interrupted promotion resumes against the same candidate. A failed or
+missing candidate holds the old central selection.
+
+### Hosted scheduler setup
+
+Create or select a GitHub App installed on every enrolled repository, with
+repository permissions Contents and Pull requests (read/write), Actions,
+Checks and Commit statuses (read). Create the fleet-nightly environment in
+this repository and restrict its deployment branches to main. Configure:
+
+- Environment variable FLEET_NIGHTLY_APP_CLIENT_ID: the App's client ID.
+- Environment secret FLEET_NIGHTLY_APP_PRIVATE_KEY: the App's PEM private key.
+- Repository variable FLEET_NIGHTLY_ENABLED: true only after enrollment and
+  a successful manual read-only run. Leave unset while migrating.
+
+The workflow requests read-only permission for a manual dry run, and requests
+write access only for an enabled scheduled run or an explicit manual apply.
+It mints a new token each invocation and revokes it on job completion.
+The built-in GitHub Actions token is not used for cross-repository writes.
+
+Use the Actions tab to dispatch Fleet nightly promotion on main with apply
+unchecked to verify access and the current cohort. When ready, set the
+enable variable. Inspect the workflow logs and candidate PRs if promotion
+is held; do not bypass failures. A scheduled run does not guarantee exact
+wall-clock execution (GitHub may delay scheduled jobs).
 
 Examples (all mutating commands require --apply):
 

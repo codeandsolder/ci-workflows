@@ -1,0 +1,70 @@
+name: Fleet nightly promotion
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Create, refresh or merge promotion PRs if eligible
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Scheduled and manually dispatched invocations mutate the same cohort.
+concurrency:
+  group: fleet-nightly-promotion
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    name: Check and promote the fleet compiler
+    # Never mint fleet credentials in forks or on non-default branches.
+    # Schedule stays opt-in until enrollment and authentication are verified.
+    if: >-
+      github.repository == 'codeandsolder/ci-workflows' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || vars.FLEET_NIGHTLY_ENABLED == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: fleet-nightly
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the enrolled repository scope
+        id: scope
+        run: |
+          node --input-type=module <<'JS' >> "$GITHUB_OUTPUT"
+          import {readFileSync} from 'node:fs';
+          import {validateCohort} from './scripts/nightly-cohort.mjs';
+          const entries = validateCohort(JSON.parse(readFileSync('nightly-cohort.json', 'utf8')));
+          console.log('repositories=' + entries.map(entry => entry.name.split('/')[1]).join(','));
+          JS
+
+      - name: Mint a short-lived scoped installation token
+        id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.FLEET_NIGHTLY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FLEET_NIGHTLY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ steps.scope.outputs.repositories }}
+          permission-actions: read
+          permission-checks: read
+          permission-statuses: read
+          permission-contents: ${{ (github.event_name == 'schedule' || inputs.apply) && 'write' || 'read' }}
+          permission-pull-requests: ${{ (github.event_name == 'schedule' || inputs.apply) && 'write' || 'read' }}
+
+      - name: Run the cohort controller
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          if [[ "${{ github.event_name == 'schedule' || inputs.apply }}" == true ]]; then
+            node scripts/nightly-cohort.mjs tick --apply
+          else
+            node scripts/nightly-cohort.mjs tick
+          fi
