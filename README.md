@@ -289,3 +289,26 @@ artifact downloads with content verification. Clean job-owned temporary
 files and containers after upload. The existing managed sccache paths
 are the shared runner contract, not a project-specific cache provisioning
 mechanism.
+
+#### Private runner admission
+
+Before publishing a new private CI caller, use the installation's authenticated
+GitHub CLI (on the controller, not in the PR's unprivileged CI job):
+
+```sh
+node scripts/runner-availability.mjs require codeandsolder/REPO self-hosted Linux X64 local-ci
+```
+
+An idle or busy *online* matching registration is sufficient for admission.
+No registration or offline-only matches fail admission. Never substitute a
+public hosted runner for a private missing capability.
+
+```sh
+node scripts/runner-availability.mjs audit
+```
+
+The read-only fleet scan expands queued and running workflow records into actual
+jobs, using GitHub's resolved labels (not a homemade matrix evaluator), and
+distinguishes missing registrations, offline pools, busy pools, available capacity,
+non-self-hosted jobs and unresolved selectors. API failures are reported as errors,
+not empty inventories. Explicitly pass repository names to limit the audit.
