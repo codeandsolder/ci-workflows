@@ -9,7 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / ".github/actions/workflow-concurrency-policy/check.py"
+SCRIPT = ROOT / ".github/scripts/workflow-concurrency-oracle.py"
 spec = importlib.util.spec_from_file_location("workflow_concurrency_check", SCRIPT)
 assert spec is not None and spec.loader is not None
 policy = importlib.util.module_from_spec(spec)
@@ -38,6 +38,7 @@ def check(files: dict[str, str], expected: str | None = None) -> None:
                 text=True, encoding="utf-8", capture_output=True, check=False,
             )
             assert result.returncode == int(bool(errors)), (result.stdout, result.stderr, errors)
+
             def normalized(violations: list[str]) -> list[str]:
                 return sorted(
                     item.split(": invalid YAML:", 1)[0] + ": invalid YAML"

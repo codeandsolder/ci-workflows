@@ -31,12 +31,11 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             .github/actions/workflow-concurrency-policy
-            .github/pyproject.toml
-            .github/uv.lock
+            policy-wasm/run.mjs
+            policy-wasm/module.mjs
+            policy-wasm/module.json
+            policy-wasm/module.wasm.gz
           sparse-checkout-cone-mode: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
 
       - name: Check all caller workflows
         uses: ./.shared-ci-policy/.github/actions/workflow-concurrency-policy

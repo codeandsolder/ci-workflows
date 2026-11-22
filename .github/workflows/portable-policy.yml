@@ -5,6 +5,7 @@ on:
     paths:
       - "policy-wasm/**"
       - ".github/scripts/test-workflow-concurrency.py"
+      - ".github/scripts/workflow-concurrency-oracle.py"
       - ".github/workflows/portable-policy.yml"
       - rust-toolchain.toml
   push:
@@ -12,6 +13,7 @@ on:
     paths:
       - "policy-wasm/**"
       - ".github/scripts/test-workflow-concurrency.py"
+      - ".github/scripts/workflow-concurrency-oracle.py"
       - ".github/workflows/portable-policy.yml"
       - rust-toolchain.toml
   workflow_dispatch:
@@ -64,7 +66,9 @@ jobs:
         shell: bash
         run: |
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
-          node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" concurrency .
+          node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
+          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
+          node policy-wasm/run.mjs policy-wasm/module.json concurrency .
       - name: Finalize mandatory sccache
         if: always()
         uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@f1499fe94abf45faacae7992670e5163109225f0 # main

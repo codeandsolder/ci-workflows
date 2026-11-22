@@ -1,0 +1,6 @@
+{
+  "format": 1,
+  "compiler": "nightly-2026-11-19",
+  "source_sha256": "8994562ca97272906f896f8ab3a32309c0610d96bdaffe04a68997f37930fd24",
+  "wasm_sha256": "d39ac6bdb34417a4e65fb2b7e1ff916008d0596796d4c652c3071cd6335c9196"
+}
