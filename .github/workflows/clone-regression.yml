@@ -41,6 +41,7 @@ jobs:
         uses: ./.ci-workflows/.github/actions/clone-regression
         env:
           CLONE_GUARD_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          CLONE_GUARD_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           CLONE_GUARD_DISCOVERY_TOKENS: "50"
           CLONE_GUARD_BLOCKING_TOKENS: "100"
           CLONE_GUARD_TEST_BLOCKING_TOKENS: "140"

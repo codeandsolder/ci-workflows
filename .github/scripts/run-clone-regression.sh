@@ -32,6 +32,31 @@ for dependency in git jq curl sha256sum tar python3; do
   command -v "$dependency" >/dev/null || fail "$dependency is required"
 done
 
+# The PR event payload can lag behind a freshly generated merge ref while
+# the base branch advances. Compare the exact checked-out synthetic merge
+# against its first parent, not the older base advertised in the payload.
+# Verify the second parent matches the event's PR head before trusting it.
+# Raw commit headers retain parents even in a depth-one checkout.
+pr_head="${CLONE_GUARD_PR_HEAD_SHA:-}"
+if [[ -n "$pr_head" ]]; then
+  [[ "$pr_head" =~ ^[0-9a-f]{40}$ ]] || fail "invalid PR head SHA"
+  commit="$(git -C "$root" cat-file commit HEAD)" || fail "cannot inspect checked-out PR merge commit"
+  parents=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || break
+    if [[ "$line" == parent\ * ]]; then
+      parents+=("${line#parent }")
+    fi
+  done <<< "$commit"
+  (( ${#parents[@]} == 2 )) || fail "expected a two-parent PR merge commit"
+  [[ "${parents[1]}" == "$pr_head" ]] ||
+    fail "checked-out PR merge commit does not match event head $pr_head"
+  if [[ "${parents[0]}" != "$base" ]]; then
+    printf 'clone-regression: using checked-out merge parent %s instead of event base %s\n' "${parents[0]}" "$base"
+  fi
+  base="${parents[0]}"
+fi
+
 # Shallow checkout of a PR merge commit does not necessarily contain its base.
 if ! git -C "$root" cat-file -e "$base^{commit}" 2>/dev/null; then
   git -C "$root" fetch --quiet --no-tags --depth=1 origin "$base" ||
