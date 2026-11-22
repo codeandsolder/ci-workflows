@@ -53,7 +53,7 @@ def compare(root: Path, expected: list[str], strict_ref: str | None = None) -> N
 
 def inspect(workflow: str, strict_ref: str | None = None) -> list[str]:
     with TemporaryDirectory() as tmp:
-        root = Path(tmp)
+        root = Path(tmp).resolve()
         path = root / ".github/workflows/ci.yml"
         path.parent.mkdir(parents=True)
         path.write_text(workflow, encoding="utf-8")
@@ -279,7 +279,7 @@ jobs:
 
 def inspect_tree(workflow: str, files: dict[str, str]) -> list[str]:
     with TemporaryDirectory() as tmp:
-        root = Path(tmp)
+        root = Path(tmp).resolve()
         file = root / ".github/workflows/ci.yml"
         file.parent.mkdir(parents=True)
         file.write_text(workflow, encoding="utf-8")

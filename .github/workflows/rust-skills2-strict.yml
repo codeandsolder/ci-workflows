@@ -35,3 +35,11 @@ jobs:
     with:
       working-directory: policy-wasm
       rust-toolchain: ${{ needs.pin.outputs.channel }}
+  strict-rust-portable-wasi:
+    needs: pin
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@850404feb20042e5225cfbdd5ee397b5fc441392 # main
+    with:
+      working-directory: policy-wasm
+      rust-toolchain: ${{ needs.pin.outputs.channel }}
+      rust-targets: wasm32-wasip1
+      cargo-args: --locked --workspace --bins --target wasm32-wasip1
