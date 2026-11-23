@@ -30,7 +30,7 @@ test("rejects ambiguous toolchain, unsafe directory and apt selectors", () => {
 });
 
 import {execFileSync} from "node:child_process";
-import {mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync} from "node:fs";
+import {mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync, existsSync} from "node:fs";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {executePlan} from "./run-strict.mjs";
@@ -138,5 +138,54 @@ test("candidate validation calls reviewed Python and Rust in order, and failures
     );
   } finally {
     rmSync(temp, {recursive:true, force:true});
+  }
+});
+
+test("reviewed strict job initializes pinned Git submodule before Cargo workspace preflight", () => {
+  const temp = mkdtempSync(path.join(tmpdir(), "ci-reviewed-submodule-"));
+  try {
+    const source = path.join(temp, "module-source");
+    const candidate = path.join(temp, "candidate");
+    const gate = path.join(temp, "reviewed");
+    for (const repo of [source, candidate, gate]) {
+      mkdirSync(repo);
+      git(repo, "init", "-q", "-b", "main");
+    }
+    writeFileSync(path.join(source, "Cargo.toml"), "[workspace]\n");
+    commit(source);
+
+    mkdirSync(path.join(gate, "scripts"));
+    writeFileSync(path.join(gate, "scripts", "strict_python.sh"), "#!/bin/sh\nset -eu\n");
+    writeFileSync(path.join(gate, "scripts", "strict_clippy.sh"), "#!/bin/sh\nset -eu\n");
+    const refSha = commit(gate);
+
+    // Local-only Git protocol is explicitly enabled in this fixture. The
+    // production runner never changes Git's transport/security settings.
+    git(candidate, "config", "protocol.file.allow", "always");
+    git(candidate, "-c", "protocol.file.allow=always",
+      "submodule", "add", "-q", source, "modules/workspace");
+    commit(candidate);
+    git(candidate, "submodule", "deinit", "-f", "--", "modules/workspace");
+    const manifest = path.join(candidate, "modules", "workspace", "Cargo.toml");
+    assert.equal(existsSync(manifest), false, "initial fixture has no checked-out submodule");
+
+    const plan = structuredClone(base);
+    plan.refSha = refSha;
+    plan.jobs[0].workingDirectory = "modules/workspace";
+    plan.jobs[0].checkoutSubmodules = "true";
+    plan.jobs[0].aptPackages = "";
+    plan.jobs[0].rustTargets = "";
+    executePlan(plan, "nightly-2026-11-19", candidate, gate);
+    assert.equal(existsSync(manifest), true, "the reviewed job initializes its pinned submodule");
+    assert.equal(git(candidate, "diff", "--name-only", "HEAD", "--"), "");
+
+    git(candidate, "submodule", "deinit", "-f", "--", "modules/workspace");
+    plan.jobs[0].checkoutSubmodules = "false";
+    assert.throws(
+      () => executePlan(plan, "nightly-2026-11-19", candidate, gate),
+      /no Cargo.toml/
+    );
+  } finally {
+    rmSync(temp, {recursive:true,force:true});
   }
 });

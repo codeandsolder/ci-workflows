@@ -81,6 +81,12 @@ export function executePlan(plan, selectedCompiler, root, gateDir) {
   const pythonScript = path.join(gateDir, "scripts/strict_python.sh");
   const rustScript = path.join(gateDir, "scripts/strict_clippy.sh");
   if (!existsSync(pythonScript) || !existsSync(rustScript)) throw new Error("reviewed gate implementation incomplete");
+  // A reviewed strict working-directory may point into a pinned submodule.
+  // Populate the committed gitlinks before resolving and containing paths.
+  if (plan.jobs.some((job) => job.checkoutSubmodules !== "false")) {
+    const recursive = plan.jobs.some((job) => job.checkoutSubmodules === "recursive");
+    run("git", ["-C", root, "submodule", "update", "--init", ...(recursive ? ["--recursive"] : [])]);
+  }
   for (const job of plan.jobs) assertReviewedRustDirectory(root, job);
   const packages = uniqueWords(plan.jobs, "aptPackages", /\s+/);
   if (packages.length) {
@@ -106,10 +112,6 @@ export function executePlan(plan, selectedCompiler, root, gateDir) {
   }
   for (const [compiler, targets] of targetGroups) {
     run("rustup", ["target", "add", "--toolchain", compiler, ...targets]);
-  }
-  if (plan.jobs.some((job) => job.checkoutSubmodules !== "false")) {
-    const recursive = plan.jobs.some((job) => job.checkoutSubmodules === "recursive");
-    run("git", ["-C", root, "submodule", "update", "--init", ...(recursive ? ["--recursive"] : [])]);
   }
   // Apply the actual reviewed gate scripts, including each distinct Python
   // configuration. No source policy is copied from the upstream candidate.
