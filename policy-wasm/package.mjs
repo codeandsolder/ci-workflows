@@ -21,7 +21,7 @@ async function sourceFiles(directory) {
 }
 
 async function sourceDigest() {
-  const files = ['Cargo.toml', 'Cargo.lock', ...await sourceFiles('src')].sort();
+  const files = ['Cargo.toml', 'Cargo.lock', 'build.mjs', ...await sourceFiles('src')].sort();
   const hash = createHash('sha256');
   for (const name of files) {
     hash.update(JSON.stringify([name, sha256(await readFile(path.join(root, name)))]));

@@ -68,7 +68,7 @@ jobs:
         shell: bash
         run: |
           cargo test --manifest-path policy-wasm/Cargo.toml --locked --target-dir "$RUNNER_TEMP/ci-policy"
-          cargo build --manifest-path policy-wasm/Cargo.toml --locked --release --target wasm32-wasip1 --target-dir "$RUNNER_TEMP/ci-policy"
+          node policy-wasm/build.mjs "$RUNNER_TEMP/ci-policy"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ci-policy-wasm

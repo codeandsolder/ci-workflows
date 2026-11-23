@@ -57,3 +57,22 @@ two-crate workspace and compares the same compiled and distributed WASI binary.
 policy-wasm/src/cargo_affected.rs has focused unit tests covering dependency
 closure, WIT-style triggers, unknown files, ignored paths, non-PR full builds,
 Windows path normalization and invalid package names.
+
+
+## Reproducible release policy artifact
+
+Build the portable module with the managed command
+node policy-wasm/build.mjs /ABSOLUTE/TARGET_DIR.
+This uses the managed Cargo wrapper and -Zlocation-detail=none on the
+repository-pinned nightly compiler. The Rust caller-location default embeds
+absolute registry checkout and worker build paths into runtime WASM data;
+different local and GitHub runner paths otherwise cause a false SHA256
+mismatch despite identical policy logic. This setting is limited to the
+release policy module and retains ordinary native-test compiler diagnostics.
+Two checkout locations were verified to produce byte-identical WASM with it.
+
+Then package with:
+node policy-wasm/package.mjs pack /ABSOLUTE/TARGET_DIR/wasm32-wasip1/release/ci-policy.wasm nightly-YYYY-MM-DD.
+The build command itself is included in the policy source digest. GitHub
+Actions uses the same build entrypoint and still verifies exact rebuilt bytes
+against the bundled module; do not relax this integrity check.
