@@ -160,6 +160,14 @@ Private builds use the existing managed sccache backend (Garage) and never creat
 
 The caller still controls toolchain, components, targets, `RUSTFLAGS`, timeout, command, and validation tier. Public callers may choose the GitHub-hosted runner label and Actions cache size. Private executor selection and compiler-cache backend are centralized. Existing direct-workflow jobs that hardcode `asus` must migrate to these shared workflows or update their own `runs-on` labels; a shared workflow cannot rewrite a separate caller's direct jobs.
 
+### Independent reference tools
+
+A caller that needs Python-based reference tooling may set `uv-version` to an
+exact version (for example, `"0.13.9"`). The workflow uses the shared pinned
+setup-uv action with package caching disabled; the caller owns interpreter and
+package provisioning in its explicit asset tree. No venv/pip bootstrap is
+needed. Leaving the input empty skips uv installation entirely.
+
 ### Test suites that manage sccache daemons
 
 `isolate-public-sccache-server: true` places the hosted Linux/macOS compiler-cache daemon on a dedicated Unix-domain socket, distinct from the default TCP endpoint used by the program's integration tests. This is designed for repositories such as `sccache-deduplicated` whose tests deliberately start/stop their own sccache instance. The compiler and finalizer retain the dedicated socket; the caller should launch **only the test executables** with `SCCACHE_SERVER_UDS` unset using Cargo's target runner, preserving the compiler's mandatory cache. This option is public-Unix only and explicitly rejects Windows instead of silently failing to isolate. Do not use it on a private local/Garage runner; the root-managed daemon there remains unchanged.
