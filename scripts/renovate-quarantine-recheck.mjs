@@ -3,72 +3,29 @@
 // Cargo publication-age hold. GitHub Actions performs the real quarantine again.
 import { isContributionOnly, isMaintainedRepo } from './fleet-scope.mjs';
 import { execFileSync } from 'node:child_process';
+import { decide as runPolicy } from '../policy-wasm/bridge.mjs';
 
 export const BOT_LOGINS = new Set(['renovate[bot]', 'renovate']);
-const AGE_HEADER = 'Cargo release-age quarantine is still active:';
-const PUBLICATION = /^-\s+([a-zA-Z0-9_-]+)\s+(\S+): published (\S+), younger than (\d+)h$/;
-const QUARANTINE_STEP = /quarantine|release.age/i;
-const ANSI = /\x1b\[[0-9;]*m/g;
 const DEFAULT_GRACE_MS = 15 * 60_000;
 
-export function parseQuarantineHold(log) {
-  const lines = log.replace(ANSI, '').split(/\r?\n/);
-  let markerCount = 0;
-  const blocks = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].includes(AGE_HEADER)) continue;
-    markerCount++;
-    const entries = [];
-    for (let j = i + 1; j < lines.length; j++) {
-      // CI log timestamps prefix the actual stderr messages.
-      const body = lines[j].replace(/^\d{4}-\d\d-\d\dT\S+?\s+/, '').trim();
-      if (!body.startsWith('- ')) break;
-      const m = PUBLICATION.exec(body);
-      if (!m) return { eligible: false, reason: 'unknown-quarantine-reason' };
-      const published = Date.parse(m[3]);
-      const hours = Number(m[4]);
-      if (!Number.isFinite(published) || !Number.isSafeInteger(hours) || hours < 72) {
-        return { eligible: false, reason: 'invalid-age-metadata' };
-      }
-      entries.push({ name: m[1], version: m[2], publishedAt: m[3],
-        eligibleAt: published + hours * 3_600_000, hours });
-    }
-    if (entries.length === 0) return { eligible: false, reason: 'no-crates' };
-    blocks.push(...entries);
-  }
-  if (markerCount === 0) return { eligible: false, reason: 'not-a-quarantine-hold' };
-  const eligibleAt = Math.max(...blocks.map(e => e.eligibleAt));
-  if (!Number.isFinite(eligibleAt)) return { eligible: false, reason: 'invalid-eligibility' };
-  return { eligible: true, blockers: blocks, eligibleAt };
+// Native code only captures GitHub data and performs authorized reruns. The
+// read-only Rust/WASI guest makes every age, check and job eligibility choice.
+export function parseQuarantineHold(log, module) {
+  return runPolicy('renovate-recheck', {op: 'hold', log}, module);
 }
 
-export function classifyJob(job, prHead) {
-  if (job.status !== 'completed' || job.conclusion !== 'failure' || job.head_sha !== prHead) {
-    return 'stale-or-not-failed';
-  }
-  // Prevent a failing rerun of a permanently broken PR from looping hourly.
-  if (job.run_attempt !== 1) return 'already-retried';
-  const failures = (job.steps || []).filter(s => s.conclusion === 'failure');
-  if (!failures.length || failures.some(s => !QUARANTINE_STEP.test(s.name))) {
-    return 'other-job-failure';
-  }
-  return null;
+export function classifyJob(job, prHead, module) {
+  return runPolicy('renovate-recheck', {op: 'job', job, pr_head: prHead}, module);
 }
 
-export function decide(hold, now, graceMs = DEFAULT_GRACE_MS) {
-  if (!hold.eligible) return hold.reason;
-  return now >= hold.eligibleAt + graceMs ? null : 'release-too-young';
+export function decide(hold, now, graceMs = DEFAULT_GRACE_MS, module) {
+  return runPolicy('renovate-recheck', {
+    op: 'eligibility', hold, now_ms: now, grace_ms: graceMs,
+  }, module);
 }
 
-export function eligibleChecks(checks) {
-  // Names are caller-controlled, and a strict gate can fail for other reasons.
-  // Inspect actual failed job steps and logs before deciding to retry.
-  if (checks.some(c => c.status !== 'completed')) return null;
-  const terminalPass = new Set(['success', 'skipped', 'neutral']);
-  const failures = checks.filter(c => !terminalPass.has(c.conclusion));
-  if (!failures.length || failures.some(c =>
-      c.app?.slug !== 'github-actions' || c.conclusion !== 'failure')) return null;
-  return failures;
+export function eligibleChecks(checks, module) {
+  return runPolicy('renovate-recheck', {op: 'checks', checks}, module);
 }
 
 function api(path, options = {}) {

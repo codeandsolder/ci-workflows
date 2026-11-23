@@ -4,6 +4,7 @@ mod checklist_labels;
 mod clones;
 mod concurrency;
 mod quarantine;
+mod renovate_recheck;
 mod runner_admission;
 mod rust_tests;
 mod shell;
@@ -18,34 +19,47 @@ use std::{
     process::ExitCode,
 };
 
+// JSON-input policies share the portable module but require no checkout
+// filesystem traversal or additional native arguments.
+fn dispatch_stdin_policy(policy: &str) -> Result<bool, Box<dyn Error>> {
+    match policy {
+        "cargo-affected-plan" | "cargo-affected-args" => {
+            cargo_affected::decide(policy)?;
+            return Ok(true);
+        }
+        "renovate-recheck" => {
+            renovate_recheck::execute()?;
+            return Ok(true);
+        }
+        "runner-admission" => {
+            runner_admission::execute()?;
+            return Ok(true);
+        }
+        "stable-release-parse" | "stable-release-plan" => {
+            stable_review::execute(policy)?;
+            return Ok(true);
+        }
+        "quarantine-diff" => {
+            quarantine::diff()?;
+            return Ok(true);
+        }
+        "quarantine-age" => {
+            quarantine::age()?;
+            return Ok(true);
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
 fn run() -> Result<ExitCode, Box<dyn Error>> {
     let mut args = env::args().skip(1);
     let (Some(policy), Some(root)) = (args.next(), args.next()) else {
         return Err("usage: ci-policy concurrency|sccache ROOT [STRICT_REF]".into());
     };
     let root = Path::new(&root);
-    match policy.as_str() {
-        "cargo-affected-plan" | "cargo-affected-args" => {
-            cargo_affected::decide(&policy)?;
-            return Ok(ExitCode::SUCCESS);
-        }
-        "runner-admission" => {
-            runner_admission::execute()?;
-            return Ok(ExitCode::SUCCESS);
-        }
-        "stable-release-parse" | "stable-release-plan" => {
-            stable_review::execute(&policy)?;
-            return Ok(ExitCode::SUCCESS);
-        }
-        "quarantine-diff" => {
-            quarantine::diff()?;
-            return Ok(ExitCode::SUCCESS);
-        }
-        "quarantine-age" => {
-            quarantine::age()?;
-            return Ok(ExitCode::SUCCESS);
-        }
-        _ => {}
+    if dispatch_stdin_policy(&policy)? {
+        return Ok(ExitCode::SUCCESS);
     }
     if policy == "checklist-labels" {
         let (Some(template), Some(workflow), Some(heading), Some(key), None) = (
