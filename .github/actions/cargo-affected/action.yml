@@ -1,0 +1,78 @@
+name: Cargo affected workspace packages
+description: Plan affected Rust workspace packages or execute an affected-package Cargo command via shared WASI
+inputs:
+  mode:
+    description: plan or run
+    required: true
+  config:
+    description: Checkout-relative JSON policy (plan mode)
+    required: false
+    default: .github/cargo-affected.json
+  event:
+    description: GitHub event name (plan mode)
+    required: false
+    default: ""
+  base:
+    description: Base SHA (pull_request plan only)
+    required: false
+    default: ""
+  head:
+    description: Head SHA (pull_request plan only)
+    required: false
+    default: ""
+  packages:
+    description: JSON array of selected package names (run mode)
+    required: false
+    default: "[]"
+  command:
+    description: JSON array starting with cargo (run mode)
+    required: false
+    default: "[]"
+outputs:
+  affected_packages:
+    description: JSON array of selected workspace packages
+    value: ${{ steps.plan.outputs.affected_packages }}
+  has_code:
+    description: Whether selected packages need CI
+    value: ${{ steps.plan.outputs.has_code }}
+  run_full:
+    description: Whether all packages are selected
+    value: ${{ steps.plan.outputs.run_full }}
+  extra_flags:
+    description: JSON object of caller-configured trigger flags
+    value: ${{ steps.plan.outputs.extra_flags }}
+  test_matrix:
+    description: Selected JSON matrix from caller configuration
+    value: ${{ steps.plan.outputs.test_matrix }}
+runs:
+  using: composite
+  steps:
+    - name: Check action mode
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+      run: |
+        [[ "$MODE" == plan || "$MODE" == run ]] || { echo 'mode must be plan or run' >&2; exit 1; }
+    - name: Plan Cargo workspace scope
+      if: inputs.mode == 'plan'
+      id: plan
+      shell: bash
+      env:
+        POLICY: ${{ inputs.config }}
+        EVENT: ${{ inputs.event }}
+        BASE: ${{ inputs.base }}
+        HEAD: ${{ inputs.head }}
+      run: |
+        node "$GITHUB_ACTION_PATH/../../../policy-wasm/cargo-affected.mjs" plan \
+          "$GITHUB_ACTION_PATH/../../../policy-wasm/module.json" \
+          "$GITHUB_WORKSPACE" "$POLICY" "$EVENT" "$BASE" "$HEAD" "$GITHUB_OUTPUT"
+    - name: Run Cargo for affected packages
+      if: inputs.mode == 'run'
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        COMMAND: ${{ inputs.command }}
+      run: |
+        node "$GITHUB_ACTION_PATH/../../../policy-wasm/cargo-affected.mjs" run \
+          "$GITHUB_ACTION_PATH/../../../policy-wasm/module.json" \
+          "$GITHUB_WORKSPACE" "$PACKAGES" "$COMMAND"

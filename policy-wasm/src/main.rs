@@ -1,4 +1,5 @@
 mod cache;
+mod cargo_affected;
 mod clones;
 mod concurrency;
 mod quarantine;
@@ -21,6 +22,10 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
     };
     let root = Path::new(&root);
     match policy.as_str() {
+        "cargo-affected-plan" | "cargo-affected-args" => {
+            cargo_affected::decide(&policy)?;
+            return Ok(ExitCode::SUCCESS);
+        }
         "quarantine-diff" => {
             quarantine::diff()?;
             return Ok(ExitCode::SUCCESS);

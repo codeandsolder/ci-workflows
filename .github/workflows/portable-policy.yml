@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "policy-wasm/**"
+      - ".github/actions/cargo-affected/**"
       - ".github/scripts/test-workflow-concurrency.py"
       - ".github/scripts/test-clone-regression-policy.py"
       - ".github/scripts/clone-regression-oracle.py"
@@ -17,6 +18,7 @@ on:
     branches: [main]
     paths:
       - "policy-wasm/**"
+      - ".github/actions/cargo-affected/**"
       - ".github/scripts/test-workflow-concurrency.py"
       - ".github/scripts/test-clone-regression-policy.py"
       - ".github/scripts/clone-regression-oracle.py"
@@ -80,6 +82,7 @@ jobs:
           uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/quarantine.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          node policy-wasm/cargo-affected.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache .
           node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
@@ -88,6 +91,7 @@ jobs:
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
           node policy-wasm/quarantine.test.mjs policy-wasm/module.json
+          node policy-wasm/cargo-affected.test.mjs policy-wasm/module.json
           node policy-wasm/run.mjs policy-wasm/module.json sccache .
           node policy-wasm/run.mjs policy-wasm/module.json concurrency .
       - name: Verify the actual sparse caller checkout
@@ -128,3 +132,4 @@ jobs:
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
           node policy-wasm/quarantine.test.mjs policy-wasm/module.json
+          node policy-wasm/cargo-affected.test.mjs policy-wasm/module.json
