@@ -13,9 +13,8 @@ use std::{
     sync::LazyLock,
 };
 
-static MUST_USE: LazyLock<Regex> = LazyLock::new(|| {
+static MUST_USE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
     Regex::new(r#"^([ \t]*)#\[\s*must_use(?:\s*=\s*"(?:[^"\\]|\\.)*")?\s*\][ \t]*$"#)
-        .expect("constant must-use attribute matcher is valid")
 });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -26,6 +25,8 @@ struct AnnotationProof {
 
 fn matched_indentation(line: &str) -> Option<&str> {
     MUST_USE
+        .as_ref()
+        .ok()?
         .captures(line)
         .and_then(|groups| groups.get(1).map(|value| value.as_str()))
 }
