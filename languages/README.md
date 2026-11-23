@@ -29,7 +29,7 @@ Many Rust applications concatenate several WGSL snippets into an actual shader m
 
 All referenced sources must be Git-tracked regular files in the caller checkout. Every declared group is validated as one complete shader; any unreferenced WGSL is independently validated. Deliberately invalid fixtures can be listed under negative_tests, and must actually fail validation. There are no generic ignore globs or silent exclusions. If shader text is generated dynamically, native application tests must continue to test that generated text; this source-only gate does not replace them.
 
-The Naga validator is locked in languages/wgsl/Cargo.lock and compiled using the existing managed sccache on stable Rust only when WGSL is present. It runs in the default debug profile, because Naga source validation does not benefit from release optimizations and those can turn a small check into minutes of compiler work. Build outputs remain in runner temp.
+The Naga Cargo manifest declares its own empty workspace, so the checked-out policy remains independent of arbitrary caller Cargo workspaces (including root workspace lints, patches and lockfiles). A hosted regression checks this in a synthetic nested workspace. The Naga validator is locked in languages/wgsl/Cargo.lock and compiled using the existing managed sccache on stable Rust only when WGSL is present. It runs in the default debug profile, because Naga source validation does not benefit from release optimizations and those can turn a small check into minutes of compiler work. Build outputs remain in runner temp.
 
 ## GitHub Actions quality
 
