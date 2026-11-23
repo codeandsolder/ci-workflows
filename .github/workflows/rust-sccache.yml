@@ -101,7 +101,6 @@ jobs:
         shell: bash
         env:
           VALIDATION_TIER: ${{ inputs.validation-tier }}
-          COVERAGE_REPORT: ${{ inputs.coverage-report }}
         run: |
           case "$VALIDATION_TIER" in
             routine|release) ;;
@@ -166,6 +165,7 @@ jobs:
         env:
           RUST_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
           VALIDATION_TIER: ${{ inputs.validation-tier }}
+          COVERAGE_REPORT: ${{ inputs.coverage-report }}
         run: |
           set -euo pipefail
           if ! rustup run "$RUST_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
