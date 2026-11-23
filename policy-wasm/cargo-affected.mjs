@@ -46,7 +46,7 @@ function changedPaths(root, base, head) {
     throw new Error('PR requires exact base and head commit hashes');
   }
   const result = processCommand(root, 'git',
-    ['diff', '--no-renames', '--name-only', '-z', '--diff-filter=ACMRD',
+    ['diff', '--no-renames', '--name-only', '-z', '--diff-filter=ACMRTD',
       base + '...' + head, '--']);
   return result.split('\0').filter(Boolean);
 }

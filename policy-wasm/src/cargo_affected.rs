@@ -250,7 +250,7 @@ fn plan(input: PlanInput) -> Result<Plan, Box<dyn Error>> {
         }
         let mut mapped = if let Some((_, name)) = roots
             .iter()
-            .find(|(root, _)| root.is_empty() || within(root, &path))
+            .find(|(root, _)| !root.is_empty() && within(root, &path))
         {
             selected.insert(name.clone());
             true
@@ -480,6 +480,27 @@ mod tests {
             })
             .is_err()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn root_workspace_member_does_not_capture_unmapped_files() -> Result<(), Box<dyn Error>> {
+        for (path, expected_full) in [("unknown-root-input.dat", true), ("README.md", false)] {
+            let mut input = fixture("pull_request", &[path])?;
+            input.metadata.workspace_members.push("root".to_owned());
+            input.metadata.packages.push(super::Package {
+                id: "root".to_owned(),
+                name: "root-package".to_owned(),
+                manifest_path: "/repo/Cargo.toml".to_owned(),
+                dependencies: Vec::new(),
+            });
+            let result = plan(input)?;
+            assert_eq!(result.run_full, expected_full, "{path}");
+            assert_eq!(
+                result.affected_packages.len(),
+                if expected_full { 4 } else { 0 }
+            );
+        }
         Ok(())
     }
 

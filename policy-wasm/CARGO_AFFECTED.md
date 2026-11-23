@@ -10,7 +10,8 @@ invocations. The caller's own .github/cargo-affected.json declares its
 repository-specific path rules and CI matrices. The built-in algorithm uses
 cargo metadata --format-version 1 --no-deps, reverse local-workspace dependency
 closure and git diff --no-renames --name-only -z BASE...HEAD. Unknown root
-inputs or globally significant files select every workspace member; failing
+inputs (including when the workspace itself has a root package), Git
+index entry type changes, or globally significant files select every workspace member; failing
 Cargo/Git input or metadata is an error, not an empty plan.
 
 Configuration fields:
