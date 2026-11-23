@@ -21,6 +21,27 @@ function requireSafeRelative(value, label) {
   return value;
 }
 
+function assertReviewedRustDirectory(root, job) {
+  // Even a reviewed relative path can point outside the candidate if the
+  // upstream update replaces one of its path components with a symlink.
+  const canonicalRoot = realpathSync(root);
+  const requested = path.join(canonicalRoot, job.workingDirectory);
+  const actual = realpathSync(requested);
+  if (actual !== canonicalRoot && !actual.startsWith(canonicalRoot + path.sep)) {
+    throw new Error("strict reviewed working-directory resolves outside the candidate: " + job.workingDirectory);
+  }
+  const manifest = path.join(actual, "Cargo.toml");
+  if (!existsSync(manifest)) {
+    throw new Error("reviewed strict job " + job.workflow + ":" + job.job
+      + " has no Cargo.toml at " + job.workingDirectory
+      + "; nested-only Rust sources need a reviewed strict working-directory");
+  }
+  const manifestReal = realpathSync(manifest);
+  if (manifestReal !== canonicalRoot && !manifestReal.startsWith(canonicalRoot + path.sep)) {
+    throw new Error("strict Cargo.toml resolves outside the candidate: " + job.workingDirectory);
+  }
+}
+
 function uniqueWords(plans, key, split) {
   return [...new Set(plans.flatMap((job) =>
     job[key] ? job[key].split(split).filter(Boolean) : []))];
@@ -60,6 +81,7 @@ export function executePlan(plan, selectedCompiler, root, gateDir) {
   const pythonScript = path.join(gateDir, "scripts/strict_python.sh");
   const rustScript = path.join(gateDir, "scripts/strict_clippy.sh");
   if (!existsSync(pythonScript) || !existsSync(rustScript)) throw new Error("reviewed gate implementation incomplete");
+  for (const job of plan.jobs) assertReviewedRustDirectory(root, job);
   const packages = uniqueWords(plan.jobs, "aptPackages", /\s+/);
   if (packages.length) {
     run("sudo", ["apt-get", "update"]);
