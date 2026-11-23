@@ -411,7 +411,7 @@ jobs:
           go-version: ${{ inputs.go-version-file == '' && 'stable' || '' }}
           go-version-file: ${{ inputs.go-version-file }}
           cache: ${{ inputs.go-version-file != '' }}
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         if: steps.check.outputs.checked == 'true' && inputs.java-version != ''
         with:
           distribution: temurin
