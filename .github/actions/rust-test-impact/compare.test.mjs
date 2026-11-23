@@ -57,3 +57,25 @@ test('suite identity handles integration and binary tests', () => {
   assert.equal(result.misses.length, 1);
   assert.equal(result.misses[0].binaryId, 'pkg::bin/cli');
 });
+
+test('real Nextest bin identities preserve hyphens in package and target', () => {
+  const emitted = [
+    { type: 'suite', event: 'started', test_count: 1, nextest: {
+      crate: 'ci-policy', test_binary: 'ci-policy', kind: 'bin',
+    } },
+    { type: 'test', event: 'started', name: 'ci-policy::ci-policy$cache::tests::trust_refs' },
+    { type: 'test', event: 'failed', name: 'ci-policy::ci-policy$cache::tests::trust_refs' },
+  ].map((x) => JSON.stringify(x)).join('\n');
+  const result = compareImpact({
+    cache: { status: 'hit-exact' },
+    selection: {
+      summary: { mode: 'selection' },
+      selected_tests: [
+        { binary_id: 'ci-policy::bin/ci-policy', test_name: 'cache::tests::trust_refs' },
+      ],
+    },
+  }, emitted, false);
+  assert.equal(result.evaluable, true);
+  assert.equal(result.failed, 1);
+  assert.deepEqual(result.misses, []);
+});
