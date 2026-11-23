@@ -46,7 +46,7 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
             args.next(),
         ) else {
             return Err(
-                "usage: ci-policy checklist-labels ROOT TEMPLATE WORKFLOW HEADING ENV_KEY".into(),
+                "usage: ci-policy checklist-labels ROOT TEMPLATE WORKFLOW HEADING VARIABLE".into(),
             );
         };
         let issues = checklist_labels::inspect(root, &template, &workflow, &heading, &key)?;

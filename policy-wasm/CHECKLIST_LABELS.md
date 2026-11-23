@@ -20,7 +20,7 @@ project-specific script behavior remains untouched.
 
 The guest locates exactly one GitHub Actions with.script scalar containing
 the named constant, parses its JSON literal and compares exact text sets with
-a simple Markdown checklist section. It rejects duplicate labels/checkboxes,
+a simple Markdown checklist section. It rejects duplicate labels (case-insensitive)/checkboxes,
 invalid map records, missing mappings, unrecognized checklist syntax,
 ambiguous workflow definitions, checkout escapes and zero-item sections.
 

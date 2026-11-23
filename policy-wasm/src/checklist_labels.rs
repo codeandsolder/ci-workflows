@@ -127,7 +127,7 @@ fn labels(source: &str, key: &str) -> Result<BTreeSet<String>, String> {
         {
             return Err("invalid label mapping entry".into());
         }
-        if !texts.insert(entry.text) || !names.insert(entry.label) {
+        if !texts.insert(entry.text) || !names.insert(entry.label.to_lowercase()) {
             return Err("duplicate mapping text or label".into());
         }
     }
@@ -217,6 +217,7 @@ jobs:
         for changed in [
             WORKFLOW.replace("d73a4a", "invalid"),
             WORKFLOW.replace("enhancement", "bug"),
+            WORKFLOW.replace("enhancement", "BUG"),
             WORKFLOW.replace("New feature", "Bug fix"),
             WORKFLOW.replace("TYPE_LABELS", "RENAMED"),
         ] {
