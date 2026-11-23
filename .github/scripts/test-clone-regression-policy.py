@@ -304,12 +304,15 @@ fn prod_after() { let x = "}"; }
         self.assertIn("workflow_call:", mandatory)
         self.assertNotIn("inputs:", mandatory)
         self.assertNotIn("inputs.", workflow)
-        self.assertIn('CLONE_GUARD_DISCOVERY_TOKENS: "50"', workflow)
-        self.assertIn('CLONE_GUARD_BLOCKING_TOKENS: "100"', workflow)
-        self.assertIn('CLONE_GUARD_TEST_BLOCKING_TOKENS: "140"', workflow)
-        self.assertIn('CLONE_GUARD_LANGUAGES: ""', workflow)
-        self.assertIn('CLONE_GUARD_SCAN_PATH: "."', workflow)
-        self.assertIn("CLONE_GUARD_EXCLUDES:", workflow)
+        self.assertNotIn("CLONE_GUARD_", workflow)
+        script = (
+            Path(__file__).resolve().parent / "run-clone-regression.sh"
+        ).read_text()
+        self.assertIn("readonly discovery=50 blocking=100 test_blocking=140", script)
+        self.assertIn("'tests/**' '**/tests/**'", script)
+        self.assertIn("--no-config", script)
+        self.assertNotIn("CLONE_GUARD_", script)
+        self.assertNotIn("DOPPELSCAN_BIN", script)
 
     def test_cli_writes_structured_report(self) -> None:
         raw = self.report(group(150, "abcdef123456", ("src/missing.rs", 1, 1)))
