@@ -80,6 +80,19 @@ test('Cargo workspace selection through real Git/Cargo and portable WASI', (t) =
   assert.equal(result.extra_flags.check_schema, true);
   assert.deepEqual(result.test_matrix.include, [{os:'all'}]);
 
+  // Changing only an index entry type (regular file -> symlink) must also
+  // invalidate package selection. This is portable even without OS symlinks.
+  put('mode-change.dat', 'regular file');
+  const typeBase = commit('normal file');
+  const targetBlob = execFileSync('git', ['-C', root, 'hash-object', '-w', '--stdin'],
+    {input: 'a/src/lib.rs'}).toString('utf8').trim();
+  run('update-index', '--add', '--cacheinfo', '120000,' + targetBlob + ',mode-change.dat');
+  run('commit', '-qm', 'type-only change');
+  const typeHead = run('rev-parse', 'HEAD').toString('utf8').trim();
+  const typePlan = plan(module, root, '.github/cargo-affected.json',
+    'pull_request', typeBase, typeHead);
+  assert.equal(typePlan.run_full, true);
+
   assert.deepEqual(expand(module, root, ['alpha', 'beta'],
     ['cargo', 'nextest', 'run', '--verbose']),
     ['cargo', 'nextest', 'run', '-p', 'alpha', '-p', 'beta', '--verbose']);
