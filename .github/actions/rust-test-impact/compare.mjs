@@ -40,8 +40,12 @@ export function compareImpact(selection, nextestLines, fullRunSucceeded) {
     if (!name) throw new Error('Missing test name in ' + event.name);
     if (event.event !== 'started') outcomes.set(testKey(id, name), { binaryId: id, testName: name, event: event.event });
   }
-  if (!outcomes.size) {
-    return { evaluable: false, reason: 'Full Nextest run produced no test outcomes', total: 0, failed: 0, misses: [] };
+  const failures = [...outcomes.entries()].filter(([, outcome]) => !['ok', 'ignored', 'filtered'].includes(outcome.event));
+  if (!outcomes.size || (!fullRunSucceeded && failures.length === 0)) {
+    const reason = outcomes.size
+      ? 'Full Nextest failed without an individual failing-test outcome'
+      : 'Full Nextest run produced no test outcomes';
+    return { evaluable: false, reason, total: outcomes.size, failed: failures.length, misses: [] };
   }
   const cache = selection?.cache?.status;
   const summary = selection?.selection?.summary;
@@ -57,7 +61,6 @@ export function compareImpact(selection, nextestLines, fullRunSucceeded) {
       selected.add(testKey(item.binary_id, item.test_name));
     }
   }
-  const failures = [...outcomes.entries()].filter(([, outcome]) => !['ok', 'ignored', 'filtered'].includes(outcome.event));
   const misses = evaluable
     ? failures.filter(([key]) => !selected.has(key)).map(([, outcome]) => outcome)
     : [];
