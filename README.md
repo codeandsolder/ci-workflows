@@ -24,13 +24,26 @@ jobs:
     uses: codeandsolder/ci-workflows/.github/workflows/java-quality.yml@<full-sha> # main
 ~~~
 
-This is a blocking, zero-debt static-analysis gate using 18 common
-correctness/maintainability rules, with no separate local rule files to
-maintain. Project-specific compilation with `javac -Werror`, tests and
+This is a **strict, blocking, zero-debt** static-analysis gate with **229
+rules** from PMD's Best Practices, Error Prone, Performance and Security
+categories, plus selected concurrency, design, code-style and documentation
+rules. These check resource lifetime, control-flow mistakes, API correctness,
+common unsafe patterns, dead code, questionable string/collection operations,
+and unnecessary Java constructs. The full-category rule groups exclude a
+handful of patterns that are not universally bugs (such as literal protocol
+discriminants, null sentinels, allocations in loops, or logger-specific
+guarding). The rationale and exact exclusions are in
+[the central ruleset](languages/java/quality.xml). All findings are fatal;
+there is no per-repository baseline.
+
+PMD diagnostics appear in the job log; failing jobs also upload the complete
+HTML/XML PMD reports for seven days. The check uses the same reusable workflow
+and job name as before, and only prepares Java tooling when Git-tracked Java
+exists. Project-specific compilation with `javac -Werror`, tests and
 integration/build prerequisites still run in the caller's native workflow:
 arbitrary Java cannot safely be compiled without its real dependencies and
 toolchain. The Gradle-based Java module is used only as an independent PMD
-runner, not to build the user's Java project.
+runner, not to build the caller's Java project.
 
 Public callers use GitHub-hosted Ubuntu; private callers use the registered
 `local-ci` Linux x64 pool, consistently with the existing Rust workflow.

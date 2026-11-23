@@ -3,8 +3,16 @@
 Runs PMD 7.29.0 with the shared high-signal ruleset from quality.xml, on Java
 files tracked by the caller Git index. No caller Gradle/Maven files, compilation,
 project dependencies or Java build layout are necessary. Default behavior is
-blocking (zero accepted findings). The module does not replace a project's
-actual build, tests, or compiler lint; those remain its own quality checks.
+blocking (zero accepted findings). The policy enforces 229 source-only rules
+with category-wide coverage for Best Practices, Error Prone, Performance and
+Security, plus targeted concurrency, design, code style and documentation.
+The few category exceptions are documented inline in quality.xml; they target
+legitimate constructs rather than hiding existing findings. PMD prints
+diagnostics to the build log, and the hosted reusable workflow saves a
+seven-day HTML/XML artifact on failure. There is no accepted-warning baseline.
+
+The module does not replace a project's actual build, tests or compiler lint;
+those remain the project's own quality checks.
 
 The top-level reusable workflow .github/workflows/java-quality.yml performs
 source detection first. Only repositories with a tracked .java file install a

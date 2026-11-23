@@ -1,24 +1,85 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ruleset name="Firmware Parser Quality" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+<ruleset name="Strict Shared Java Quality" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.github.io/schema/ruleset_2_0_0.xsd">
-  <description>Enforced Java parser safety, resource lifetime, maintainability and API correctness rules.</description>
-  <rule ref="category/java/errorprone.xml/ConstructorCallsOverridableMethod"/>
-  <rule ref="category/java/errorprone.xml/ImplicitSwitchFallThrough"/>
-  <rule ref="category/java/errorprone.xml/AvoidCatchingGenericException"/>
-  <rule ref="category/java/errorprone.xml/EmptyCatchBlock"/>
-  <rule ref="category/java/errorprone.xml/AssignmentInOperand"/>
-  <rule ref="category/java/errorprone.xml/CloseResource"/>
-  <rule ref="category/java/errorprone.xml/AvoidDuplicateLiterals"/>
-  <rule ref="category/java/bestpractices.xml/MissingOverride"/>
-  <rule ref="category/java/bestpractices.xml/UnusedAssignment"/>
-  <rule ref="category/java/bestpractices.xml/UnusedLocalVariable"/>
-  <rule ref="category/java/bestpractices.xml/NonExhaustiveSwitch"/>
-  <rule ref="category/java/bestpractices.xml/MethodReturnsInternalArray"/>
-  <rule ref="category/java/bestpractices.xml/RelianceOnDefaultCharset"/>
-  <rule ref="category/java/bestpractices.xml/LiteralsFirstInComparisons"/>
-  <rule ref="category/java/bestpractices.xml/OnDemandImport"/>
-  <rule ref="category/java/bestpractices.xml/LooseCoupling"/>
-  <rule ref="category/java/bestpractices.xml/UseCollectionIsEmpty"/>
-  <rule ref="category/java/bestpractices.xml/AvoidReassigningLoopVariables"/>
+  <description>
+    Zero-debt, source-only correctness, maintainability, concurrency and security
+    analysis for all Git-tracked Java; build-specific javac and tests remain with consumers.
+  </description>
+  <!-- Whole high-signal categories, with only source-independent false-positive
+       classes excluded. Do not use a global baseline or per-repository exemptions. -->
+  <rule ref="category/java/bestpractices.xml">
+    <!-- Ghidra and other frameworks own logger enablement; unconditional guards
+         can change logging semantics and are not invariably faster. -->
+    <exclude name="GuardLogStatement"/>
+    <!-- Reflection and binary-layout fields have intentionally implicit usage. -->
+    <exclude name="UnusedPrivateField"/>
+    <!-- JUnit 6 assertions routed through helpers trigger false positives. -->
+    <exclude name="UnitTestShouldIncludeAssert"/>
+  </rule>
+  <rule ref="category/java/errorprone.xml">
+    <!-- Protocol discriminants are inherently numeric literals. -->
+    <exclude name="AvoidLiteralsInIfCondition"/>
+    <!-- Null is a legitimate sentinel when clearing state. -->
+    <exclude name="NullAssignment"/>
+    <!-- Framework-specified names such as getLength/length are not bugs. -->
+    <exclude name="AvoidFieldNameMatchingMethodName"/>
+    <exclude name="AvoidFieldNameMatchingTypeName"/>
+    <!-- An early continue that skips a malformed parser candidate is intentional. -->
+    <exclude name="AvoidBranchingStatementAsLastInLoop"/>
+  </rule>
+  <rule ref="category/java/performance.xml">
+    <!-- Allocations inside loops can be necessary; measure hot paths separately. -->
+    <exclude name="AvoidInstantiatingObjectsInLoops"/>
+    <!-- Two-way switches are not intrinsically slower than equivalent if statements. -->
+    <exclude name="TooFewBranchesForSwitch"/>
+  </rule>
+  <rule ref="category/java/security.xml"/>
+  <!-- Enforce actual concurrency hazards, not style rules banning threads/volatile
+       or claiming a static-initialized, subsequently read-only map needs CHM. -->
+  <rule ref="category/java/multithreading.xml/AvoidThreadGroup"/>
+  <rule ref="category/java/multithreading.xml/DontCallThreadRun"/>
+  <rule ref="category/java/multithreading.xml/DoubleCheckedLocking"/>
+  <rule ref="category/java/multithreading.xml/NonThreadSafeSingleton"/>
+  <rule ref="category/java/multithreading.xml/OverridingThreadRun"/>
+  <rule ref="category/java/multithreading.xml/UnsynchronizedStaticFormatter"/>
+  <rule ref="category/java/multithreading.xml/UseNotifyAllInsteadOfNotify"/>
+
+  <!-- Targeted design checks with correctness or meaningful maintenance value. -->
+  <rule ref="category/java/design.xml/AvoidRethrowingException"/>
+  <rule ref="category/java/design.xml/AvoidThrowingNewInstanceOfSameException"/>
+  <rule ref="category/java/design.xml/AvoidThrowingNullPointerException"/>
+  <rule ref="category/java/design.xml/AvoidThrowingRawExceptionTypes"/>
+  <rule ref="category/java/design.xml/AvoidUncheckedExceptionsInSignatures"/>
+  <rule ref="category/java/design.xml/ClassWithOnlyPrivateConstructorsShouldBeFinal"/>
+  <rule ref="category/java/design.xml/CollapsibleIfStatements"/>
+  <rule ref="category/java/design.xml/FinalFieldCouldBeStatic"/>
+  <rule ref="category/java/design.xml/InternalApiUsage"/>
+  <rule ref="category/java/design.xml/MutableStaticState"/>
+  <rule ref="category/java/design.xml/PublicMemberInNonPublicType"/>
+  <rule ref="category/java/design.xml/SimplifyConditional"/>
+  <rule ref="category/java/design.xml/SimplifiedTernary"/>
+  <rule ref="category/java/design.xml/UselessOverridingMethod"/>
+
+  <!-- Machine-verifiable cleanups; avoid arbitrary line-length, docs, naming
+       and per-method complexity limits for firmware parsers and framework APIs. -->
+  <rule ref="category/java/codestyle.xml/ControlStatementBraces"/>
+  <rule ref="category/java/codestyle.xml/CStyleArrayDeclaration"/>
+  <rule ref="category/java/codestyle.xml/EmptyControlStatement"/>
+  <rule ref="category/java/codestyle.xml/IdenticalCatchBranches"/>
+  <rule ref="category/java/codestyle.xml/ModifierOrder"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryAnnotationValueElement"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryBlock"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryCast"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryConstructor"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryFullyQualifiedName"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryImport"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryInterfaceDeclaration"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryModifier"/>
+  <rule ref="category/java/codestyle.xml/UnnecessaryReturn"/>
+  <rule ref="category/java/codestyle.xml/UnnecessarySemicolon"/>
+  <rule ref="category/java/codestyle.xml/UseDiamondOperator"/>
+  <rule ref="category/java/codestyle.xml/UseShortArrayInitializer"/>
+  <rule ref="category/java/codestyle.xml/UselessParentheses"/>
+  <rule ref="category/java/documentation.xml/DanglingJavadoc"/>
 </ruleset>
