@@ -64,6 +64,17 @@ fi
 git -C "$root" cat-file -e "$base^{commit}" ||
   fail "base revision $base is not a commit"
 
+# Rust attribute explanations can rename clone fingerprints without changing
+# any executable code. The shared WASI policy proves this from the exact Git
+# patch; a mixed or malformed diff continues through ordinary blocking.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+annotation_proof="$(
+  git -C "$root" diff --no-ext-diff --no-textconv --no-renames --no-color --unified=0 "$base" HEAD |
+    node "$script_dir/../../policy-wasm/run.mjs" "$script_dir/../../policy-wasm/module.json" clones-annotation-diff "$root"
+)" || fail "cannot prove whether the PR changes only must-use reasons"
+annotation_only="$(jq -r '.annotation_only | if type == "boolean" then tostring else error("invalid annotation proof") end' <<< "$annotation_proof")" ||
+  fail "invalid annotation-only proof response"
+
 # Pin both release version and the SHA256 of its official archive.
 version="0.9.0"
 target="x86_64-unknown-linux-gnu"
@@ -115,16 +126,17 @@ fi
 # Classification is separate from syntax matching: the scanner always uses
 # centrally controlled settings, while reviewed, documented fingerprints
 # from .doppelscan.toml can be accepted by the post-scan policy.
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-node "$script_dir/../../policy-wasm/run.mjs" "$script_dir/../../policy-wasm/module.json" \
-  clones "$root" "$scan_dir" "$blocking" "$test_blocking" < "$raw_report" > "$report" || fail "clone policy classification failed"
+jq --argjson annotation_only "$annotation_only" '. + {annotation_only_diff: $annotation_only}' "$raw_report" |
+  node "$script_dir/../../policy-wasm/run.mjs" "$script_dir/../../policy-wasm/module.json" \
+    clones "$root" "$scan_dir" "$blocking" "$test_blocking" > "$report" ||
+  fail "clone policy classification failed"
 
 new="$(jq '.new | length' "$report")"
 smaller="$(jq '.smaller | length' "$report")"
 accepted="$(jq '.accepted | length' "$report")"
 files="$(jq '.summary.files' "$report")"
-printf 'clone-regression: %s files, %s blocking new groups (production >= %s, tests >= %s tokens), %s advisory, %s documented accepts (discovery >= %s)\n' \
-  "$files" "$new" "$blocking" "$test_blocking" "$smaller" "$accepted" "$discovery"
+printf 'clone-regression: %s files, %s blocking new groups (production >= %s, tests >= %s tokens), %s advisory, %s documented accepts (discovery >= %s); must-use-annotation-only=%s\n' \
+  "$files" "$new" "$blocking" "$test_blocking" "$smaller" "$accepted" "$discovery" "$annotation_only"
 
 summarize_groups() {
   local key="$1"

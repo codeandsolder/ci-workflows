@@ -40,6 +40,10 @@ fn dispatch_stdin_policy(policy: &str) -> Result<bool, Box<dyn Error>> {
             stable_review::execute(policy)?;
             return Ok(true);
         }
+        "clones-annotation-diff" => {
+            clones::emit_proof()?;
+            return Ok(true);
+        }
         "quarantine-diff" => {
             quarantine::diff()?;
             return Ok(true);
