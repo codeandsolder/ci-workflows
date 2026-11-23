@@ -243,7 +243,7 @@ jobs:
         with:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
           components: rustfmt, clippy
-      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@8ab6060d47a3c56bb406aff41189fbfcf7aa9acc # main
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
         if: inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
@@ -268,7 +268,7 @@ jobs:
           if-no-files-found: error
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@8ab6060d47a3c56bb406aff41189fbfcf7aa9acc # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
 
   validate:
     needs: [observe, prepare, generate]
@@ -372,7 +372,7 @@ jobs:
         with:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
           components: rustfmt, clippy
-      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@8ab6060d47a3c56bb406aff41189fbfcf7aa9acc # main
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
@@ -421,7 +421,7 @@ jobs:
           if-no-files-found: error
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@8ab6060d47a3c56bb406aff41189fbfcf7aa9acc # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
 
   publish:
     needs: [observe, prepare, generate, validate]

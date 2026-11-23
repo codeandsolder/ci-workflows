@@ -66,7 +66,7 @@ jobs:
           targets: wasm32-wasip1
           components: clippy,rustfmt
       - name: Setup mandatory sccache
-        uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@8ab6060d47a3c56bb406aff41189fbfcf7aa9acc # main
+        uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
         with:
           rust-toolchain: ${{ steps.compiler.outputs.channel }}
           rustflags: ""
@@ -117,7 +117,7 @@ jobs:
           node "$gate/policy-wasm/run.mjs" "$gate/policy-wasm/module.json" concurrency "$GITHUB_WORKSPACE"
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@8ab6060d47a3c56bb406aff41189fbfcf7aa9acc # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
 
   portable-runtime:
     name: Portable CI policy (${{ matrix.os }})
