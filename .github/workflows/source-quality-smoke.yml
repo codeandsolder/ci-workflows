@@ -32,7 +32,6 @@ jobs:
   source-quality:
     uses: ./.github/workflows/source-quality.yml
     with:
-      javascript: false
       shell-format: false
       python-quality: false
   actionlint:
