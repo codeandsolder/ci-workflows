@@ -1,0 +1,38 @@
+name: Source quality module smoke
+
+on:
+  pull_request:
+    paths:
+      - languages/**
+      - .github/actions/**
+      - .github/workflows/source-quality*.yml
+  push:
+    branches: [main]
+    paths:
+      - languages/**
+      - .github/actions/**
+      - .github/workflows/source-quality*.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  detection:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --test languages/detect.test.mjs languages/run.test.mjs
+  source-quality:
+    uses: ./.github/workflows/source-quality.yml
+    with:
+      shell-format: false
+      python-quality: false
+  actionlint:
+    uses: ./.github/workflows/workflow-concurrency.yml

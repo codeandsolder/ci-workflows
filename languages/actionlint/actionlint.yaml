@@ -1,0 +1,5 @@
+# GitHub App runner labels. ubuntu-26.04 exists on GitHub but is not yet in
+# actionlint 1.7.12's static runner database (handled by a narrow CLI filter).
+self-hosted-runner:
+  labels:
+    - local-ci

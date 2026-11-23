@@ -63,7 +63,7 @@ test('bad input and failed inventory cannot create issues', () => {
 // Independent minimal test oracle checks release-field extraction against
 // the WASM TOML parser; production releases rely exclusively on Rust policy.
 test('WASI parser matches independent channel field oracle', () => {
-  const section = /^\[pkg\.rust\]\s*$([\s\S]*?)(?=^\[|\Z)/m.exec(manifest);
+  const section = /^\[pkg\.rust\]\s*$([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(manifest);
   assert.ok(section);
   const version = /^version = "(\d+\.\d+\.\d+)\s+[^"]+"$/m.exec(section[1])?.[1];
   const date = /^date = "(\d{4}-\d{2}-\d{2})"$/m.exec(manifest)?.[1];
