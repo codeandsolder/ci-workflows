@@ -5,7 +5,7 @@ use crate::{
     workspace::{Kind, resolve},
 };
 mod annotation_diff;
-pub(crate) use annotation_diff::emit_proof;
+pub use annotation_diff::emit_proof;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
