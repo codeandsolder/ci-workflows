@@ -6,6 +6,7 @@ mod concurrency;
 mod quarantine;
 mod rust_tests;
 mod shell;
+mod stable_review;
 mod workspace;
 mod yaml;
 
@@ -25,6 +26,10 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
     match policy.as_str() {
         "cargo-affected-plan" | "cargo-affected-args" => {
             cargo_affected::decide(&policy)?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        "stable-release-parse" | "stable-release-plan" => {
+            stable_review::execute(&policy)?;
             return Ok(ExitCode::SUCCESS);
         }
         "quarantine-diff" => {

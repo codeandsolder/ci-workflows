@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "policy-wasm/**"
+      - "scripts/rust-release-review*.mjs"
+      - ".github/workflows/rust-release-review*.yml"
       - ".github/actions/cargo-affected/**"
       - ".github/actions/pr-checklist-labels/**"
       - ".github/scripts/test-workflow-concurrency.py"
@@ -19,6 +21,8 @@ on:
     branches: [main]
     paths:
       - "policy-wasm/**"
+      - "scripts/rust-release-review*.mjs"
+      - ".github/workflows/rust-release-review*.yml"
       - ".github/actions/cargo-affected/**"
       - ".github/actions/pr-checklist-labels/**"
       - ".github/scripts/test-workflow-concurrency.py"
@@ -86,6 +90,7 @@ jobs:
           node policy-wasm/quarantine.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/cargo-affected.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/checklist-labels.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          node scripts/rust-release-review.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache .
           node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
@@ -96,6 +101,7 @@ jobs:
           node policy-wasm/quarantine.test.mjs policy-wasm/module.json
           node policy-wasm/cargo-affected.test.mjs policy-wasm/module.json
           node policy-wasm/checklist-labels.test.mjs policy-wasm/module.json
+          node scripts/rust-release-review.test.mjs policy-wasm/module.json
           node policy-wasm/run.mjs policy-wasm/module.json sccache .
           node policy-wasm/run.mjs policy-wasm/module.json concurrency .
       - name: Verify the actual sparse caller checkout
@@ -138,3 +144,4 @@ jobs:
           node policy-wasm/quarantine.test.mjs policy-wasm/module.json
           node policy-wasm/cargo-affected.test.mjs policy-wasm/module.json
           node policy-wasm/checklist-labels.test.mjs policy-wasm/module.json
+          node scripts/rust-release-review.test.mjs policy-wasm/module.json
