@@ -118,7 +118,7 @@ function main() {
   const ignoredDirs = ['.ci-workflows', '.rust-skills2-gate', 'node_modules', '.git']
     .filter((name) => existsSync(resolve(workdir, name)));
   const macheteArgs = ['--with-metadata', '--json', '--skip-target-dir'];
-  if (ignoredDirs.length) macheteArgs.push('--skip-patterns', ...ignoredDirs);
+  for (const directory of ignoredDirs) macheteArgs.push('--skip-patterns', directory);
   const macheteRun = installed && present
     ? run('cargo-machete', macheteArgs, { cwd: workdir, timeout: 120_000 })
     : null;
