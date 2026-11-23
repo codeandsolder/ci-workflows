@@ -1,0 +1,32 @@
+name: Rust source coverage smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rust-sccache.yml"
+      - ".github/workflows/rust-coverage.yml"
+      - ".github/workflows/rust-coverage-smoke.yml"
+      - ".github/actions/rust-coverage/**"
+      - "smoke-cache/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rust-sccache.yml"
+      - ".github/workflows/rust-coverage.yml"
+      - ".github/workflows/rust-coverage-smoke.yml"
+      - ".github/actions/rust-coverage/**"
+      - "smoke-cache/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    uses: ./.github/workflows/rust-coverage.yml
+    with:
+      working-directory: smoke-cache
