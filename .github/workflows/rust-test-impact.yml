@@ -1,0 +1,43 @@
+name: Rust test-impact shadow (opt-in)
+
+on:
+  workflow_call:
+    inputs:
+      rust-toolchain:
+        description: Exact toolchain or the caller's routine pinned toolchain
+        type: string
+        required: false
+        default: ""
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      cargo-args:
+        type: string
+        required: false
+        default: "--workspace --locked"
+      runner:
+        type: string
+        required: false
+        default: "ubuntu-24.04"
+      timeout-minutes:
+        type: number
+        required: false
+        default: 90
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  impact:
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      command: ":"
+      rust-toolchain: ${{ inputs.rust-toolchain }}
+      runner: ${{ inputs.runner }}
+      timeout-minutes: ${{ inputs.timeout-minutes }}
+      sccache-cache-scope: rust-test-impact
+      test-impact-mode: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && 'collect' || 'shadow' }}
+      test-impact-working-directory: ${{ inputs.working-directory }}
+      test-impact-cargo-args: ${{ inputs.cargo-args }}

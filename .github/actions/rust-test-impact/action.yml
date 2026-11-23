@@ -1,0 +1,143 @@
+name: Rust test-impact shadow
+description: Collect an opt-in per-test baseline or compare the full Nextest suite against coverage-based selection
+inputs:
+  mode:
+    description: collect on default branch, shadow on pull requests
+    required: true
+  working-directory:
+    description: Cargo workspace within the caller checkout
+    required: false
+    default: "."
+  cargo-args:
+    description: Whitespace-separated Cargo build/test flags forwarded to Nextest
+    required: false
+    default: "--workspace --locked"
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Nextest
+      uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+      with:
+        tool: cargo-nextest@0.9.152
+
+    - name: Install pinned cargo-affected (experimental)
+      continue-on-error: true
+      uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+      with:
+        tool: cargo-affected@0.4.1
+
+    - name: Compute scope for per-test coverage baseline
+      id: key
+      continue-on-error: true
+      shell: bash
+      env:
+        IMPACT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        IMPACT_CARGO_ARGS: ${{ inputs.cargo-args }}
+      run: |
+        set -euo pipefail
+        node - <<'JS'
+        const crypto = require('node:crypto');
+        const { execFileSync } = require('node:child_process');
+        const { appendFileSync } = require('node:fs');
+        const values = [
+          'cargo-affected-0.4.1',
+          process.platform, process.arch,
+          process.env.IMPACT_WORKING_DIRECTORY,
+          process.env.IMPACT_CARGO_ARGS,
+          execFileSync('rustc', ['-vV'], {encoding: 'utf8'}),
+        ];
+        const digest = crypto.createHash('sha256').update(JSON.stringify(values)).digest('hex').slice(0, 24);
+        appendFileSync(process.env.GITHUB_OUTPUT, 'prefix=rust-test-impact-v1-' + digest + '-\n');
+        JS
+
+    - name: Restore last default-branch coverage baseline
+      if: inputs.mode == 'shadow' && steps.key.outcome == 'success'
+      id: restore
+      continue-on-error: true
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ inputs.working-directory }}/target/affected/coverage.db
+        key: ${{ steps.key.outputs.prefix }}${{ github.sha }}
+        restore-keys: |
+          ${{ steps.key.outputs.prefix }}
+
+    - name: Collect per-test LLVM coverage on main (informational)
+      if: inputs.mode == 'collect'
+      id: collect
+      continue-on-error: true
+      shell: bash
+      env:
+        IMPACT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        IMPACT_CARGO_ARGS: ${{ inputs.cargo-args }}
+      run: |
+        set -euo pipefail
+        cd "$IMPACT_WORKING_DIRECTORY"
+        read -r -a args <<< "$IMPACT_CARGO_ARGS"
+        cargo affected collect -- "${args[@]}"
+
+    - name: Save main-branch coverage baseline
+      if: inputs.mode == 'collect' && steps.key.outcome == 'success' && steps.collect.outcome == 'success' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+      continue-on-error: true
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ inputs.working-directory }}/target/affected/coverage.db
+        key: ${{ steps.key.outputs.prefix }}${{ github.sha }}
+
+    - name: Execute authoritative full Nextest suite
+      if: inputs.mode == 'shadow'
+      id: full
+      continue-on-error: true
+      shell: bash
+      env:
+        IMPACT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        IMPACT_CARGO_ARGS: ${{ inputs.cargo-args }}
+        NEXTEST_EXPERIMENTAL_LIBTEST_JSON: "1"
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/rust-test-impact"
+        cd "$IMPACT_WORKING_DIRECTORY"
+        read -r -a args <<< "$IMPACT_CARGO_ARGS"
+        cargo nextest run --no-fail-fast --message-format libtest-json-plus "${args[@]}" > "$RUNNER_TEMP/rust-test-impact/nextest.jsonl"
+
+    - name: Predict affected tests without executing them again
+      if: inputs.mode == 'shadow'
+      continue-on-error: true
+      shell: bash
+      env:
+        IMPACT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        IMPACT_CARGO_ARGS: ${{ inputs.cargo-args }}
+      run: |
+        set -euo pipefail
+        cd "$IMPACT_WORKING_DIRECTORY"
+        read -r -a args <<< "$IMPACT_CARGO_ARGS"
+        cargo affected status --report-json "$RUNNER_TEMP/rust-test-impact/selection.json" --report-detail full -- "${args[@]}"
+
+    - name: Compare predicted tests with actual full-suite results
+      if: inputs.mode == 'shadow'
+      continue-on-error: true
+      shell: bash
+      env:
+        FULL_SUCCESS: ${{ steps.full.outcome == 'success' }}
+      run: |
+        node "$GITHUB_ACTION_PATH/compare.mjs" \
+          "$RUNNER_TEMP/rust-test-impact/selection.json" \
+          "$RUNNER_TEMP/rust-test-impact/nextest.jsonl" \
+          "$FULL_SUCCESS" \
+          "$RUNNER_TEMP/rust-test-impact/comparison.json"
+
+    - name: Publish test-impact diagnostics
+      if: inputs.mode == 'shadow'
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: rust-test-impact-${{ github.job }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/rust-test-impact/
+        if-no-files-found: warn
+        retention-days: 14
+
+    - name: Retain the full-suite test gate
+      if: inputs.mode == 'shadow' && steps.full.outcome != 'success'
+      shell: bash
+      run: |
+        echo "The full Nextest suite failed; coverage prediction is informational only." >&2
+        exit 1

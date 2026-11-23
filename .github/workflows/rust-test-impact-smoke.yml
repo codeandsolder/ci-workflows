@@ -1,0 +1,41 @@
+name: Rust test-impact shadow smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rust-sccache.yml"
+      - ".github/workflows/rust-test-impact.yml"
+      - ".github/workflows/rust-test-impact-smoke.yml"
+      - ".github/actions/rust-test-impact/**"
+      - "smoke-cache/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rust-sccache.yml"
+      - ".github/workflows/rust-test-impact.yml"
+      - ".github/workflows/rust-test-impact-smoke.yml"
+      - ".github/actions/rust-test-impact/**"
+      - "smoke-cache/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  compare-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Assert shadow miss and cache-miss semantics
+        run: node --test .github/actions/rust-test-impact/compare.test.mjs
+
+  end-to-end:
+    uses: ./.github/workflows/rust-test-impact.yml
+    with:
+      working-directory: smoke-cache
