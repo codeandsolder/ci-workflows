@@ -20,11 +20,20 @@ runs:
       with:
         tool: cargo-nextest@0.9.152
 
-    - name: Install pinned cargo-affected (experimental)
+    - name: Install pinned fork with Git-root coverage fix
       continue-on-error: true
-      uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
-      with:
-        tool: cargo-affected@0.4.1
+      shell: bash
+      run: |
+        set -euo pipefail
+        tool_root="$RUNNER_TEMP/cargo-affected-install"
+        mkdir -p "$tool_root"
+        # Use the already configured managed sccache and runner-local Cargo
+        # target. Pin the source commit rather than tracking a moving branch.
+        cargo install --locked \
+          --git https://github.com/codeandsolder/cargo-affected.git \
+          --rev 3f5d5aad106bde1c19496ffd144ca432a93a180c \
+          --root "$tool_root" cargo-affected
+        echo "$tool_root/bin" >> "$GITHUB_PATH"
 
     - name: Compute scope for per-test coverage baseline
       id: key
@@ -40,7 +49,7 @@ runs:
         const { execFileSync } = require('node:child_process');
         const { appendFileSync } = require('node:fs');
         const values = [
-          'cargo-affected-0.4.1',
+          'cargo-affected-fork-3f5d5aad106bde1c19496ffd144ca432a93a180c',
           process.platform, process.arch,
           process.env.IMPACT_WORKING_DIRECTORY,
           process.env.IMPACT_CARGO_ARGS,
