@@ -31,7 +31,7 @@ runs:
         # target. Pin the source commit rather than tracking a moving branch.
         cargo install --locked \
           --git https://github.com/codeandsolder/cargo-affected.git \
-          --rev 3f5d5aad106bde1c19496ffd144ca432a93a180c \
+          --rev 440c5b69bf46e6c46b58f949de1081da509c50b6 \
           --root "$tool_root" cargo-affected
         echo "$tool_root/bin" >> "$GITHUB_PATH"
 
@@ -49,7 +49,7 @@ runs:
         const { execFileSync } = require('node:child_process');
         const { appendFileSync } = require('node:fs');
         const values = [
-          'cargo-affected-fork-3f5d5aad106bde1c19496ffd144ca432a93a180c',
+          'cargo-affected-fork-440c5b69bf46e6c46b58f949de1081da509c50b6',
           process.platform, process.arch,
           process.env.IMPACT_WORKING_DIRECTORY,
           process.env.IMPACT_CARGO_ARGS,
