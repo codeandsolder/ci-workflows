@@ -8,9 +8,10 @@ if (!modulePath || !root || !(
   (policy === 'concurrency' && options.length === 0) ||
   (policy === 'sccache' && options.length <= 1) ||
   (policy === 'clones' && options.length === 3) ||
+  (['cargo-affected-plan', 'cargo-affected-args'].includes(policy) && options.length === 0) ||
   (['quarantine-diff', 'quarantine-age'].includes(policy) && options.length === 0)
 )) {
-  throw new Error('usage: node run.mjs MODULE concurrency ROOT | sccache ROOT [STRICT_REF] | clones ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS | quarantine-diff ROOT | quarantine-age ROOT');
+  throw new Error('usage: node run.mjs MODULE concurrency ROOT | sccache ROOT [STRICT_REF] | clones ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS | quarantine-diff ROOT | quarantine-age ROOT | cargo-affected-plan ROOT | cargo-affected-args ROOT');
 }
 const host = workspace(root);
 const args = ['ci-policy', policy, '/workspace'];
