@@ -1,0 +1,28 @@
+name: Discover tracked source languages
+description: Identify actual Java/Rust files in the caller Git index, excluding injected CI code
+inputs:
+  source-root:
+    description: Path to the root of the caller checkout
+    required: true
+  manifest:
+    description: Absolute path for JSON manifest (under runner.temp)
+    required: true
+outputs:
+  has-java:
+    value: ${{ steps.detect.outputs.has_java }}
+    description: Java files are present in the caller Git checkout
+  has-rust:
+    value: ${{ steps.detect.outputs.has_rust }}
+    description: Rust files are present in the caller Git checkout
+  java-count:
+    value: ${{ steps.detect.outputs.java_count }}
+runs:
+  using: composite
+  steps:
+    - name: Inspect tracked source languages
+      id: detect
+      shell: bash
+      run: |
+        set -euo pipefail
+        node "$GITHUB_ACTION_PATH/../../../languages/detect.mjs" \
+          "${{ inputs.source-root }}" "${{ inputs.manifest }}" "$GITHUB_OUTPUT"
