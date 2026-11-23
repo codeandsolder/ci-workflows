@@ -1,5 +1,6 @@
 mod cache;
 mod cargo_affected;
+mod checklist_labels;
 mod clones;
 mod concurrency;
 mod quarantine;
@@ -35,6 +36,28 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
             return Ok(ExitCode::SUCCESS);
         }
         _ => {}
+    }
+    if policy == "checklist-labels" {
+        let (Some(template), Some(workflow), Some(heading), Some(key), None) = (
+            args.next(),
+            args.next(),
+            args.next(),
+            args.next(),
+            args.next(),
+        ) else {
+            return Err(
+                "usage: ci-policy checklist-labels ROOT TEMPLATE WORKFLOW HEADING ENV_KEY".into(),
+            );
+        };
+        let issues = checklist_labels::inspect(root, &template, &workflow, &heading, &key)?;
+        if issues.is_empty() {
+            println!("Shared CI: checklist labels match the PR template");
+            return Ok(ExitCode::SUCCESS);
+        }
+        for issue in issues {
+            eprintln!("ci-policy: {issue}");
+        }
+        return Ok(ExitCode::from(1));
     }
     if policy == "clones" {
         let (Some(scan), Some(production), Some(testing), None) =

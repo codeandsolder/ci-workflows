@@ -8,6 +8,7 @@ if (!modulePath || !root || !(
   (policy === 'concurrency' && options.length === 0) ||
   (policy === 'sccache' && options.length <= 1) ||
   (policy === 'clones' && options.length === 3) ||
+  (policy === 'checklist-labels' && options.length === 4) ||
   (['cargo-affected-plan', 'cargo-affected-args'].includes(policy) && options.length === 0) ||
   (['quarantine-diff', 'quarantine-age'].includes(policy) && options.length === 0)
 )) {
@@ -20,6 +21,8 @@ if (policy === 'clones') {
   const resolved = host.lookup(path.isAbsolute(scan) ? scan : '/workspace/' + scan);
   if (!resolved?.startsWith('d')) throw new Error('scan root must be a checkout directory');
   args.push(resolved.slice(1), production, testing);
+} else if (policy === 'checklist-labels') {
+  args.push(...options);
 } else if (policy === 'concurrency' || policy === 'sccache') {
   if (policy === 'sccache') args.push(options[0] ?? '');
   args.push(...host.workflowPaths());
