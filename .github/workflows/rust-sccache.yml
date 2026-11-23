@@ -307,9 +307,9 @@ jobs:
 
       - name: Select automatic Rust test-impact analysis
         id: auto-impact
-        # The caller's normal validation runs first. Automatic collection and
-        # comparison may fail without changing its authoritative test gate.
-        if: ${{ inputs.test-impact-mode == 'auto' && !inputs.coverage-report && runner.os == 'Linux' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)) }}
+        # Compare even when the caller fails: failed tests are the evidence
+        # needed to detect under-selection. The caller remains authoritative.
+        if: ${{ !cancelled() && inputs.test-impact-mode == 'auto' && !inputs.coverage-report && runner.os == 'Linux' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)) }}
         shell: bash
         env:
           IMPACT_WORKING_DIRECTORY: ${{ inputs.test-impact-working-directory }}
@@ -326,7 +326,7 @@ jobs:
           fi
 
       - name: Analyze Rust test impact automatically (informational)
-        if: ${{ steps.auto-impact.outputs.mode != '' }}
+        if: ${{ !cancelled() && steps.auto-impact.outputs.mode != '' }}
         id: auto-impact-run
         continue-on-error: true
         uses: ./.ci-workflows/.github/actions/rust-test-impact
@@ -336,7 +336,7 @@ jobs:
           cargo-args: ${{ inputs.test-impact-cargo-args }}
 
       - name: Note automatic impact-analysis failure
-        if: ${{ steps.auto-impact-run.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.auto-impact-run.outcome == 'failure' }}
         shell: bash
         run: |
           echo "Automatic test-impact analysis failed; the original Rust CI command remains authoritative." >> "$GITHUB_STEP_SUMMARY"

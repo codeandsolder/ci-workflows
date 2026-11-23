@@ -4,8 +4,8 @@ The shared `rust-sccache.yml` enables advisory test-impact analysis **by
 default** on ordinary Linux PR and main-branch jobs with a Cargo workspace at
 `test-impact-working-directory` (default `.`). It runs the caller's command
 unchanged, then collects a baseline on main or compares against the complete
-Nextest suite on a PR. The additional work is informational: failures cannot
-hide or override the caller's Rust CI result. Set `test-impact-mode: none` to
+Nextest suite on a PR. Analysis also runs after a failed caller command, because failing tests
+expose missed regressions. It cannot hide or override the caller's Rust CI result. Set `test-impact-mode: none` to
 disable it, or set `test-impact-working-directory` and
 `test-impact-cargo-args` for a non-root workspace or custom test arguments.
 Release-tier jobs, tag events, non-Linux runners, and informational coverage
