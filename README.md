@@ -144,8 +144,11 @@ non-Rust tasks, and rejects missing/disabled cancellation, PR-key collisions,
 invalid PR-target group identity and unsafe mixed-event groups. Pure
 PR-close cleanup, workflow_call-only, release-only and non-PR workflows
 do not require PR supersession. Test fixtures and the provider's own hosted
-check are in .github/scripts/test-workflow-concurrency.py and
-.github/workflows/workflow-concurrency-policy.yml.
+check are the frozen, independently derived 56-case WASI fixtures in
+[policy-wasm/concurrency.test.mjs](policy-wasm/concurrency.test.mjs) and
+[policy-wasm/fixtures/concurrency.json](policy-wasm/fixtures/concurrency.json),
+with a standalone gate at .github/workflows/workflow-concurrency-policy.yml.
+No Python runtime is required for workflow cancellation tests.
 
 A workflow whose every invocation recomputes a *global snapshot* (for
 example, all open pull-request conflict labels) deliberately uses one

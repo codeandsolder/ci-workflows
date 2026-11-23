@@ -10,13 +10,7 @@ on:
       - ".github/workflows/rust-release-review*.yml"
       - ".github/actions/cargo-affected/**"
       - ".github/actions/pr-checklist-labels/**"
-      - ".github/scripts/test-workflow-concurrency.py"
-      - ".github/scripts/test-clone-regression-policy.py"
-      - ".github/scripts/clone-regression-oracle.py"
-      - ".github/scripts/test-rust-ci-sccache-policy.py"
-      - ".github/scripts/rust-ci-sccache-oracle.py"
       - ".github/actions/rust-ci-sccache-policy/**"
-      - ".github/scripts/workflow-concurrency-oracle.py"
       - ".github/workflows/portable-policy.yml"
       - rust-toolchain.toml
   push:
@@ -29,13 +23,7 @@ on:
       - ".github/workflows/rust-release-review*.yml"
       - ".github/actions/cargo-affected/**"
       - ".github/actions/pr-checklist-labels/**"
-      - ".github/scripts/test-workflow-concurrency.py"
-      - ".github/scripts/test-clone-regression-policy.py"
-      - ".github/scripts/clone-regression-oracle.py"
-      - ".github/scripts/test-rust-ci-sccache-policy.py"
-      - ".github/scripts/rust-ci-sccache-oracle.py"
       - ".github/actions/rust-ci-sccache-policy/**"
-      - ".github/scripts/workflow-concurrency-oracle.py"
       - ".github/workflows/portable-policy.yml"
       - rust-toolchain.toml
   workflow_dispatch:
@@ -59,9 +47,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
-        with:
-          enable-cache: false
       - uses: ./.github/actions/resolve-rust-toolchain
         id: compiler
       - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
@@ -89,8 +74,8 @@ jobs:
         shell: bash
         run: |
           node --test policy-wasm/workspace.test.mjs
-          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
-          uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          node policy-wasm/concurrency.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          node policy-wasm/sccache.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/quarantine.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/cargo-affected.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/checklist-labels.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
@@ -98,13 +83,13 @@ jobs:
           node scripts/runner-availability.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node scripts/renovate-quarantine-recheck.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/upstream.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
-          uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          node policy-wasm/clones.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache .
           node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
           node --test policy-wasm/workspace.test.mjs
-          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
-          uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
-          uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
+          node policy-wasm/concurrency.test.mjs policy-wasm/module.json
+          node policy-wasm/sccache.test.mjs policy-wasm/module.json
+          node policy-wasm/clones.test.mjs policy-wasm/module.json
           node policy-wasm/quarantine.test.mjs policy-wasm/module.json
           node policy-wasm/cargo-affected.test.mjs policy-wasm/module.json
           node policy-wasm/checklist-labels.test.mjs policy-wasm/module.json
@@ -141,16 +126,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
-        with:
-          enable-cache: false
       - name: Validate the same policy binary on each platform
         shell: bash
         run: |
           node --test policy-wasm/workspace.test.mjs
-          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
-          uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
-          uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
+          node policy-wasm/concurrency.test.mjs policy-wasm/module.json
+          node policy-wasm/sccache.test.mjs policy-wasm/module.json
+          node policy-wasm/clones.test.mjs policy-wasm/module.json
           node policy-wasm/quarantine.test.mjs policy-wasm/module.json
           node policy-wasm/cargo-affected.test.mjs policy-wasm/module.json
           node policy-wasm/checklist-labels.test.mjs policy-wasm/module.json
