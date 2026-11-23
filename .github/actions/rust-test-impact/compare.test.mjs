@@ -79,3 +79,12 @@ test('real Nextest bin identities preserve hyphens in package and target', () =>
   assert.equal(result.failed, 1);
   assert.deepEqual(result.misses, []);
 });
+
+
+test('failed full run without any failed test is inconclusive', () => {
+  const passing = events.replaceAll('"event":"failed"', '"event":"ok"');
+  const result = compareImpact(selection, passing, false);
+  assert.equal(result.evaluable, false);
+  assert.equal(result.failed, 0);
+  assert.match(result.reason, /failed without an individual/);
+});
