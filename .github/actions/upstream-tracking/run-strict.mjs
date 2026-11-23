@@ -21,6 +21,49 @@ function requireSafeRelative(value, label) {
   return value;
 }
 
+// Follow only Git-pinned gitlinks, never arbitrary nested .git repositories.
+// A provider checkout under .ci-workflows is physically inside the workspace
+// but is not part of the exact candidate's committed Git tree.
+function isCandidateTrackedManifest(root, manifest) {
+  let repository = root;
+  let relative = path.relative(root, manifest).split(path.sep).join("/");
+  while (relative) {
+    const parts = relative.split("/");
+    let nested;
+    // Exact file first, then the longest matching gitlink. Avoid enumerating
+    // large unrelated subtrees for each parent path.
+    for (let size = parts.length; size >= 1; size--) {
+      const tracked = parts.slice(0, size).join("/");
+      // HEAD is the exact candidate commit. Its immutable tree is stronger
+      // provenance than the mutable index, which a prior step could stage.
+      const entries = execFileSync("git", [
+        "-C", repository, "ls-tree", "-z", "HEAD", "--", ":(literal)" + tracked,
+      ], { encoding: "utf8" });
+      for (const entry of entries.split("\0").filter(Boolean)) {
+        const tab = entry.indexOf("\t");
+        if (tab < 0 || entry.slice(tab + 1) !== tracked) continue;
+        const [mode, type, oid] = entry.slice(0, tab).split(" ");
+        if (size === parts.length && type === "blob" && (mode === "100644" || mode === "100755")) return true;
+        if (mode === "160000" && type === "commit" && size < parts.length) {
+          const child = path.join(repository, tracked);
+          const checkedOut = execFileSync("git", [
+            "-C", child, "rev-parse", "HEAD",
+          ], { encoding: "utf8" }).trim();
+          if (checkedOut !== oid) {
+            throw new Error("strict Rust submodule revision does not match candidate gitlink: " + tracked);
+          }
+          nested = { tracked, size };
+        }
+      }
+      if (nested) break;
+    }
+    if (!nested) return false;
+    repository = path.join(repository, nested.tracked);
+    relative = parts.slice(nested.size).join("/");
+  }
+  return false;
+}
+
 function assertReviewedRustDirectory(root, job) {
   // Even a reviewed relative path can point outside the candidate if the
   // upstream update replaces one of its path components with a symlink.
@@ -39,6 +82,9 @@ function assertReviewedRustDirectory(root, job) {
   const manifestReal = realpathSync(manifest);
   if (manifestReal !== canonicalRoot && !manifestReal.startsWith(canonicalRoot + path.sep)) {
     throw new Error("strict Cargo.toml resolves outside the candidate: " + job.workingDirectory);
+  }
+  if (!isCandidateTrackedManifest(canonicalRoot, manifestReal)) {
+    throw new Error("strict Cargo.toml is not in the exact candidate Git tree: " + job.workingDirectory);
   }
 }
 
@@ -81,6 +127,12 @@ export function executePlan(plan, selectedCompiler, root, gateDir) {
   const pythonScript = path.join(gateDir, "scripts/strict_python.sh");
   const rustScript = path.join(gateDir, "scripts/strict_clippy.sh");
   if (!existsSync(pythonScript) || !existsSync(rustScript)) throw new Error("reviewed gate implementation incomplete");
+  // A reviewed strict working-directory may point into a pinned submodule.
+  // Populate the committed gitlinks before resolving and containing paths.
+  if (plan.jobs.some((job) => job.checkoutSubmodules !== "false")) {
+    const recursive = plan.jobs.some((job) => job.checkoutSubmodules === "recursive");
+    run("git", ["-C", root, "submodule", "update", "--init", ...(recursive ? ["--recursive"] : [])]);
+  }
   for (const job of plan.jobs) assertReviewedRustDirectory(root, job);
   const packages = uniqueWords(plan.jobs, "aptPackages", /\s+/);
   if (packages.length) {
@@ -106,10 +158,6 @@ export function executePlan(plan, selectedCompiler, root, gateDir) {
   }
   for (const [compiler, targets] of targetGroups) {
     run("rustup", ["target", "add", "--toolchain", compiler, ...targets]);
-  }
-  if (plan.jobs.some((job) => job.checkoutSubmodules !== "false")) {
-    const recursive = plan.jobs.some((job) => job.checkoutSubmodules === "recursive");
-    run("git", ["-C", root, "submodule", "update", "--init", ...(recursive ? ["--recursive"] : [])]);
   }
   // Apply the actual reviewed gate scripts, including each distinct Python
   // configuration. No source policy is copied from the upstream candidate.

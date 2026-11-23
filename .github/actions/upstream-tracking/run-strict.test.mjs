@@ -30,7 +30,7 @@ test("rejects ambiguous toolchain, unsafe directory and apt selectors", () => {
 });
 
 import {execFileSync} from "node:child_process";
-import {mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync} from "node:fs";
+import {mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync, existsSync} from "node:fs";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {executePlan} from "./run-strict.mjs";
@@ -100,6 +100,36 @@ test("candidate validation calls reviewed Python and Rust in order, and failures
     executePlan(nestedPlan, "nightly-2026-11-19", candidate, gate);
     assert.match(readFileSync(path.join(candidate, ".events"), "utf8"), /rust:nested:--locked --workspace --all-targets:false/);
 
+    // An injected provider checkout lies inside GITHUB_WORKSPACE, but is
+    // untracked by the exact upstream candidate. A candidate-controlled
+    // symlink must not make a reviewed job compile that provider instead.
+    mkdirSync(path.join(candidate, ".ci-workflows", "policy-wasm"), {recursive:true});
+    writeFileSync(path.join(candidate, ".ci-workflows", "policy-wasm", "Cargo.toml"), "[workspace]\\n");
+    writeFileSync(path.join(candidate, ".git", "info", "exclude"), ".events\\n.ci-workflows/\\n");
+    symlinkSync(".ci-workflows/policy-wasm", path.join(candidate, "selected"));
+    git(candidate, "add", "selected");
+    git(candidate, "-c", "user.name=CI integration test", "-c", "user.email=ci@example.invalid", "commit", "-qm", "symlinked candidate source");
+    const injectedPlan = structuredClone(plan);
+    injectedPlan.jobs[0].workingDirectory = "selected";
+    assert.throws(
+      () => executePlan(injectedPlan, "nightly-2026-11-19", candidate, gate),
+      /not in the exact candidate Git tree/
+    );
+
+    // Staging a newly generated Cargo manifest cannot turn uncommitted code
+    // into an exact candidate source. The immutable HEAD tree is authoritative.
+    mkdirSync(path.join(candidate, "staged"));
+    writeFileSync(path.join(candidate, "staged", "Cargo.toml"), "[workspace]\\n");
+    git(candidate, "add", "staged/Cargo.toml");
+    const stagedPlan = structuredClone(plan);
+    stagedPlan.jobs[0].workingDirectory = "staged";
+    assert.throws(
+      () => executePlan(stagedPlan, "nightly-2026-11-19", candidate, gate),
+      /not in the exact candidate Git tree/
+    );
+    git(candidate, "reset", "-q", "--", "staged/Cargo.toml");
+    rmSync(path.join(candidate, "staged"), {recursive:true,force:true});
+
     // A tracked symlink in the candidate must not redirect even a reviewed,
     // syntactically safe working-directory into a different filesystem tree.
     const external = path.join(temp, "external");
@@ -138,5 +168,66 @@ test("candidate validation calls reviewed Python and Rust in order, and failures
     );
   } finally {
     rmSync(temp, {recursive:true, force:true});
+  }
+});
+
+test("reviewed strict job initializes pinned Git submodule before Cargo workspace preflight", () => {
+  const temp = mkdtempSync(path.join(tmpdir(), "ci-reviewed-submodule-"));
+  try {
+    const source = path.join(temp, "module-source");
+    const candidate = path.join(temp, "candidate");
+    const gate = path.join(temp, "reviewed");
+    for (const repo of [source, candidate, gate]) {
+      mkdirSync(repo);
+      git(repo, "init", "-q", "-b", "main");
+    }
+    writeFileSync(path.join(source, "Cargo.toml"), "[workspace]\n");
+    commit(source);
+
+    mkdirSync(path.join(gate, "scripts"));
+    writeFileSync(path.join(gate, "scripts", "strict_python.sh"), "#!/bin/sh\nset -eu\n");
+    writeFileSync(path.join(gate, "scripts", "strict_clippy.sh"), "#!/bin/sh\nset -eu\n");
+    const refSha = commit(gate);
+
+    // Local-only Git protocol is explicitly enabled in this fixture. The
+    // production runner never changes Git's transport/security settings.
+    git(candidate, "config", "protocol.file.allow", "always");
+    git(candidate, "-c", "protocol.file.allow=always",
+      "submodule", "add", "-q", source, "modules/workspace");
+    commit(candidate);
+    git(candidate, "submodule", "deinit", "-f", "--", "modules/workspace");
+    const manifest = path.join(candidate, "modules", "workspace", "Cargo.toml");
+    assert.equal(existsSync(manifest), false, "initial fixture has no checked-out submodule");
+
+    const plan = structuredClone(base);
+    plan.refSha = refSha;
+    plan.jobs[0].workingDirectory = "modules/workspace";
+    plan.jobs[0].checkoutSubmodules = "true";
+    plan.jobs[0].aptPackages = "";
+    plan.jobs[0].rustTargets = "";
+    executePlan(plan, "nightly-2026-11-19", candidate, gate);
+    assert.equal(existsSync(manifest), true, "the reviewed job initializes its pinned submodule");
+    assert.equal(git(candidate, "diff", "--name-only", "HEAD", "--"), "");
+
+    // A populated but displaced submodule must not compile the wrong
+    // revision even if the workspace manifest is legitimately tracked there.
+    const moduleDir = path.join(candidate, "modules", "workspace");
+    writeFileSync(path.join(moduleDir, "unreviewed.txt"), "different submodule commit\\n");
+    commit(moduleDir);
+    plan.jobs[0].checkoutSubmodules = "false";
+    assert.throws(
+      () => executePlan(plan, "nightly-2026-11-19", candidate, gate),
+      /submodule revision does not match candidate gitlink/
+    );
+    git(moduleDir, "checkout", "-q", git(candidate, "rev-parse", "HEAD:modules/workspace"));
+
+    git(candidate, "submodule", "deinit", "-f", "--", "modules/workspace");
+    plan.jobs[0].checkoutSubmodules = "false";
+    assert.throws(
+      () => executePlan(plan, "nightly-2026-11-19", candidate, gate),
+      /no Cargo.toml/
+    );
+  } finally {
+    rmSync(temp, {recursive:true,force:true});
   }
 });
