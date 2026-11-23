@@ -1,0 +1,63 @@
+name: Informational Rust coverage
+description: Collect LLVM Rust test coverage, attach HTML/LCOV/JSON, and publish an advisory job summary
+inputs:
+  cargo-args:
+    description: Whitespace-separated test arguments passed to cargo llvm-cov
+    required: false
+    default: "--workspace --locked"
+  working-directory:
+    description: Caller checkout Cargo workspace directory
+    required: false
+    default: "."
+runs:
+  using: composite
+  steps:
+    - name: Install pinned cargo-llvm-cov
+      continue-on-error: true
+      uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+      with:
+        tool: cargo-llvm-cov@0.9.2
+
+    - name: Collect instrumented test coverage
+      id: coverage
+      continue-on-error: true
+      shell: bash
+      env:
+        COVERAGE_CARGO_ARGS: ${{ inputs.cargo-args }}
+        COVERAGE_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        if [[ ! -f "$COVERAGE_WORKING_DIRECTORY/Cargo.toml" ]]; then
+          echo "Coverage directory must contain Cargo.toml: $COVERAGE_WORKING_DIRECTORY" >&2
+          exit 2
+        fi
+        cd "$COVERAGE_WORKING_DIRECTORY"
+        report_dir="$RUNNER_TEMP/rust-coverage"
+        mkdir -p "$report_dir"
+        read -r -a cargo_args <<< "$COVERAGE_CARGO_ARGS"
+        # Keep the canonical sccache RUSTC_WRAPPER set by rust-sccache.yml;
+        # cargo-llvm-cov's default wrapper would override it.
+        cargo llvm-cov --no-rustc-wrapper --html --output-dir "$report_dir" "${cargo_args[@]}"
+        cargo llvm-cov report --lcov --output-path "$report_dir/lcov.info"
+        cargo llvm-cov report --json --output-path "$report_dir/coverage.json"
+
+    - name: Upload coverage artifact
+      if: always()
+      id: upload-coverage
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: rust-coverage-${{ github.job }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/rust-coverage/
+        retention-days: 14
+        if-no-files-found: warn
+
+    - name: Write coverage summary
+      if: always()
+      shell: bash
+      env:
+        COVERAGE_JSON: ${{ runner.temp }}/rust-coverage/coverage.json
+        COVERAGE_STATUS: ${{ steps.coverage.outcome }}
+        COVERAGE_ARTIFACT_URL: ${{ steps.upload-coverage.outputs.artifact-url }}
+        COVERAGE_DIRECTORY: ${{ inputs.working-directory }}
+      run: node "$GITHUB_ACTION_PATH/summary.mjs"

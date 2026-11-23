@@ -57,6 +57,21 @@ on:
         required: false
         default: 6144
         type: number
+      coverage-report:
+        description: "Run an informational Rust coverage report instead of the caller command"
+        required: false
+        default: false
+        type: boolean
+      coverage-cargo-args:
+        description: "Whitespace-separated cargo llvm-cov test arguments"
+        required: false
+        default: "--workspace --locked"
+        type: string
+      coverage-working-directory:
+        description: "Cargo workspace path relative to the caller checkout"
+        required: false
+        default: "."
+        type: string
       isolate-public-sccache-server:
         description: Give the public CI compiler cache an isolated Unix socket so test suites managing their own sccache daemon cannot stop it.
         required: false
@@ -69,6 +84,7 @@ env:
 
 jobs:
   rust:
+    continue-on-error: ${{ inputs.coverage-report }}
     # Unknown values run into the validation step instead of silently skipping CI.
     if: ${{ inputs.validation-tier != 'release' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || inputs.runner }}
@@ -102,6 +118,7 @@ jobs:
           path: .ci-workflows
           persist-credentials: false
           sparse-checkout: |
+            .github/actions/rust-coverage
             .github/actions/setup-sccache
             .github/actions/finalize-sccache
             .github/actions/resolve-rust-toolchain
@@ -148,6 +165,7 @@ jobs:
         env:
           RUST_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
           VALIDATION_TIER: ${{ inputs.validation-tier }}
+          COVERAGE_REPORT: ${{ inputs.coverage-report }}
         run: |
           set -euo pipefail
           if ! rustup run "$RUST_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
@@ -156,10 +174,13 @@ jobs:
             echo "Rust toolchain $RUST_TOOLCHAIN is already installed on the runner."
           fi
 
-          if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" ]]; then
+          if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" || "$COVERAGE_REPORT" == true ]]; then
             read -r -a components <<< "$RUST_COMPONENTS"
             if [[ "$VALIDATION_TIER" == routine ]]; then
               components+=(clippy rustfmt)
+            fi
+            if [[ "$COVERAGE_REPORT" == true ]]; then
+              components+=(llvm-tools-preview)
             fi
             # Rustup may schedule concurrent downloads for repeated components.
             # Pass each requested component exactly once.
@@ -230,10 +251,18 @@ jobs:
           enable-cache: false
 
       - name: Run caller command
+        if: ${{ !inputs.coverage-report }}
         shell: bash
         run: |
           set -euo pipefail
           ${{ inputs.command }}
+
+      - name: Collect Rust source coverage (informational)
+        if: inputs.coverage-report
+        uses: ./.ci-workflows/.github/actions/rust-coverage
+        with:
+          cargo-args: ${{ inputs.coverage-cargo-args }}
+          working-directory: ${{ inputs.coverage-working-directory }}
 
       - name: Finalize mandatory sccache
         if: always()

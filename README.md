@@ -8,6 +8,43 @@ The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners
 
 Additional MSRV, older/newer toolchain, alternative OS/architecture, sanitizer and compatibility lanes are optional **release-tier** jobs. Call the same reusable workflow with `validation-tier: release`. These jobs are skipped unless the caller is running on a release tag (`refs/tags/*`). For example, the caller may define separate jobs invoking this workflow with distinct `rust-toolchain`, `runner` and `rust-targets` inputs. A release tag must be included in the caller's `on.push.tags` trigger (and not excluded by other conditions); `workflow_dispatch` is not a release trigger.
 
+## Informational Rust test coverage
+
+Use [`.github/workflows/rust-coverage.yml`](.github/workflows/rust-coverage.yml)
+as a **separate, advisory** job. It runs `cargo-llvm-cov` with workspace tests,
+publishes available line/function/region/branch totals to the GitHub Actions step summary,
+and uploads a 14-day artifact containing browsable `html/index.html`, LCOV,
+and LLVM JSON coverage data. There is **no minimum coverage percentage**, and
+the coverage job is best-effort: incomplete coverage does not prevent a PR merge
+or replace the normal strict Rust tests.
+
+~~~yaml
+jobs:
+  coverage:
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-coverage.yml@<full-sha> # main
+    with:
+      working-directory: .
+      cargo-args: --workspace --locked
+~~~
+
+The Rust toolchain is resolved from the caller's pinned manifest, like the
+normal shared Rust workflow; `rust-toolchain` can override that pin. Private
+repositories run on the managed `local-ci` Linux runner pool and public
+repositories on `ubuntu-24.04` by default. The coverage workflow reuses the
+normal compiler cache setup/finalization (including Garage on private runners)
+and selects `--no-rustc-wrapper` to preserve the already configured sccache
+wrapper. Its instrumentation uses `llvm-tools-preview` from the matching Rust
+toolchain and pinned `cargo-llvm-cov@0.9.2`. The normal code-quality and test
+jobs are unchanged and remain mandatory.
+
+`cargo-args` is a space-separated list of Cargo test-selection flags (for
+example `--workspace --locked --all-features`); shell quoting within that
+string is not supported. Set `working-directory` for nested workspaces. The
+report does not instrument doctests by default. Prefer one dedicated coverage
+job per workspace rather than adding coverage to every build/Clippy matrix.
+The provider's `rust-coverage-smoke.yml` exercises the reusable workflow
+against `smoke-cache` on relevant changes.
+
 ## Enforced PR workflow supersession policy
 
 GitHub does **not** inherit workflow-level concurrency from a reusable workflow.
