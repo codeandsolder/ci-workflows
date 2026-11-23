@@ -1,0 +1,473 @@
+{
+  "schema": 1,
+  "reference": "Frozen once from retired independent Python/PyYAML oracle",
+  "cases": [
+    {
+      "id": "reference-001",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@1111111111111111111111111111111111111111\n      - run: cargo test --locked\n      - if: always()\n        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@1111111111111111111111111111111111111111\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-002",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cargo test --locked\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:build: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-003",
+      "workflow": "\njobs:\n  spoofed:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: ./.github/actions/setup-sccache\n      - run: cargo test --locked\n      - if: always()\n        uses: ./.github/actions/finalize-sccache\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:spoofed: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:spoofed: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-004",
+      "workflow": "\njobs:\n  spoofed:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: ./.ci-workflows/.github/actions/setup-sccache\n      - run: cargo test --locked\n      - if: always()\n        uses: ./.ci-workflows/.github/actions/finalize-sccache\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:spoofed: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:spoofed: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-005",
+      "workflow": "\njobs:\n  spoofed:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: ./untrusted/.github/actions/setup-sccache\n      - run: cargo test --locked\n      - if: always()\n        uses: ./untrusted/.github/actions/finalize-sccache\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:spoofed: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:spoofed: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-006",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cargo check\n      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@1111111111111111111111111111111111111111\n      - if: always()\n        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@1111111111111111111111111111111111111111\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: setup-sccache runs after Rust tooling"
+      ]
+    },
+    {
+      "id": "reference-007",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@1111111111111111111111111111111111111111\n      - run: cargo test\n      - uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@1111111111111111111111111111111111111111\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: finalize-sccache must use if: always()"
+      ]
+    },
+    {
+      "id": "reference-008",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@1111111111111111111111111111111111111111\n      - uses: Swatinem/rust-cache@v2\n      - run: cargo test\n      - if: always()\n        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@1111111111111111111111111111111111111111\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Swatinem/rust-cache is forbidden; use canonical sccache"
+      ]
+    },
+    {
+      "id": "reference-009",
+      "workflow": "\njobs:\n  build:\n    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@1111111111111111111111111111111111111111\n    with:\n      command: cargo test\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-010",
+      "workflow": "\njobs:\n  strict:\n    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@2222222222222222222222222222222222222222\n",
+      "files": {},
+      "strict_ref": "2222222222222222222222222222222222222222",
+      "expected": []
+    },
+    {
+      "id": "reference-011",
+      "workflow": "\njobs:\n  strict:\n    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@3333333333333333333333333333333333333333\n",
+      "files": {},
+      "strict_ref": "2222222222222222222222222222222222222222",
+      "expected": [
+        ".github/workflows/ci.yml:strict: strict Rust workflow uses 333333333333, but the executing gate is 222222222222"
+      ]
+    },
+    {
+      "id": "reference-012",
+      "workflow": "\njobs:\n  metadata:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: dtolnay/rust-toolchain@1111111111111111111111111111111111111111\n      - run: |\n          cat <<'EOF'\n          Review rustc, Cargo, and Clippy changes.\n          EOF\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-013",
+      "workflow": "\njobs:\n  formatting:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cargo +nightly fmt --all -- --check\n      - run: cargo metadata --format-version 1\n      - run: cargo --version\n      - run: rustc --version\n      - run: cargo package --no-verify\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-014",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cargo check --locked\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:build: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-015",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cargo +1.99.0 test --workspace\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:build: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-016",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: RUSTFLAGS='-D warnings' cargo clippy --all-targets\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:build: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-017",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cargo doc --no-deps\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:build: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-018",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cargo miri test\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:build: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-019",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cargo nextest run\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:build: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-020",
+      "workflow": "\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: rustc src/main.rs\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:build: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:build: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-021",
+      "workflow": "\njobs:\n  docs:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: |\n          cat <<'EOF'\n          cargo test --workspace\n          rustc src/main.rs\n          EOF\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-022",
+      "workflow": "\njobs:\n  installer:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: curl -fsSL https://sh.rustup.rs | sh -s -- --default-toolchain none -y\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-023",
+      "workflow": "\njobs:\n  installer:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: curl -fsSL https://sh.rustup.rs | bash -es -- --default-toolchain none -y\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-024",
+      "workflow": "\njobs:\n  installer:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: printf 'echo ok' | dash -s -- --default-toolchain none\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-025",
+      "workflow": "\njobs:\n  hidden-build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: Swatinem/rust-cache@v2\n      - run: just test-cpu\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:hidden-build: Swatinem/rust-cache is forbidden; use canonical sccache"
+      ]
+    },
+    {
+      "id": "reference-026",
+      "workflow": "\njobs:\n  live:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./ci/live-altcha-e2e.sh\n",
+      "files": {
+        "ci/live-altcha-e2e.sh": "#!/usr/bin/env bash\ncargo build --locked\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:live: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:live: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-027",
+      "workflow": "\njobs:\n  live:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./ci/live-altcha-e2e.sh\n",
+      "files": {
+        "ci/live-altcha-e2e.sh": "#!/usr/bin/env bash\ncargo build --locked\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:live: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:live: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-028",
+      "workflow": "\njobs:\n  live:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@1111111111111111111111111111111111111111\n      - run: ./ci/live-altcha-e2e.sh\n      - if: always()\n        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@1111111111111111111111111111111111111111\n",
+      "files": {
+        "ci/live-altcha-e2e.sh": "#!/usr/bin/env bash\ncargo build --locked\n"
+      },
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-029",
+      "workflow": "\njobs:\n  indirect:\n    runs-on: ubuntu-latest\n    steps:\n      - run: env MODE=ci bash ./ci/first.sh\n",
+      "files": {
+        "ci/first.sh": "#!/bin/sh\nsource ./ci/second.sh\n",
+        "ci/second.sh": "#!/usr/bin/env bash\ncargo +nightly clippy --all-targets\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:indirect: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:indirect: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-030",
+      "workflow": "\njobs:\n  cycle:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./ci/a.sh\n",
+      "files": {
+        "ci/a.sh": "#!/bin/sh\n./ci/b.sh\n",
+        "ci/b.sh": "#!/bin/sh\n./ci/a.sh\nrustc src/main.rs\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:cycle: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:cycle: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-031",
+      "workflow": "\njobs:\n  cwd:\n    runs-on: ubuntu-latest\n    defaults:\n      run:\n        working-directory: test-area\n    steps:\n      - run: bash ./run.sh\n",
+      "files": {
+        "test-area/run.sh": "#!/bin/bash\ncargo test --locked\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:cwd: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:cwd: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-032",
+      "workflow": "\njobs:\n  cwd:\n    runs-on: ubuntu-latest\n\n    steps:\n      - run: bash ./run.sh\n        working-directory: test-area\n",
+      "files": {
+        "test-area/run.sh": "#!/bin/bash\ncargo test --locked\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:cwd: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:cwd: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-033",
+      "workflow": "\njobs:\n  cwd-nested:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./ci/runner.sh\n",
+      "files": {
+        "ci/runner.sh": "#!/bin/sh\ncd scripts && ./compile.sh\n",
+        "scripts/compile.sh": "#!/bin/sh\ncargo check\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:cwd-nested: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:cwd-nested: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-034",
+      "workflow": "\njobs:\n  inline:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash -lc 'cargo test --locked'\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:inline: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:inline: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-035",
+      "workflow": "\njobs:\n  unknown:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash \"$DYNAMIC_SCRIPT\"\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:unknown: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:unknown: Rust job is missing canonical setup-sccache",
+        ".github/workflows/ci.yml:unknown: step 0: unresolved local shell script: $DYNAMIC_SCRIPT; canonical sccache required"
+      ]
+    },
+    {
+      "id": "reference-036",
+      "workflow": "\njobs:\n  unknown:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash ./ci/missing.sh\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:unknown: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:unknown: Rust job is missing canonical setup-sccache",
+        ".github/workflows/ci.yml:unknown: step 0: unresolved local shell script: ./ci/missing.sh; canonical sccache required"
+      ]
+    },
+    {
+      "id": "reference-037",
+      "workflow": "\njobs:\n  live:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./ci/live-altcha-e2e.sh\n",
+      "files": {
+        "ci/live-altcha-e2e.sh": "#!/bin/sh\ncargo metadata --format-version 1\ncargo +nightly fmt --all\ncat <<'EOF'\ncargo build\nEOF\n"
+      },
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-038",
+      "workflow": "\njobs:\n  data-only:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          assets=(\n            dist/rust-skills.zip\n            dist/SHA256SUMS\n          )\n          echo done\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-039",
+      "workflow": "\njobs:\n  sourced:\n    steps:\n      - run: . ./ci/build.env\n",
+      "files": {
+        "ci/build.env": "cargo build --locked\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:sourced: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:sourced: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-040",
+      "workflow": "\njobs:\n  stdin-script:\n    steps:\n      - run: |\n          bash <<'EOF'\n          cargo build --locked\n          EOF\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:stdin-script: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:stdin-script: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-041",
+      "workflow": "\njobs:\n  dynamic:\n    steps:\n      - run: bash -c \"$MAYBE_BUILD\"\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:dynamic: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:dynamic: Rust job is missing canonical setup-sccache",
+        ".github/workflows/ci.yml:dynamic: step 0: unresolved dynamic shell -c program; canonical sccache required"
+      ]
+    },
+    {
+      "id": "reference-042",
+      "workflow": "\njobs:\n  incomplete:\n    steps:\n      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@1111111111111111111111111111111111111111\n      - run: ./ci/generated.sh\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:incomplete: Rust job is missing canonical finalize-sccache"
+      ]
+    },
+    {
+      "id": "reference-043",
+      "workflow": "\njobs:\n  shell-case:\n    steps:\n      - run: ./ci/case.sh\n",
+      "files": {
+        "ci/case.sh": "#!/bin/bash\npaths=(\n  ../*\n  dist/file.zip\n)\ncase \"$MODE\" in\n  '../*') echo not-an-execution ;;\n  build) cargo build --locked ;;\nesac\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:shell-case: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:shell-case: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-044",
+      "workflow": "\njobs:\n  shebang:\n    steps:\n      - run: ci/worker\n",
+      "files": {
+        "ci/worker": "#!/usr/bin/env bash\ncargo test --locked\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:shebang: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:shebang: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-045",
+      "workflow": "\ndefaults: &defaults\n  run: cargo build --locked\njobs:\n  merged:\n    steps:\n      - <<: *defaults\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:merged: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:merged: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-046",
+      "workflow": "\ndefaults: &defaults\n  run: cargo build --locked\njobs:\n  merged:\n    steps:\n      - <<: *defaults\n        run: cargo metadata --no-deps\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": []
+    },
+    {
+      "id": "reference-047",
+      "workflow": "\nfirst: &first\n  run: cargo fmt\nsecond: &second\n  run: cargo test\njobs:\n  merged:\n    steps:\n      - <<: [*first, *second]\n",
+      "files": {},
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:merged: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:merged: Rust job is missing canonical setup-sccache"
+      ]
+    },
+    {
+      "id": "reference-048",
+      "workflow": "\njobs:\n  live:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./ci/live-altcha-e2e.sh\n",
+      "files": {
+        "ci/live-altcha-e2e.sh": "#!/bin/sh\r\ncargo \\\r\n build --locked\r\n"
+      },
+      "strict_ref": null,
+      "expected": [
+        ".github/workflows/ci.yml:live: Rust job is missing canonical finalize-sccache",
+        ".github/workflows/ci.yml:live: Rust job is missing canonical setup-sccache"
+      ]
+    }
+  ]
+}
