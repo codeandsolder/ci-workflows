@@ -115,8 +115,12 @@ function main() {
   const auditRun = installed && present
     ? run('cargo-deny', ['-f', 'json', '--config', config, '--manifest-path', resolve(workdir, 'Cargo.toml'), '--workspace', 'check', 'advisories'], { cwd: workdir })
     : null;
+  const ignoredDirs = ['.ci-workflows', '.rust-skills2-gate', 'node_modules', '.git']
+    .filter((name) => existsSync(resolve(workdir, name)));
+  const macheteArgs = ['--with-metadata', '--json', '--skip-target-dir'];
+  if (ignoredDirs.length) macheteArgs.push('--skip-patterns', ...ignoredDirs);
   const macheteRun = installed && present
-    ? run('cargo-machete', ['--with-metadata', '--json', '--skip-target-dir', '--skip-patterns', '.ci-workflows', '.rust-skills2-gate', 'node_modules', '.git'], { cwd: workdir, timeout: 120_000 })
+    ? run('cargo-machete', macheteArgs, { cwd: workdir, timeout: 120_000 })
     : null;
 
   const audit = auditRun
