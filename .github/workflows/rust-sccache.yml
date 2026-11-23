@@ -81,6 +81,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # Each job already has its own Cargo target. Retain coherent fingerprints,
+  # build scripts, and dependency artifacts between Cargo commands in that
+  # job; hosted runners are ephemeral and private runners clean after the job.
+  # Do not override managed sccache, which remains the shared compiler cache.
+  CARGO_BUILD_EPHEMERAL_INTERMEDIATES: "false"
 
 jobs:
   rust:
