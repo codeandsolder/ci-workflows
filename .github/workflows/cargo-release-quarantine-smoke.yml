@@ -37,12 +37,18 @@ jobs:
       - name: Verify quarantine invariants through real Git and Rust/WASI
         run: node policy-wasm/quarantine.test.mjs policy-wasm/module.json
 
-      - name: Assert PR base is available without Git credentials
+      - name: Resolve the checked-out PR merge parent without Git credentials
+        id: baseline
         if: github.event_name == 'pull_request'
         shell: bash
-        env:
-          BASE_REF: ${{ github.event.pull_request.base.sha }}
-        run: git cat-file -e "${BASE_REF}^{commit}"
+        run: |
+          set -euo pipefail
+          # A PR event's base SHA can lag behind the checked-out merge commit.
+          # Use its actual first parent, already present at fetch-depth 2.
+          read -r -a parents <<< "$(git show -s --format=%P HEAD)"
+          (( ${#parents[@]} == 2 )) || { echo 'Expected a two-parent PR merge commit' >&2; exit 1; }
+          git cat-file -e "${parents[0]}^{commit}"
+          printf 'sha=%s\n' "${parents[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Validate the real sparse provider checkout
         shell: bash
@@ -75,7 +81,7 @@ jobs:
         id: no-lockfile
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          base-ref: ${{ steps.baseline.outputs.sha || github.sha }}
           hours: "1000000"
           lockfile: .quarantine-smoke/not-present.lock
 
@@ -93,7 +99,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          base-ref: ${{ steps.baseline.outputs.sha || github.sha }}
           hours: "0"
           lockfile: README.md
 
@@ -111,7 +117,7 @@ jobs:
         id: eligible
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          base-ref: ${{ steps.baseline.outputs.sha || github.sha }}
           hours: "0"
           lockfile: .quarantine-smoke/Cargo.lock
 
@@ -124,7 +130,7 @@ jobs:
         id: soft-blocked
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          base-ref: ${{ steps.baseline.outputs.sha || github.sha }}
           hours: "1000000"
           lockfile: .quarantine-smoke/Cargo.lock
           fail-on-blocked: "false"
@@ -139,7 +145,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/cargo-release-quarantine
         with:
-          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          base-ref: ${{ steps.baseline.outputs.sha || github.sha }}
           hours: "1000000"
           lockfile: .quarantine-smoke/Cargo.lock
 
