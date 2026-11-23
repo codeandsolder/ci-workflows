@@ -321,6 +321,13 @@ distinguishes missing registrations, offline pools, busy pools, available capaci
 non-self-hosted jobs and unresolved selectors. API failures are reported as errors,
 not empty inventories. Explicitly pass repository names to limit the audit.
 
+The generic admission decisions run in the single shared Rust/WASI policy
+module, using a batched native GitHub transport bridge. Hosted-runner labels
+are recognized by the guest, so the audit only accesses private runner
+registrations for custom selectors. See
+[portable runner policy](policy-wasm/RUNNER_ADMISSION.md) for the JSON contract,
+semantics and parity tests.
+
 Contribution-only forks (Anubis, Hayro, OXC) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.
 
 ## Upstream-tracking forks

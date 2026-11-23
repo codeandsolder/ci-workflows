@@ -6,15 +6,18 @@ const runner = (name, status, busy, labels) => ({
   name, status, busy, labels: labels.map(name => ({name})),
 });
 const local = ['self-hosted', 'Linux', 'X64', 'local-ci'];
+const modulePath = process.argv[2];
+const admission = (requests, runners, mode = 'require') =>
+  classifyRunnerAvailability(requests, runners, mode, modulePath);
 test('admission distinguishes unregistered, offline, busy and available', () => {
   const acer = runner('acer', 'online', true, [...local, 'acer']);
   const asus = runner('asus', 'online', false, [...local, 'asus']);
-  assert.equal(classifyRunnerAvailability(local, []).status, 'unregistered');
-  assert.equal(classifyRunnerAvailability(local, [{...acer, status:'offline'}]).status, 'offline');
-  assert.equal(classifyRunnerAvailability(local, [acer]).status, 'busy');
-  assert.equal(classifyRunnerAvailability(local.map(x => x.toUpperCase()), [acer,asus]).status, 'available');
-  assert.equal(classifyRunnerAvailability([...local, 'acer'], [asus]).status, 'unregistered');
-  assert.throws(() => classifyRunnerAvailability([], [acer]));
+  assert.equal(admission([local], [])[0].status, 'unregistered');
+  assert.equal(admission([local], [{...acer, status:'offline'}])[0].status, 'offline');
+  assert.equal(admission([local], [acer])[0].status, 'busy');
+  assert.equal(admission([local.map(x => x.toUpperCase())], [acer,asus])[0].status, 'available');
+  assert.equal(admission([[...local, 'acer']], [asus])[0].status, 'unregistered');
+  assert.throws(() => admission([[]], [acer]));
 });
 test('pagination does not silently ignore a second page', async () => {
   const value = await pages('/fake', 'runners', async path => ({runners:
@@ -51,4 +54,85 @@ test('contribution-only forks are excluded from maintained fleet scope', async (
   assert.equal(isMaintainedRepo({full_name:'codeandsolder/ngspice', fork:true}), true);
   assert.equal(isMaintainedRepo({full_name:'codeandsolder/archived', archived:true}), false);
   assert.equal(isMaintainedRepo({full_name:'elsewhere/example'}), false);
+});
+
+test('one WASM batch agrees with independent JavaScript admission oracle', () => {
+  // Keep this oracle independent of the Rust implementation: it verifies the
+  // original GitHub label and runner-state semantics across mixed selectors.
+  const jsDecision = (labels, runners) => {
+    const required = new Set(labels.map(label => label.toLowerCase()));
+    const matches = runners.filter(runner => {
+      const actual = new Set(runner.labels.map(label => label.name.toLowerCase()));
+      return [...required].every(label => actual.has(label));
+    });
+    const online = matches.filter(runner => runner.status === 'online');
+    const idle = online.filter(runner => runner.busy === false);
+    return {
+      status: !matches.length ? 'unregistered' : !online.length ? 'offline' :
+        !idle.length ? 'busy' : 'available',
+      matching: matches.map(runner => runner.name),
+      online: online.map(runner => runner.name),
+      idle: idle.map(runner => runner.name),
+    };
+  };
+  const runners = [
+    runner('acer', 'online', false, ['self-hosted','Linux','X64','local-ci','acer']),
+    runner('asus', 'online', true, ['self-hosted','Linux','X64','local-ci','asus']),
+    runner('wyse', 'offline', false, ['self-hosted','Linux','X64','local-ci','wyse']),
+    runner('windows', 'online', true, ['self-hosted','Windows','X64','ci']),
+    runner('bench', 'online', false, ['benchmark','X64']),
+  ];
+  const selectors = [
+    ['self-hosted'], ['Linux'], ['X64'], ['local-ci'], ['self-hosted','Linux'],
+    ['self-hosted','X64'], ['Linux','X64'], ['local-ci','X64'],
+    ['benchmark'], ['Windows'], ['ci'], ['acer'], ['asus'], ['wyse'],
+    ['unknown'], ['self-hosted','Linux','local-ci','asus'],
+    ['local-CI','x64'], ['BENCHMARK','x64'], ['self-hosted','X64','wyse'],
+  ];
+  // Hundreds of cases are checked with a single WASM entry, not one spawn
+  // and module compile per case.
+  const requests = [...selectors];
+  for (const first of selectors) {
+    for (const second of selectors) {
+      if (requests.length >= 300) break;
+      requests.push([...new Set([...first,...second])]);
+    }
+    if (requests.length >= 300) break;
+  }
+  assert.deepEqual(admission(requests, runners), requests.map(labels => jsDecision(labels, runners)));
+});
+
+test('hosted jobs do not require private runner API access', async () => {
+  let runnerLookups = 0;
+  const get = async endpoint => {
+    if (endpoint.includes('runs?status=')) {
+      return {workflow_runs: endpoint.includes('status=queued') ?
+        [{id:19,head_branch:'main'}] : []};
+    }
+    if (endpoint.includes('runs/19/jobs')) {
+      return {jobs:[
+        {id:1,name:'github linux',status:'queued',labels:['ubuntu-latest']},
+        {id:2,name:'github macOS',status:'queued',labels:['macos-15']},
+        {id:3,name:'unresolved',status:'queued',labels:[]},
+        {id:4,name:'github win',status:'queued',labels:['windows-2025']},
+      ]};
+    }
+    if (endpoint.includes('/runners?')) {
+      runnerLookups++;
+      throw new Error('private runner API must not be used for GitHub-hosted labels');
+    }
+    throw new Error('unexpected API endpoint: ' + endpoint);
+  };
+  const result = await auditRepository('codeandsolder/example', get);
+  assert.equal(runnerLookups, 0);
+  assert.deepEqual(result.waiting.map(job => job.availability.status),
+    ['not-self-hosted','not-self-hosted','unresolved','not-self-hosted']);
+});
+
+test('WASI accepts only valid labels, modes and runner API structures', () => {
+  assert.throws(() => admission([[null]], [], 'require'));
+  assert.throws(() => admission([['  ']], [], 'require'));
+  assert.throws(() => admission([local], [{name:'x',status:'online',busy:'false',labels:[]}]));
+  assert.throws(() => admission([local], [], 'not-a-mode'));
+  assert.equal(admission([[]], [], 'audit')[0].status, 'unresolved');
 });

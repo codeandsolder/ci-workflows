@@ -22,7 +22,7 @@ retain the original automation marker. The native adapter validates the
 GitHub repository identifier; only the host can create labels or issues.
 
 The calling repository invokes the shared reusable workflow, pinned by full
-commit SHA. Its provider checkout contains exactly the shared script and
+commit SHA. Its provider checkout contains the shared script and
 portable module loader, manifest and compressed WASM, without duplicating
 project-specific scripts or requiring Python. The source provider is updated
 and tested centrally, and its exact-byte reproducible WASI build is checked
@@ -33,3 +33,8 @@ subsection, Gregorian leap dates, exact marker deduplication and malformed
 GitHub response bodies. The independent Node test retains release queue
 behavior and validates the production provider's compiled and digest-verified
 WASM policy on Linux, macOS and Windows.
+
+The Rust/WASI transport is centralized in policy-wasm/bridge.mjs and shared
+with other host callers such as the runner admission auditor. Its API sends
+one JSON request per batch to the existing runtime and reports nonzero guest
+exit codes as policy failures; it does not implement policy semantics.

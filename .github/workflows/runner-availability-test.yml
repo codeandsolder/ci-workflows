@@ -4,12 +4,16 @@ on:
     paths:
       - "scripts/fleet-scope.mjs"
       - scripts/runner-availability*.mjs
+      - policy-wasm/src/runner_admission.rs
+      - policy-wasm/bridge.mjs
       - .github/workflows/runner-availability-test.yml
   push:
     branches: [main]
     paths:
       - "scripts/fleet-scope.mjs"
       - scripts/runner-availability*.mjs
+      - policy-wasm/src/runner_admission.rs
+      - policy-wasm/bridge.mjs
       - .github/workflows/runner-availability-test.yml
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
