@@ -1,0 +1,55 @@
+name: Informational Rust dependency quality smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/rust-dependency-quality/**"
+      - ".github/workflows/rust-dependency-quality-smoke.yml"
+      - "README.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/actions/rust-dependency-quality/**"
+      - ".github/workflows/rust-dependency-quality-smoke.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate report generator
+        run: node --test .github/actions/rust-dependency-quality/run.test.mjs
+      - name: Scan fixture with intentionally unused path dependency
+        uses: ./.github/actions/rust-dependency-quality
+        with:
+          working-directory: .github/actions/rust-dependency-quality/fixtures/example
+      - name: Verify produced report and detected candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: rust-dependency-health-*
+          path: ${{ runner.temp }}/dependency-report
+          merge-multiple: true
+      - name: Assert real scanner execution
+        shell: bash
+        run: |
+          node - "$RUNNER_TEMP/dependency-report/results.json" <<'JS'
+          const fs = require('node:fs');
+          const assert = require('node:assert/strict');
+          const result = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          assert(result.installed && result.present, 'Scanners were not installed or fixture missing');
+          assert(!result.audit.failed && !result.unused.failed, 'Scanner unavailable');
+          assert.equal(result.auditExitCode, 0);
+          assert.equal(result.unusedExitCode, 1);
+          assert.deepEqual(result.unused.findings.map(f => f.dependency), ['local_helper']);
+          JS

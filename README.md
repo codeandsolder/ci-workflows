@@ -8,6 +8,32 @@ The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners
 
 Additional MSRV, older/newer toolchain, alternative OS/architecture, sanitizer and compatibility lanes are optional **release-tier** jobs. Call the same reusable workflow with `validation-tier: release`. These jobs are skipped unless the caller is running on a release tag (`refs/tags/*`). For example, the caller may define separate jobs invoking this workflow with distinct `rust-toolchain`, `runner` and `rust-targets` inputs. A release tag must be included in the caller's `on.push.tags` trigger (and not excluded by other conditions); `workflow_dispatch` is not a release trigger.
 
+## Informational Rust dependency quality
+
+The shared [`.github/actions/rust-dependency-quality`](.github/actions/rust-dependency-quality/action.yml)
+composite scans a selected Cargo workspace **without compiling it**. The pinned
+`cargo-deny@0.20.2` checks RustSec advisories (including relevant unsound and
+unmaintained records) plus yanked dependencies, and `cargo-machete@0.10.1`
+reports potentially unused direct dependencies. It uses Cargo metadata for
+renamed dependencies but never calls `cargo check` or `cargo test`.
+
+Results are advisory while the fleet's existing debt and scanner false
+positives are reviewed: neither scanner's findings are a merge gate. The
+GitHub job summary distinguishes findings from unavailable/incomplete scans;
+raw diagnostics and structured results are available in a 14-day artifact.
+The existing 72-hour external registry quarantine stays mandatory and
+independent.
+
+Call the composite **after** an existing successful strict Rust gate in the
+same job, using the same checkout and toolchain. No extra runner or source
+build is necessary. Use `working-directory` for nested workspaces, and avoid
+running the scanner again for each feature/target configuration. The provider's
+`rust-dependency-quality-smoke.yml` validates both tools against an intentionally
+unused path dependency. To suppress known `cargo-machete` false positives,
+use reasoned `[package.metadata.cargo-machete]` or
+`[workspace.metadata.cargo-machete]` `ignored = ["dep"]` entries in the
+caller manifest; do not suppress a vulnerability in this shared config.
+
 ## Informational Rust test coverage
 
 Use [`.github/workflows/rust-coverage.yml`](.github/workflows/rust-coverage.yml)
