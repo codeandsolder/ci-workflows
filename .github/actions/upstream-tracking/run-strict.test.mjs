@@ -195,6 +195,18 @@ test("reviewed strict job initializes pinned Git submodule before Cargo workspac
     assert.equal(existsSync(manifest), true, "the reviewed job initializes its pinned submodule");
     assert.equal(git(candidate, "diff", "--name-only", "HEAD", "--"), "");
 
+    // A populated but displaced submodule must not compile the wrong
+    // revision even if the workspace manifest is legitimately tracked there.
+    const moduleDir = path.join(candidate, "modules", "workspace");
+    writeFileSync(path.join(moduleDir, "unreviewed.txt"), "different submodule commit\\n");
+    commit(moduleDir);
+    plan.jobs[0].checkoutSubmodules = "false";
+    assert.throws(
+      () => executePlan(plan, "nightly-2026-11-19", candidate, gate),
+      /submodule revision does not match candidate gitlink/
+    );
+    git(moduleDir, "checkout", "-q", git(candidate, "rev-parse", "HEAD:modules/workspace"));
+
     git(candidate, "submodule", "deinit", "-f", "--", "modules/workspace");
     plan.jobs[0].checkoutSubmodules = "false";
     assert.throws(

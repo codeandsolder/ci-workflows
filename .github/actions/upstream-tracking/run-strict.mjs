@@ -40,10 +40,19 @@ function isCandidateTrackedManifest(root, manifest) {
       for (const entry of entries.split("\0").filter(Boolean)) {
         const tab = entry.indexOf("\t");
         if (tab < 0 || entry.slice(tab + 1) !== tracked) continue;
-        const [mode, , stage] = entry.slice(0, tab).split(" ");
+        const [mode, oid, stage] = entry.slice(0, tab).split(" ");
         if (stage !== "0") continue;
         if (size === parts.length && (mode === "100644" || mode === "100755")) return true;
-        if (mode === "160000" && size < parts.length) nested = { tracked, size };
+        if (mode === "160000" && size < parts.length) {
+          const child = path.join(repository, tracked);
+          const checkedOut = execFileSync("git", [
+            "-C", child, "rev-parse", "HEAD",
+          ], { encoding: "utf8" }).trim();
+          if (checkedOut !== oid) {
+            throw new Error("strict Rust submodule revision does not match candidate gitlink: " + tracked);
+          }
+          nested = { tracked, size };
+        }
       }
       if (nested) break;
     }
