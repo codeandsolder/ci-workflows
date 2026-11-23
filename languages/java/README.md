@@ -3,7 +3,7 @@
 Runs PMD 7.29.0 with the shared high-signal ruleset from quality.xml, on Java
 files tracked by the caller Git index. No caller Gradle/Maven files, compilation,
 project dependencies or Java build layout are necessary. Default behavior is
-blocking (zero accepted findings). The policy enforces 229 source-only rules
+blocking (zero accepted findings). The policy enforces 228 source-only rules
 with category-wide coverage for Best Practices, Error Prone, Performance and
 Security, plus targeted concurrency, design, code style and documentation.
 The few category exceptions are documented inline in quality.xml; they target

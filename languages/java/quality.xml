@@ -16,6 +16,8 @@
     <exclude name="UnusedPrivateField"/>
     <!-- JUnit 6 assertions routed through helpers trigger false positives. -->
     <exclude name="UnitTestShouldIncludeAssert"/>
+    <!-- Multiple assertions in a cohesive test are desirable, not a defect. -->
+    <exclude name="UnitTestContainsTooManyAsserts"/>
   </rule>
   <rule ref="category/java/errorprone.xml">
     <!-- Protocol discriminants are inherently numeric literals. -->

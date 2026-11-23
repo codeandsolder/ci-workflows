@@ -24,7 +24,7 @@ jobs:
     uses: codeandsolder/ci-workflows/.github/workflows/java-quality.yml@<full-sha> # main
 ~~~
 
-This is a **strict, blocking, zero-debt** static-analysis gate with **229
+This is a **strict, blocking, zero-debt** static-analysis gate with **228
 rules** from PMD's Best Practices, Error Prone, Performance and Security
 categories, plus selected concurrency, design, code-style and documentation
 rules. These check resource lifetime, control-flow mistakes, API correctness,
