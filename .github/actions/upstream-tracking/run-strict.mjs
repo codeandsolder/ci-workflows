@@ -23,7 +23,7 @@ function requireSafeRelative(value, label) {
 
 // Follow only Git-pinned gitlinks, never arbitrary nested .git repositories.
 // A provider checkout under .ci-workflows is physically inside the workspace
-// but is not part of the exact candidate's Git tree.
+// but is not part of the exact candidate's committed Git tree.
 function isCandidateTrackedManifest(root, manifest) {
   let repository = root;
   let relative = path.relative(root, manifest).split(path.sep).join("/");
@@ -34,16 +34,17 @@ function isCandidateTrackedManifest(root, manifest) {
     // large unrelated subtrees for each parent path.
     for (let size = parts.length; size >= 1; size--) {
       const tracked = parts.slice(0, size).join("/");
+      // HEAD is the exact candidate commit. Its immutable tree is stronger
+      // provenance than the mutable index, which a prior step could stage.
       const entries = execFileSync("git", [
-        "-C", repository, "ls-files", "--stage", "-z", "--", ":(literal)" + tracked,
+        "-C", repository, "ls-tree", "-z", "HEAD", "--", ":(literal)" + tracked,
       ], { encoding: "utf8" });
       for (const entry of entries.split("\0").filter(Boolean)) {
         const tab = entry.indexOf("\t");
         if (tab < 0 || entry.slice(tab + 1) !== tracked) continue;
-        const [mode, oid, stage] = entry.slice(0, tab).split(" ");
-        if (stage !== "0") continue;
-        if (size === parts.length && (mode === "100644" || mode === "100755")) return true;
-        if (mode === "160000" && size < parts.length) {
+        const [mode, type, oid] = entry.slice(0, tab).split(" ");
+        if (size === parts.length && type === "blob" && (mode === "100644" || mode === "100755")) return true;
+        if (mode === "160000" && type === "commit" && size < parts.length) {
           const child = path.join(repository, tracked);
           const checkedOut = execFileSync("git", [
             "-C", child, "rev-parse", "HEAD",
@@ -83,7 +84,7 @@ function assertReviewedRustDirectory(root, job) {
     throw new Error("strict Cargo.toml resolves outside the candidate: " + job.workingDirectory);
   }
   if (!isCandidateTrackedManifest(canonicalRoot, manifestReal)) {
-    throw new Error("strict Cargo.toml is not Git-tracked in the exact candidate: " + job.workingDirectory);
+    throw new Error("strict Cargo.toml is not in the exact candidate Git tree: " + job.workingDirectory);
   }
 }
 

@@ -113,8 +113,22 @@ test("candidate validation calls reviewed Python and Rust in order, and failures
     injectedPlan.jobs[0].workingDirectory = "selected";
     assert.throws(
       () => executePlan(injectedPlan, "nightly-2026-11-19", candidate, gate),
-      /not Git-tracked in the exact candidate/
+      /not in the exact candidate Git tree/
     );
+
+    // Staging a newly generated Cargo manifest cannot turn uncommitted code
+    // into an exact candidate source. The immutable HEAD tree is authoritative.
+    mkdirSync(path.join(candidate, "staged"));
+    writeFileSync(path.join(candidate, "staged", "Cargo.toml"), "[workspace]\\n");
+    git(candidate, "add", "staged/Cargo.toml");
+    const stagedPlan = structuredClone(plan);
+    stagedPlan.jobs[0].workingDirectory = "staged";
+    assert.throws(
+      () => executePlan(stagedPlan, "nightly-2026-11-19", candidate, gate),
+      /not in the exact candidate Git tree/
+    );
+    git(candidate, "reset", "-q", "--", "staged/Cargo.toml");
+    rmSync(path.join(candidate, "staged"), {recursive:true,force:true});
 
     // A tracked symlink in the candidate must not redirect even a reviewed,
     // syntactically safe working-directory into a different filesystem tree.
