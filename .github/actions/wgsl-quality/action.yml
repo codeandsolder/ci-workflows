@@ -21,7 +21,9 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$RUNNER_TEMP/wgsl-quality-target"
-        cargo +stable run --locked --release \
+        # Validation is source-analysis, not a CPU benchmark. Debug builds avoid
+        # optimized Naga compilation cost on congested remote workers.
+        cargo +stable run --locked \
           --manifest-path "$GITHUB_ACTION_PATH/../../../languages/wgsl/Cargo.toml" \
           --target-dir "$RUNNER_TEMP/wgsl-quality-target" -- \
           "$GITHUB_WORKSPACE" "${{ inputs.manifest }}"
