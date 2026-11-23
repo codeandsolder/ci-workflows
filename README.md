@@ -1,5 +1,48 @@
 # ci-workflows
 
+## Language-specific quality modules
+
+The shared CI keeps language-neutral orchestration separate from language
+quality checks. [Tracked-source detection](languages/detect.mjs) reads the
+caller's Git index (not the injected CI checkout) and reports which languages
+actually occur. Modules live under `languages/<language>/`; Rust's existing
+`rust-sccache.yml`, `rust-coverage.yml` and strict Rust workflows remain
+independent and retain their established consumer interfaces.
+
+### Java: automatic PMD gate
+
+The [reusable Java quality workflow](.github/workflows/java-quality.yml)
+checks for **any Git-tracked `.java` source anywhere in the caller repo**,
+including scripts and mixed-language repositories. It only installs Java,
+Gradle and runs [PMD 7.29.0](languages/java/quality.xml) when such source
+exists. Otherwise it reports an explicit successful no-Java skip. It requires
+no Maven/Gradle setup, Java project layout or dependencies in the caller.
+
+~~~yaml
+jobs:
+  java-quality:
+    uses: codeandsolder/ci-workflows/.github/workflows/java-quality.yml@<full-sha> # main
+~~~
+
+This is a blocking, zero-debt static-analysis gate using 18 common
+correctness/maintainability rules, with no separate local rule files to
+maintain. Project-specific compilation with `javac -Werror`, tests and
+integration/build prerequisites still run in the caller's native workflow:
+arbitrary Java cannot safely be compiled without its real dependencies and
+toolchain. The Gradle-based Java module is used only as an independent PMD
+runner, not to build the user's Java project.
+
+Public callers use GitHub-hosted Ubuntu; private callers use the registered
+`local-ci` Linux x64 pool, consistently with the existing Rust workflow.
+The shared source detector has independent Node regression tests, and
+[`java-quality-smoke.yml`](.github/workflows/java-quality-smoke.yml)
+executes the actual reusable analyzer on the provider's clean Java fixture.
+
+For additional languages, add an isolated quality module and corresponding
+reusable workflow alongside Java; do not insert language-specific checks into
+the Rust compiler/cache workflow. Keep required check identities stable even
+on a no-source skip.
+
 ## Two-tier Rust CI and stale-run cancellation
 
 The standard lane uses `rust-sccache.yml` with the repository's fleet-approved dated nightly and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.
