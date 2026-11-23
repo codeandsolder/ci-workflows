@@ -5,8 +5,6 @@ on:
     paths:
       - ".github/actions/workflow-concurrency-policy/**"
       - "policy-wasm/**"
-      - ".github/pyproject.toml"
-      - ".github/uv.lock"
       - ".github/workflows/**"
       - README.md
   push:
@@ -14,8 +12,6 @@ on:
     paths:
       - ".github/actions/workflow-concurrency-policy/**"
       - "policy-wasm/**"
-      - ".github/pyproject.toml"
-      - ".github/uv.lock"
       - ".github/workflows/**"
       - README.md
   workflow_dispatch:

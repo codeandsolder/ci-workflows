@@ -5,16 +5,12 @@ on:
     paths:
       - ".github/actions/rust-ci-sccache-policy/**"
       - "policy-wasm/**"
-      - ".github/pyproject.toml"
-      - ".github/uv.lock"
       - ".github/workflows/rust-ci-sccache-policy.yml"
   push:
     branches: [main]
     paths:
       - ".github/actions/rust-ci-sccache-policy/**"
       - "policy-wasm/**"
-      - ".github/pyproject.toml"
-      - ".github/uv.lock"
       - ".github/workflows/rust-ci-sccache-policy.yml"
   workflow_dispatch:
 

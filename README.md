@@ -179,10 +179,9 @@ for public callers. Static-only private repositories without registered
 to lint workflow YAML. This is enforcement of native GitHub Actions
 cancellation, not a custom polling daemon.
 
-The concurrency checker uses the provider's committed `.github/uv.lock`,
-including when its reusable workflow checks out only the required action
-and lock files. Consumers do not duplicate Python package versions for this
-check.
+The concurrency checker executes the provider's digest-verified Rust/WASI
+module with a thin Node host adapter, including sparse consumer checkouts.
+It requires neither a Python runtime nor a Python package lockfile.
 
 Example validated workflow group (this declaration is necessarily local,
 because GitHub requires concurrency at the *caller* workflow level):
