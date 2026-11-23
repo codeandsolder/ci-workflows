@@ -18,7 +18,13 @@ jobs:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           persist-credentials: false
-          sparse-checkout: scripts/rust-release-review.mjs
+          sparse-checkout: |
+            scripts/rust-release-review.mjs
+            policy-wasm/module.json
+            policy-wasm/module.wasm.gz
+            policy-wasm/module.mjs
+            policy-wasm/run.mjs
+            policy-wasm/workspace.mjs
           sparse-checkout-cone-mode: false
       - name: Queue review for the current stable release
         env:

@@ -4,11 +4,13 @@ on:
     paths:
       - scripts/rust-release-review*.mjs
       - .github/workflows/rust-release-review*.yml
+      - policy-wasm/src/stable_review.rs
   push:
     branches: [main]
     paths:
       - scripts/rust-release-review*.mjs
       - .github/workflows/rust-release-review*.yml
+      - policy-wasm/src/stable_review.rs
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
