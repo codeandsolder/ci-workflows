@@ -339,20 +339,26 @@ jobs:
           git fetch "$RUNNER_TEMP/$BUNDLE_NAME" HEAD
           test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED"
           git checkout --detach "$EXPECTED"
+      # The provider checkout is excluded by the canonical clone scanner.
+      # It is required even by non-Rust upstream trackers.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
+        if: steps.check.outputs.checked == 'true'
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
-          path: .ci-upstream
+          path: .ci-workflows
           persist-credentials: false
           sparse-checkout: |
             .github/actions
+            .github/scripts/run-clone-regression.sh
+            .github/workflows/rust-skills2-strict.yml
             policy-wasm
+            rust-toolchain.toml
+          sparse-checkout-cone-mode: false
       - name: Enforce external crate release age as well
         id: quarantine
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
-        uses: ./.ci-upstream/.github/actions/cargo-release-quarantine
+        uses: ./.ci-workflows/.github/actions/cargo-release-quarantine
         with:
           base-ref: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
           hours: "72"
@@ -364,7 +370,7 @@ jobs:
       - name: Resolve quarantined repository nightly
         id: repository-compiler
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain == 'repository' && steps.quarantine.outputs.eligible == 'true'
-        uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
+        uses: ./.ci-workflows/.github/actions/resolve-rust-toolchain
         with:
           validation-tier: routine
       - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
@@ -405,6 +411,75 @@ jobs:
           if [[ -n "$RELEASE_TAG" ]]; then args+=("$RELEASE_TAG"); fi
           bash "$RUNNER_TEMP/validate-upstream.sh" "${args[@]}"
           git diff --exit-code HEAD --
+      # A fork's own validator may pass while new source duplicates existing code.
+      # Check the detached exact candidate against the observed target base.
+      - name: Enforce reviewed clone-regression gate
+        if: steps.check.outputs.checked == 'true' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
+        uses: ./.ci-workflows/.github/actions/clone-regression
+        with:
+          base-sha: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
+          pr-head-sha: ""
+
+      # Read strict-gate options from the reviewed target-branch tree, never
+      # the upstream candidate. Saphyr parsing and plan generation run in
+      # the same signed/pinned shared policy WASM used by ordinary PR gates.
+      - name: Resolve reviewed strict-gate plan
+        id: reviewed-strict
+        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+        shell: bash
+        env:
+          BASE: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/reviewed-workflows"
+          git archive "$BASE" .github/workflows | tar -x -C "$RUNNER_TEMP/reviewed-workflows"
+          # Canonical defaults come from the pinned provider, never candidate.
+          cp .ci-workflows/.github/workflows/rust-skills2-strict.yml "$RUNNER_TEMP/reviewed-workflows/.ci-provider-strict.yml"
+          cp .ci-workflows/rust-toolchain.toml "$RUNNER_TEMP/reviewed-workflows/.ci-provider-toolchain.toml"
+          node .ci-workflows/policy-wasm/run.mjs .ci-workflows/policy-wasm/module.json strict-plan "$RUNNER_TEMP/reviewed-workflows" > "$RUNNER_TEMP/reviewed-strict-plan.json"
+          ref=$(jq -er '.refSha' "$RUNNER_TEMP/reviewed-strict-plan.json")
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Check out reviewed strict Rust implementation
+        if: steps.reviewed-strict.outputs.ref != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: codeandsolder/rust-skills2
+          ref: ${{ steps.reviewed-strict.outputs.ref }}
+          path: .rust-skills2-gate
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions
+            scripts
+            policy-wasm
+            rust-toolchain.toml
+
+      - name: Enforce reviewed workflow cancellation policy
+        if: steps.reviewed-strict.outputs.ref != ''
+        uses: ./.ci-workflows/.github/actions/workflow-concurrency-policy
+
+      - name: Enforce canonical Rust sccache policy
+        if: steps.reviewed-strict.outputs.ref != ''
+        uses: ./.ci-workflows/.github/actions/rust-ci-sccache-policy
+        with:
+          strict-ref: ${{ steps.reviewed-strict.outputs.ref }}
+
+      - name: Install uv for reviewed strict Python checks
+        if: steps.reviewed-strict.outputs.ref != ''
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: latest-known
+          enable-cache: false
+
+      - name: Enforce reviewed strict Rust and Python gates
+        if: steps.reviewed-strict.outputs.ref != ''
+        shell: bash
+        env:
+          STRICT_COMPILER: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
+        run: |
+          set -euo pipefail
+          node .ci-workflows/.github/actions/upstream-tracking/run-strict.mjs "$RUNNER_TEMP/reviewed-strict-plan.json" "$STRICT_COMPILER" "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/.rust-skills2-gate"
+
       - name: Record exactly validated revision
         id: validated
         if: steps.check.outputs.checked == 'true' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
