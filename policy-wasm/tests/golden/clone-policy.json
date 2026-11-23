@@ -1,0 +1,2042 @@
+{
+  "schema": 1,
+  "reference": "One-time captured from retired independent clone-regression-oracle.py",
+  "cases": [
+    {
+      "name": "literals-nested-comments-and-test-module",
+      "files": {
+        "src/mixed.rs": "fn prod_before() { let x = \"not a test\"; }\nconst DECOY: &str = r###\"#[cfg(test)] mod decoy { fn fake() {} }\"###;\n/* comment with { } /* a nested { comment } */ } */\n#[cfg(test)]\nmod tests {\n    fn shared_fixture() {\n        let raw = r##\"{ a } /* } */\"##;\n        let normal = \"{ }\"; let character = '{';\n        let line = \"// {\";\n        assert!(raw.len() + normal.len() + line.len() > 1);\n    }\n    #[test]\n    fn actual_case() { assert_eq!(2 + 2, 4); }\n}\nfn prod_after() { let x = \"}\"; }\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 110,
+            "fingerprint": "000000000001",
+            "occurrences": [
+              {
+                "file": "src/mixed.rs",
+                "start_line": 13,
+                "end_line": 13
+              }
+            ]
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "000000000002",
+            "occurrences": [
+              {
+                "file": "src/mixed.rs",
+                "start_line": 6,
+                "end_line": 6
+              }
+            ]
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "000000000003",
+            "occurrences": [
+              {
+                "file": "src/mixed.rs",
+                "start_line": 15,
+                "end_line": 15
+              }
+            ]
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "000000000004",
+            "occurrences": [
+              {
+                "file": "src/mixed.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 4
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 110,
+            "fingerprint": "000000000003",
+            "occurrences": [
+              {
+                "file": "src/mixed.rs",
+                "start_line": 15,
+                "end_line": 15
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "000000000004",
+            "occurrences": [
+              {
+                "file": "src/mixed.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 110,
+            "fingerprint": "000000000001",
+            "occurrences": [
+              {
+                "file": "src/mixed.rs",
+                "start_line": 13,
+                "end_line": 13
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "000000000002",
+            "occurrences": [
+              {
+                "file": "src/mixed.rs",
+                "start_line": 6,
+                "end_line": 6
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 4
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 2,
+          "advisory": 2,
+          "accepted": 0
+        },
+        "note": "2 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "direct-test-attribute",
+      "files": {
+        "src/simple.rs": "#[test]\nfn only_test() { assert!(true); }\nfn prod() { assert!(true); }\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 110,
+            "fingerprint": "123456abcdef",
+            "occurrences": [
+              {
+                "file": "src/simple.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ]
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "123456abcdea",
+            "occurrences": [
+              {
+                "file": "src/simple.rs",
+                "start_line": 3,
+                "end_line": 3
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 2
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 110,
+            "fingerprint": "123456abcdea",
+            "occurrences": [
+              {
+                "file": "src/simple.rs",
+                "start_line": 3,
+                "end_line": 3
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 110,
+            "fingerprint": "123456abcdef",
+            "occurrences": [
+              {
+                "file": "src/simple.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 2
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 1,
+          "advisory": 1,
+          "accepted": 0
+        },
+        "note": "1 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "fully-test-mixed-and-production",
+      "files": {
+        "src/a.rs": "fn logic() {}\n",
+        "src/b.rs": "#[cfg(test)]\nmod tests { fn test_case() {} }\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 115,
+            "fingerprint": "123456abcdef",
+            "occurrences": [
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              },
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ]
+          },
+          {
+            "tokens": 115,
+            "fingerprint": "123456abcdea",
+            "occurrences": [
+              {
+                "file": "src/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              },
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ]
+          },
+          {
+            "tokens": 105,
+            "fingerprint": "123456abcdeb",
+            "occurrences": [
+              {
+                "file": "src/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              },
+              {
+                "file": "src/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 95,
+            "fingerprint": "123456abcdec",
+            "occurrences": [
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              },
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 4
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 115,
+            "fingerprint": "123456abcdea",
+            "occurrences": [
+              {
+                "file": "src/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              },
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 105,
+            "fingerprint": "123456abcdeb",
+            "occurrences": [
+              {
+                "file": "src/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              },
+              {
+                "file": "src/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 115,
+            "fingerprint": "123456abcdef",
+            "occurrences": [
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              },
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 95,
+            "fingerprint": "123456abcdec",
+            "occurrences": [
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              },
+              {
+                "file": "src/b.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 4
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 2,
+          "advisory": 2,
+          "accepted": 0
+        },
+        "note": "2 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "test-file-conventions-and-unknown",
+      "files": {
+        "src/smoke-real.sh": "#!/bin/sh\necho test\n",
+        "src/math.spec.ts": "export const x = 1;\n",
+        "tests/unusual-code.rs": "fn fixture() {}\n",
+        "src/subdir/test_oracle.py": "def f(): pass\n",
+        "src/math.rs": "fn prod() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 125,
+            "fingerprint": "112233445566",
+            "occurrences": [
+              {
+                "file": "src/smoke-real.sh",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "112233445567",
+            "occurrences": [
+              {
+                "file": "src/math.spec.ts",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "112233445568",
+            "occurrences": [
+              {
+                "file": "tests/unusual-code.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "112233445569",
+            "occurrences": [
+              {
+                "file": "src/subdir/test_oracle.py",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "11223344556a",
+            "occurrences": [
+              {
+                "file": "src/math.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "11223344556b",
+            "occurrences": [
+              {
+                "file": "src/missing.rs",
+                "start_line": 1,
+                "end_line": 4
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "11223344556c",
+            "occurrences": [
+              {
+                "file": "../outside.rs",
+                "start_line": 1,
+                "end_line": 4
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 7
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 125,
+            "fingerprint": "11223344556a",
+            "occurrences": [
+              {
+                "file": "src/math.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "11223344556b",
+            "occurrences": [
+              {
+                "file": "src/missing.rs",
+                "start_line": 1,
+                "end_line": 4
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "11223344556c",
+            "occurrences": [
+              {
+                "file": "../outside.rs",
+                "start_line": 1,
+                "end_line": 4
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 125,
+            "fingerprint": "112233445566",
+            "occurrences": [
+              {
+                "file": "src/smoke-real.sh",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "112233445567",
+            "occurrences": [
+              {
+                "file": "src/math.spec.ts",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "112233445568",
+            "occurrences": [
+              {
+                "file": "tests/unusual-code.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "112233445569",
+            "occurrences": [
+              {
+                "file": "src/subdir/test_oracle.py",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 7
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 3,
+          "advisory": 4,
+          "accepted": 0
+        },
+        "note": "4 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "filename-case-and-suffixes",
+      "files": {
+        "SRC/TESTS/MyApp.RS": "fn t() {}\n",
+        "misc/Spec_Case.ts": "export const x = 2;\n",
+        "misc/data.test.tsx": "export const x = 2;\n",
+        "misc/helpers_test.py": "pass\n",
+        "misc/tests.rs": "fn test() {}\n",
+        "misc/code.rs": "fn main() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 125,
+            "fingerprint": "000000000001",
+            "occurrences": [
+              {
+                "file": "SRC/TESTS/MyApp.RS",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000002",
+            "occurrences": [
+              {
+                "file": "misc/Spec_Case.ts",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000003",
+            "occurrences": [
+              {
+                "file": "misc/data.test.tsx",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000004",
+            "occurrences": [
+              {
+                "file": "misc/helpers_test.py",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000005",
+            "occurrences": [
+              {
+                "file": "misc/tests.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000006",
+            "occurrences": [
+              {
+                "file": "misc/code.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 6
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 125,
+            "fingerprint": "000000000006",
+            "occurrences": [
+              {
+                "file": "misc/code.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 125,
+            "fingerprint": "000000000001",
+            "occurrences": [
+              {
+                "file": "SRC/TESTS/MyApp.RS",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000002",
+            "occurrences": [
+              {
+                "file": "misc/Spec_Case.ts",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000003",
+            "occurrences": [
+              {
+                "file": "misc/data.test.tsx",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000004",
+            "occurrences": [
+              {
+                "file": "misc/helpers_test.py",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "000000000005",
+            "occurrences": [
+              {
+                "file": "misc/tests.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 6
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 1,
+          "advisory": 5,
+          "accepted": 0
+        },
+        "note": "5 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "empty-and-unreadable-occurrences",
+      "files": {
+        "src/prod.rs": "fn a() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 110,
+            "fingerprint": "abcdef123456",
+            "occurrences": []
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 99,
+                "end_line": 100
+              }
+            ]
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 3
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 110,
+            "fingerprint": "abcdef123456",
+            "occurrences": [],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 99,
+                "end_line": 100
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 110,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 3
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 3,
+          "advisory": 0,
+          "accepted": 0
+        },
+        "note": "0 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "acceptance-ignores-scanner-overrides",
+      "files": {
+        "src/engine.rs": "fn production() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 210,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/engine.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 210,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/engine.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 2
+        }
+      },
+      "config": "min-tokens = 99999\nexclude = [\"src/**\"]\n[[accept]]\nfingerprint = \"abcdef123456\"\nreason = \"Test fixture is intentionally duplicated across interfaces.\"\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 210,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/engine.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 2
+        },
+        "accepted": [
+          {
+            "tokens": 210,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/engine.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100,
+            "accept_reason": "Test fixture is intentionally duplicated across interfaces."
+          }
+        ],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 1,
+          "advisory": 0,
+          "accepted": 1
+        },
+        "note": "0 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 1 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "ignored-thresholds-without-accept",
+      "files": {
+        "src/engine.rs": "fn production() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 210,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/engine.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 1
+        }
+      },
+      "config": "min-tokens = 99999\nexclude = [\"src/**\"]\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 210,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/engine.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 1
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 1,
+          "advisory": 0,
+          "accepted": 0
+        },
+        "note": "0 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "upper-case-accepted-fingerprint",
+      "files": {
+        "src/prod.rs": "fn prod() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 210,
+            "fingerprint": "ABCDEF123456",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 1
+        }
+      },
+      "config": "[[accept]]\nfingerprint = \"abcdef123456\"\nreason = \"A meaningful canonical acceptance reason\"\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 1
+        },
+        "accepted": [
+          {
+            "tokens": 210,
+            "fingerprint": "ABCDEF123456",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100,
+            "accept_reason": "A meaningful canonical acceptance reason"
+          }
+        ],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 0,
+          "advisory": 0,
+          "accepted": 1
+        },
+        "note": "0 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 1 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "accepted-test-scoped-group",
+      "files": {
+        "tests/foo.rs": "fn test() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 170,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "tests/foo.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 1
+        }
+      },
+      "config": "[[accept]]\nfingerprint = \"ABCDEF123456\"\nreason = \"The test version is intentionally duplicated\"\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 1
+        },
+        "accepted": [
+          {
+            "tokens": 170,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "tests/foo.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140,
+            "accept_reason": "The test version is intentionally duplicated"
+          }
+        ],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 0,
+          "advisory": 0,
+          "accepted": 1
+        },
+        "note": "0 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 1 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "nested-scan-root-preserves-extra-fields",
+      "files": {
+        "nested/tests/a.rs": "fn fixture() {}\n",
+        "tests/outside.rs": "fn outside() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "scanner_detail": {
+              "nested": [
+                true,
+                42,
+                null
+              ]
+            }
+          },
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "../tests/outside.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "tests/missing.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 3
+        },
+        "unrecognized_report_field": {
+          "preserve": [
+            1,
+            "string"
+          ]
+        }
+      },
+      "config": null,
+      "scan_root": "nested",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "../tests/outside.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "tests/missing.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "scanner_detail": {
+              "nested": [
+                true,
+                42,
+                null
+              ]
+            },
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 3
+        },
+        "unrecognized_report_field": {
+          "preserve": [
+            1,
+            "string"
+          ]
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 2,
+          "advisory": 1,
+          "accepted": 0
+        },
+        "note": "1 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "threshold-exact-boundary",
+      "files": {
+        "src/prod.rs": "fn p() {}\n",
+        "tests/a.rs": "fn t() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 99,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 100,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 139,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 140,
+            "fingerprint": "abcdef123459",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 4
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 100,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 140,
+            "fingerprint": "abcdef123459",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 99,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 139,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 4
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 2,
+          "advisory": 2,
+          "accepted": 0
+        },
+        "note": "2 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "custom-valid-thresholds",
+      "files": {
+        "src/prod.rs": "fn p() {}\n",
+        "tests/a.rs": "fn t() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 150,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 151,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 190,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          },
+          {
+            "tokens": 191,
+            "fingerprint": "abcdef123459",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 4
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 151,
+      "testing": 191,
+      "expected": {
+        "new": [
+          {
+            "tokens": 151,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 151
+          },
+          {
+            "tokens": 191,
+            "fingerprint": "abcdef123459",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 191
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 150,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 151
+          },
+          {
+            "tokens": 190,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 191
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 4
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 151,
+          "test_blocking_tokens": 191,
+          "blocking": 2,
+          "advisory": 2,
+          "accepted": 0
+        },
+        "note": "2 new clone groups remain advisory under their 151-token production / 191-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "preserved-advisory-and-scanner-extra-fields",
+      "files": {
+        "src/prod.rs": "fn prod() {}\n",
+        "tests/a.rs": "fn test() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 90,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "arbitrary": {
+              "x": 0
+            },
+            "lines": 8
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 125,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "scanner_meta": [
+              0,
+              true,
+              null
+            ]
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 2
+        },
+        "scan_metadata": {
+          "total": 123
+        },
+        "other": "unknown top-level field"
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [],
+        "smaller": [
+          {
+            "tokens": 90,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/prod.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "arbitrary": {
+              "x": 0
+            },
+            "lines": 8,
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          },
+          {
+            "tokens": 125,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "tests/a.rs",
+                "start_line": 1,
+                "end_line": 1
+              }
+            ],
+            "scanner_meta": [
+              0,
+              true,
+              null
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 2
+        },
+        "scan_metadata": {
+          "total": 123
+        },
+        "other": "unknown top-level field",
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 0,
+          "advisory": 2,
+          "accepted": 0
+        },
+        "note": "2 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "async-test-annotation-and-production",
+      "files": {
+        "src/async.rs": "#[tokio::test]\nasync fn async_test() { let c = '{'; }\nfn normal() {}\n#[async_std::test]\nasync fn async_std_test() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/async.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ]
+          },
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/async.rs",
+                "start_line": 3,
+                "end_line": 3
+              }
+            ]
+          },
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "src/async.rs",
+                "start_line": 5,
+                "end_line": 5
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 3
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/async.rs",
+                "start_line": 3,
+                "end_line": 3
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/async.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          },
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123458",
+            "occurrences": [
+              {
+                "file": "src/async.rs",
+                "start_line": 5,
+                "end_line": 5
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 3
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 1,
+          "advisory": 2,
+          "accepted": 0
+        },
+        "note": "2 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "test-module-with-nested-inner-function",
+      "files": {
+        "src/lib.rs": "#[cfg(test)]\npub(crate) mod tests { fn inner() { const X: &str = r#\"}\"#; } }\nfn production() {}\n"
+      },
+      "input": {
+        "new": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/lib.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ]
+          },
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/lib.rs",
+                "start_line": 3,
+                "end_line": 3
+              }
+            ]
+          }
+        ],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 2
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "expected": {
+        "new": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123457",
+            "occurrences": [
+              {
+                "file": "src/lib.rs",
+                "start_line": 3,
+                "end_line": 3
+              }
+            ],
+            "policy_tier": "production",
+            "policy_blocking_tokens": 100
+          }
+        ],
+        "smaller": [
+          {
+            "tokens": 120,
+            "fingerprint": "abcdef123456",
+            "occurrences": [
+              {
+                "file": "src/lib.rs",
+                "start_line": 2,
+                "end_line": 2
+              }
+            ],
+            "policy_tier": "test",
+            "policy_blocking_tokens": 140
+          }
+        ],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 2
+        },
+        "accepted": [],
+        "policy": {
+          "production_blocking_tokens": 100,
+          "test_blocking_tokens": 140,
+          "blocking": 1,
+          "advisory": 1,
+          "accepted": 0
+        },
+        "note": "1 new clone groups remain advisory under their 100-token production / 140-token test thresholds; 0 explicitly accepted by documented fingerprint."
+      }
+    },
+    {
+      "name": "invalid-malformed-accept-fingerprint",
+      "files": {},
+      "input": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 0
+        }
+      },
+      "config": "[[accept]]\nfingerprint = \"bad\"\nreason = \"Meaningful enough explanation\"\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "error": "accepted fingerprint must be the 12-digit scanner hex ID"
+    },
+    {
+      "name": "invalid-nonhex-accept-fingerprint",
+      "files": {},
+      "input": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 0
+        }
+      },
+      "config": "[[accept]]\nfingerprint = \"nothex123456\"\nreason = \"Meaningful enough explanation\"\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "error": "accepted fingerprint must be the 12-digit scanner hex ID"
+    },
+    {
+      "name": "invalid-short-accept-reason",
+      "files": {},
+      "input": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 0
+        }
+      },
+      "config": "[[accept]]\nfingerprint = \"abcdef123456\"\nreason = \"bad\"\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "error": "accepted clone abcdef123456 requires a meaningful reason"
+    },
+    {
+      "name": "invalid-duplicate-accepts",
+      "files": {},
+      "input": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 0
+        }
+      },
+      "config": "[[accept]]\nfingerprint = \"ABCDEF123456\"\nreason = \"First substantive description\"\n[[accept]]\nfingerprint = \"abcdef123456\"\nreason = \"Second substantive description\"\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "error": "duplicate accepted fingerprint abcdef123456"
+    },
+    {
+      "name": "invalid-accept-not-table",
+      "files": {},
+      "input": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 0
+        }
+      },
+      "config": "accept = [\"not a table\"]\n",
+      "scan_root": ".",
+      "production": 100,
+      "testing": 140,
+      "error": "each [[accept]] must be a table"
+    },
+    {
+      "name": "invalid-test-threshold",
+      "files": {},
+      "input": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 0
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 120,
+      "testing": 100,
+      "error": "test blocking threshold must be >= production threshold > 0"
+    },
+    {
+      "name": "invalid-zero-production-threshold",
+      "files": {},
+      "input": {
+        "new": [],
+        "smaller": [],
+        "resolved": [],
+        "summary": {
+          "files": 1,
+          "groups": 0
+        }
+      },
+      "config": null,
+      "scan_root": ".",
+      "production": 0,
+      "testing": 140,
+      "error": "test blocking threshold must be >= production threshold > 0"
+    }
+  ]
+}
