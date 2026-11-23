@@ -33,7 +33,7 @@ Nextest build output and ordinarily takes a fraction of a second after the
 suite finishes. No tests are skipped.
 
 The current installation pins the exact source commit
-[codeandsolder/cargo-affected 3f5d5aad](https://github.com/codeandsolder/cargo-affected/commit/3f5d5aad106bde1c19496ffd144ca432a93a180c),
+[codeandsolder/cargo-affected 3f5d5aad](https://github.com/codeandsolder/cargo-affected/commit/440c5b69bf46e6c46b58f949de1081da509c50b6),
 which contains the nested Cargo-workspace Git-path fix proposed upstream in
 [max-sixty/cargo-affected #167](https://github.com/max-sixty/cargo-affected/pull/167).
 It is built through Cargo with the workflow's managed sccache client, rather
