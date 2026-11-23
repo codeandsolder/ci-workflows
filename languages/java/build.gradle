@@ -15,6 +15,7 @@ pmd {
     ruleSets = []
     ruleSetFiles = files('quality.xml')
     ignoreFailures = false
+    consoleOutput = true
 }
 
 def sourceRoot = providers.gradleProperty('sourceRoot').get()
