@@ -1,0 +1,33 @@
+name: Strict source-only shell quality
+description: Run pinned ShellCheck on tracked Bash/POSIX sources and shfmt on all shell syntax
+inputs:
+  manifest:
+    required: true
+    description: Exact Git-tracked source manifest from language detection
+  shell-format:
+    required: false
+    default: "false"
+    description: Enforce formatting beyond mandatory syntax parsing
+runs:
+  using: composite
+  steps:
+    - name: Install pinned ShellCheck
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../../languages/tools/install.sh" shellcheck "$RUNNER_TEMP/shellcheck"
+    - name: Check Bash and POSIX shell issues
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/../../../languages/run.mjs" shellcheck "${{ inputs.manifest }}" "$RUNNER_TEMP/shellcheck/shellcheck"
+    - name: Install pinned shfmt
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../../languages/tools/install.sh" shfmt "$RUNNER_TEMP/shfmt"
+    - name: Parse all shell dialects and optionally enforce formatting
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "${{ inputs.shell-format }}" == true ]]; then
+          node "$GITHUB_ACTION_PATH/../../../languages/run.mjs" shfmt \
+            "${{ inputs.manifest }}" "$RUNNER_TEMP/shfmt/shfmt" --format
+        else
+          node "$GITHUB_ACTION_PATH/../../../languages/run.mjs" shfmt \
+            "${{ inputs.manifest }}" "$RUNNER_TEMP/shfmt/shfmt"
+        fi

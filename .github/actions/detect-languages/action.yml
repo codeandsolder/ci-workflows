@@ -1,5 +1,5 @@
 name: Discover tracked source languages
-description: Identify actual Java/Rust files in the caller Git index, excluding injected CI code
+description: Identify Git-tracked Java, Rust, shell, JavaScript/TypeScript, Python and WGSL sources
 inputs:
   source-root:
     description: Path to the root of the caller checkout
@@ -16,6 +16,25 @@ outputs:
     description: Rust files are present in the caller Git checkout
   java-count:
     value: ${{ steps.detect.outputs.java_count }}
+
+  has-shell:
+    value: ${{ steps.detect.outputs.has_shell }}
+  shell-count:
+    value: ${{ steps.detect.outputs.shell_count }}
+  has-javascript:
+    value: ${{ steps.detect.outputs.has_javascript }}
+  javascript-count:
+    value: ${{ steps.detect.outputs.javascript_count }}
+  typescript-count:
+    value: ${{ steps.detect.outputs.typescript_count }}
+  has-python:
+    value: ${{ steps.detect.outputs.has_python }}
+  python-count:
+    value: ${{ steps.detect.outputs.python_count }}
+  has-wgsl:
+    value: ${{ steps.detect.outputs.has_wgsl }}
+  wgsl-count:
+    value: ${{ steps.detect.outputs.wgsl_count }}
 runs:
   using: composite
   steps:

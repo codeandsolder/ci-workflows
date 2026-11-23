@@ -65,3 +65,38 @@ test('A Java file whose extension is only part of the name is not Java', t => {
   const result = scan(t, root);
   assert.equal(result.report.has_java, false);
 });
+test('Detects mixed extra languages, preserves original Java and Rust manifest', t => {
+  const root = fixture(t);
+  add(root, 'src/main.rs', 'fn main() {}');
+  add(root, 'tools/check.bash', '#!/bin/bash\ntrue\n');
+  add(root, 'scripts/release', '#!/usr/bin/env bash\nexit 0\n');
+  add(root, 'src/index.tsx', 'export const view = true');
+  add(root, 'public/index.js', 'console.log(true)');
+  add(root, 'shaders/fragment.wgsl', '@compute @workgroup_size(1) fn main() {}');
+  add(root, 'ci/check.py', 'pass');
+  add(root, 'tests/bad.sh.txt', 'not shell');
+  const { report, outputs } = scan(t, root);
+  assert.deepEqual(report.rust, ['src/main.rs']);
+  assert.deepEqual(report.shell, ['scripts/release', 'tools/check.bash']);
+  assert.deepEqual(report.typescript, ['src/index.tsx']);
+  assert.deepEqual(report.javascript, ['public/index.js']);
+  assert.deepEqual(report.wgsl, ['shaders/fragment.wgsl']);
+  assert.deepEqual(report.python, ['ci/check.py']);
+  for (const lang of ['shell', 'javascript', 'python', 'wgsl']) {
+    assert.equal(report['has_' + lang], true);
+    assert.match(outputs, new RegExp('^has_' + lang + '=true$', 'm'));
+  }
+  assert.match(outputs, /^typescript_count=1$/m);
+});
+test('Untracked and missing sources do not enable any new language modules', t => {
+  const root = fixture(t);
+  add(root, 'readme.md', 'doc');
+  add(root, 'removed.wgsl', 'some wgsl');
+  rmSync(join(root, 'removed.wgsl'));
+  writeFileSync(join(root, 'generated.ts'), 'const generated = true');
+  writeFileSync(join(root, 'generated.sh'), 'echo generated');
+  const { report } = scan(t, root);
+  for (const lang of ['shell', 'javascript', 'python', 'wgsl']) {
+    assert.equal(report['has_' + lang], false);
+  }
+});

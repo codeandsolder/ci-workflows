@@ -56,6 +56,10 @@ reusable workflow alongside Java; do not insert language-specific checks into
 the Rust compiler/cache workflow. Keep required check identities stable even
 on a no-source skip.
 
+## Conditional shell, JavaScript, WGSL and Actions quality
+
+The source-only reusable workflow (.github/workflows/source-quality.yml) now discovers tracked source and conditionally runs ShellCheck, shfmt syntax checking, Oxlint correctness and headless Naga WGSL validation, all in one Linux runner. Rust-first repositories already using strict Ruff/ty must not duplicate that check; Python-first repositories can opt in to the same pinned action. Shell formatting is opt-in until consumer formatting debt is resolved. The existing reusable workflow-concurrency policy also runs pinned actionlint in its own existing runner. The language modules README has the consumer invocation contract, source-composition rules and version pins.
+
 ## Two-tier Rust CI and stale-run cancellation
 
 The standard lane uses `rust-sccache.yml` with the repository's fleet-approved dated nightly and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.

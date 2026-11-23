@@ -31,7 +31,10 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             .github/actions/workflow-concurrency-policy
+            .github/actions/actionlint-policy
             policy-wasm/run.mjs
+            languages/actionlint
+            languages/tools/install.sh
             policy-wasm/workspace.mjs
             policy-wasm/module.mjs
             policy-wasm/module.json
@@ -40,3 +43,5 @@ jobs:
 
       - name: Check all caller workflows
         uses: ./.shared-ci-policy/.github/actions/workflow-concurrency-policy
+      - name: Validate workflow structure and expressions with actionlint
+        uses: ./.shared-ci-policy/.github/actions/actionlint-policy

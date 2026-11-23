@@ -1,0 +1,30 @@
+name: Validate tracked WGSL on the CPU
+description: Compile a pinned Naga validator with managed shared sccache and test assembled shaders
+inputs:
+  manifest:
+    required: true
+    description: Exact Git-tracked source manifest
+runs:
+  using: composite
+  steps:
+    - name: Select stable Rust
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+      with:
+        toolchain: stable
+    - name: Configure managed sccache
+      uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7b23cbecfad3c032467c8e31bae2837cff7d18db # main
+      with:
+        rust-toolchain: stable
+        rustflags: ""
+    - name: Validate complete WGSL modules with Naga
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/wgsl-quality-target"
+        cargo +stable run --locked --release \
+          --manifest-path "$GITHUB_ACTION_PATH/../../../languages/wgsl/Cargo.toml" \
+          --target-dir "$RUNNER_TEMP/wgsl-quality-target" -- \
+          "$GITHUB_WORKSPACE" "${{ inputs.manifest }}"
+    - name: Finalize managed sccache
+      if: always()
+      uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@7b23cbecfad3c032467c8e31bae2837cff7d18db # main
