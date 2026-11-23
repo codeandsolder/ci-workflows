@@ -10,13 +10,11 @@ on:
       - ".github/workflows/rust-release-review*.yml"
       - ".github/actions/cargo-affected/**"
       - ".github/actions/pr-checklist-labels/**"
-      - ".github/scripts/test-workflow-concurrency.py"
       - ".github/scripts/test-clone-regression-policy.py"
       - ".github/scripts/clone-regression-oracle.py"
       - ".github/scripts/test-rust-ci-sccache-policy.py"
       - ".github/scripts/rust-ci-sccache-oracle.py"
       - ".github/actions/rust-ci-sccache-policy/**"
-      - ".github/scripts/workflow-concurrency-oracle.py"
       - ".github/workflows/portable-policy.yml"
       - rust-toolchain.toml
   push:
@@ -29,13 +27,11 @@ on:
       - ".github/workflows/rust-release-review*.yml"
       - ".github/actions/cargo-affected/**"
       - ".github/actions/pr-checklist-labels/**"
-      - ".github/scripts/test-workflow-concurrency.py"
       - ".github/scripts/test-clone-regression-policy.py"
       - ".github/scripts/clone-regression-oracle.py"
       - ".github/scripts/test-rust-ci-sccache-policy.py"
       - ".github/scripts/rust-ci-sccache-oracle.py"
       - ".github/actions/rust-ci-sccache-policy/**"
-      - ".github/scripts/workflow-concurrency-oracle.py"
       - ".github/workflows/portable-policy.yml"
       - rust-toolchain.toml
   workflow_dispatch:
@@ -89,7 +85,7 @@ jobs:
         shell: bash
         run: |
           node --test policy-wasm/workspace.test.mjs
-          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          node policy-wasm/concurrency.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/quarantine.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/cargo-affected.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
@@ -101,7 +97,7 @@ jobs:
           node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache .
           node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
           node --test policy-wasm/workspace.test.mjs
-          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
+          node policy-wasm/concurrency.test.mjs policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
           node policy-wasm/quarantine.test.mjs policy-wasm/module.json
@@ -146,7 +142,7 @@ jobs:
         shell: bash
         run: |
           node --test policy-wasm/workspace.test.mjs
-          uv run --project .github --locked python -B .github/scripts/test-workflow-concurrency.py --wasm policy-wasm/module.json
+          node policy-wasm/concurrency.test.mjs policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-rust-ci-sccache-policy.py --wasm policy-wasm/module.json
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm policy-wasm/module.json
           node policy-wasm/quarantine.test.mjs policy-wasm/module.json
