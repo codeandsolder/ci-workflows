@@ -6,6 +6,7 @@ on:
       - "policy-wasm/**"
       - "scripts/rust-release-review*.mjs"
       - "scripts/runner-availability*.mjs"
+      - "scripts/renovate-quarantine-recheck*.mjs"
       - ".github/workflows/rust-release-review*.yml"
       - ".github/actions/cargo-affected/**"
       - ".github/actions/pr-checklist-labels/**"
@@ -24,6 +25,7 @@ on:
       - "policy-wasm/**"
       - "scripts/rust-release-review*.mjs"
       - "scripts/runner-availability*.mjs"
+      - "scripts/renovate-quarantine-recheck*.mjs"
       - ".github/workflows/rust-release-review*.yml"
       - ".github/actions/cargo-affected/**"
       - ".github/actions/pr-checklist-labels/**"
@@ -94,6 +96,7 @@ jobs:
           node policy-wasm/checklist-labels.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node scripts/rust-release-review.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node scripts/runner-availability.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
+          node scripts/renovate-quarantine-recheck.test.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           uv run --project .github --locked python -B .github/scripts/test-clone-regression-policy.py --wasm "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
           node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache .
           node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
@@ -106,6 +109,7 @@ jobs:
           node policy-wasm/checklist-labels.test.mjs policy-wasm/module.json
           node scripts/rust-release-review.test.mjs policy-wasm/module.json
           node scripts/runner-availability.test.mjs policy-wasm/module.json
+          node scripts/renovate-quarantine-recheck.test.mjs policy-wasm/module.json
           node policy-wasm/run.mjs policy-wasm/module.json sccache .
           node policy-wasm/run.mjs policy-wasm/module.json concurrency .
       - name: Verify the actual sparse caller checkout
@@ -150,3 +154,4 @@ jobs:
           node policy-wasm/checklist-labels.test.mjs policy-wasm/module.json
           node scripts/rust-release-review.test.mjs policy-wasm/module.json
           node scripts/runner-availability.test.mjs policy-wasm/module.json
+          node scripts/renovate-quarantine-recheck.test.mjs policy-wasm/module.json

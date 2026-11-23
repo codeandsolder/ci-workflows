@@ -5,12 +5,14 @@ on:
     paths:
       - "scripts/fleet-scope.mjs"
       - "scripts/renovate-quarantine-recheck*.mjs"
+      - "policy-wasm/**"
       - ".github/workflows/renovate-quarantine-recheck-test.yml"
   push:
     branches: [main]
     paths:
       - "scripts/fleet-scope.mjs"
       - "scripts/renovate-quarantine-recheck*.mjs"
+      - "policy-wasm/**"
       - ".github/workflows/renovate-quarantine-recheck-test.yml"
 
 concurrency:

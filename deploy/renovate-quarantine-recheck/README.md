@@ -8,6 +8,16 @@ after its failure log proves every new crates.io version has aged at least
 72 hours, plus a 15-minute margin. The actual CI gate runs again; normal
 Renovate automerge alone handles successful PRs.
 
+Generic age validation, complete-check-set eligibility and original-attempt
+checks run in the shared Rust/WASI policy module, not in this service's Node
+controller. The Node host retains scoped GitHub API reads, exact state
+revalidation and the permitted rerun action. The service's existing Git
+fast-forward step also refreshes the committed, hash-verified WASM binary and
+its native runner, so no Rust compiler, Python interpreter, extra service or
+deployment-time build is required.
+
+See [portable policy contract](../../policy-wasm/RENOVATE_RECHECK.md).
+
 - Discover nonarchived codeandsolder repositories in the GitHub App installation, excluding contribution-only Anubis, OXC and Hayro (shared scripts/fleet-scope.mjs).
 - Inspect only open Renovate PRs at the exact current head.
 - Select completed failed GitHub Actions jobs, regardless of caller-facing job name.
