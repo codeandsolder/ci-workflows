@@ -32,6 +32,7 @@ jobs:
       working-directory: smoke-cache
 
   verify-report:
+    if: ${{ always() && !cancelled() }}
     name: Validate actual LLVM coverage artifact
     needs: coverage
     runs-on: ubuntu-24.04
