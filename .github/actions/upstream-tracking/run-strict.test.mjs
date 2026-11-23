@@ -30,7 +30,7 @@ test("rejects ambiguous toolchain, unsafe directory and apt selectors", () => {
 });
 
 import {execFileSync} from "node:child_process";
-import {mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync} from "node:fs";
+import {mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync} from "node:fs";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {executePlan} from "./run-strict.mjs";
@@ -54,6 +54,9 @@ test("candidate validation calls reviewed Python and Rust in order, and failures
       mkdirSync(root);
       git(root, "init", "-q", "-b", "main");
     }
+    // The fixture's observed script-order log is deliberately not source;
+    // subsequent fixture commits must not accidentally track it.
+    writeFileSync(path.join(candidate, ".git", "info", "exclude"), ".events\n");
     mkdirSync(path.join(gate, "scripts"));
     const python = path.join(gate, "scripts", "strict_python.sh");
     const rust = path.join(gate, "scripts", "strict_clippy.sh");
@@ -81,6 +84,40 @@ test("candidate validation calls reviewed Python and Rust in order, and failures
     const events = readFileSync(path.join(candidate, ".events"), "utf8");
     assert.match(events, /^python:true:\nrust:\.:--locked --workspace --all-targets:false\n$/);
 
+    // Source-driven Rust selection also covers repositories with nested-only
+    // Cargo workspaces. A default root job fails with an actionable message;
+    // a reviewed explicit nested working directory continues to work.
+    mkdirSync(path.join(candidate, "nested"));
+    writeFileSync(path.join(candidate, "nested", "Cargo.toml"), '[package]\nname="nested"\nversion="0.1.0"\n');
+    git(candidate, "rm", "-q", "Cargo.toml");
+    commit(candidate);
+    assert.throws(
+      () => executePlan(plan, "nightly-2026-11-19", candidate, gate),
+      /nested-only Rust sources need a reviewed strict working-directory/
+    );
+    const nestedPlan = structuredClone(plan);
+    nestedPlan.jobs[0].workingDirectory = "nested";
+    executePlan(nestedPlan, "nightly-2026-11-19", candidate, gate);
+    assert.match(readFileSync(path.join(candidate, ".events"), "utf8"), /rust:nested:--locked --workspace --all-targets:false/);
+
+    // A tracked symlink in the candidate must not redirect even a reviewed,
+    // syntactically safe working-directory into a different filesystem tree.
+    const external = path.join(temp, "external");
+    mkdirSync(external);
+    writeFileSync(path.join(external, "Cargo.toml"), "[workspace]\n");
+    symlinkSync(external, path.join(candidate, "escaped"), "dir");
+    commit(candidate);
+    const escapedPlan = structuredClone(plan);
+    escapedPlan.jobs[0].workingDirectory = "escaped";
+    assert.throws(
+      () => executePlan(escapedPlan, "nightly-2026-11-19", candidate, gate),
+      /working-directory resolves outside the candidate/
+    );
+
+    // Restore the default root workspace for the existing Python rejection.
+    writeFileSync(path.join(candidate, "Cargo.toml"), "[workspace]\n");
+    commit(candidate);
+
     // The upstream candidate passes its own source tests but adds a Python
     // file forbidden by the target-base strict configuration: fail closed.
     writeFileSync(path.join(candidate, "forbidden.py"), "print('unreviewed Python')\n");
@@ -91,7 +128,7 @@ test("candidate validation calls reviewed Python and Rust in order, and failures
     );
     const after = readFileSync(path.join(candidate, ".events"), "utf8");
     assert.match(after, /python:true:\n$/);
-    assert.equal((after.match(/rust:/g) ?? []).length, 1);
+    assert.equal((after.match(/rust:/g) ?? []).length, 2);
 
     const unreviewed = structuredClone(plan);
     unreviewed.refSha = "a".repeat(40);
