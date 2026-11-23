@@ -32,13 +32,17 @@ understanding that cost. The lightweight selection on PRs reuses the full
 Nextest build output and ordinarily takes a fraction of a second after the
 suite finishes. No tests are skipped.
 
-The current installation pins cargo-affected 0.4.1. It is known to
-underselect on nested Cargo roots: Git paths are repository-relative, while
-this version stores coverage paths workspace-relative. This limitation is
-intentionally visible in shadow results, and must be fixed upstream and
-the tool repinned before using it to skip any tests. Regression and corrected
-source are in the separate local cargo-affected worktree; the author is not
-maintaining a compatibility wrapper for the bug.
+The current installation pins the exact source commit
+[codeandsolder/cargo-affected 3f5d5aad](https://github.com/codeandsolder/cargo-affected/commit/3f5d5aad106bde1c19496ffd144ca432a93a180c),
+which contains the nested Cargo-workspace Git-path fix proposed upstream in
+[max-sixty/cargo-affected #167](https://github.com/max-sixty/cargo-affected/pull/167).
+It is built through Cargo with the workflow's managed sccache client, rather
+than substituting a prebuilt official 0.4.1 binary that still misses nested
+workspace changes. The tool revision is part of the cache key; old coverage
+maps are never reused across this change.
+
+Shadow selection remains advisory: the upstream project does not yet guarantee
+absence of false negatives for build scripts, non-Rust inputs or external state.
 
 For the local comparison parser contract:
 node --test .github/actions/rust-test-impact/compare.test.mjs.
