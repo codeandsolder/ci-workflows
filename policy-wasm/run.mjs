@@ -7,6 +7,7 @@ const [modulePath, policy, root, ...options] = process.argv.slice(2);
 if (!modulePath || !root || !(
   (policy === 'concurrency' && options.length === 0) ||
   (policy === 'sccache' && options.length <= 1) ||
+  (policy === 'strict-plan' && options.length === 0) ||
   (policy === 'clones' && options.length === 3) ||
   (policy === 'checklist-labels' && options.length === 4) ||
   (['cargo-affected-plan', 'cargo-affected-args'].includes(policy) && options.length === 0) ||
@@ -15,7 +16,7 @@ if (!modulePath || !root || !(
   (policy === 'runner-admission' && options.length === 0) ||
   (policy === 'renovate-recheck' && options.length === 0)
 )) {
-  throw new Error('usage: node run.mjs MODULE concurrency ROOT | sccache ROOT [STRICT_REF] | clones ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS | quarantine-diff ROOT | quarantine-age ROOT | cargo-affected-plan ROOT | cargo-affected-args ROOT | checklist-labels ROOT TEMPLATE WORKFLOW HEADING VARIABLE | stable-release-parse ROOT | stable-release-plan ROOT | runner-admission ROOT | renovate-recheck ROOT');
+  throw new Error('usage: node run.mjs MODULE concurrency ROOT | sccache ROOT [STRICT_REF] | clones ROOT SCAN_ROOT PROD_TOKENS TEST_TOKENS | quarantine-diff ROOT | quarantine-age ROOT | cargo-affected-plan ROOT | cargo-affected-args ROOT | checklist-labels ROOT TEMPLATE WORKFLOW HEADING VARIABLE | stable-release-parse ROOT | stable-release-plan ROOT | runner-admission ROOT | renovate-recheck ROOT | strict-plan REVIEWED_ROOT');
 }
 const host = workspace(root);
 const args = ['ci-policy', policy, '/workspace'];
@@ -26,7 +27,7 @@ if (policy === 'clones') {
   args.push(resolved.slice(1), production, testing);
 } else if (policy === 'checklist-labels') {
   args.push(...options);
-} else if (policy === 'concurrency' || policy === 'sccache') {
+} else if (policy === 'concurrency' || policy === 'sccache' || policy === 'strict-plan') {
   if (policy === 'sccache') args.push(options[0] ?? '');
   args.push(...host.workflowPaths());
 }
