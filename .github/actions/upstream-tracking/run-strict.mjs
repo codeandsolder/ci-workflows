@@ -21,6 +21,39 @@ function requireSafeRelative(value, label) {
   return value;
 }
 
+// Follow only Git-pinned gitlinks, never arbitrary nested .git repositories.
+// A provider checkout under .ci-workflows is physically inside the workspace
+// but is not part of the exact candidate's Git tree.
+function isCandidateTrackedManifest(root, manifest) {
+  let repository = root;
+  let relative = path.relative(root, manifest).split(path.sep).join("/");
+  while (relative) {
+    const parts = relative.split("/");
+    let nested;
+    // Exact file first, then the longest matching gitlink. Avoid enumerating
+    // large unrelated subtrees for each parent path.
+    for (let size = parts.length; size >= 1; size--) {
+      const tracked = parts.slice(0, size).join("/");
+      const entries = execFileSync("git", [
+        "-C", repository, "ls-files", "--stage", "-z", "--", ":(literal)" + tracked,
+      ], { encoding: "utf8" });
+      for (const entry of entries.split("\0").filter(Boolean)) {
+        const tab = entry.indexOf("\t");
+        if (tab < 0 || entry.slice(tab + 1) !== tracked) continue;
+        const [mode, , stage] = entry.slice(0, tab).split(" ");
+        if (stage !== "0") continue;
+        if (size === parts.length && (mode === "100644" || mode === "100755")) return true;
+        if (mode === "160000" && size < parts.length) nested = { tracked, size };
+      }
+      if (nested) break;
+    }
+    if (!nested) return false;
+    repository = path.join(repository, nested.tracked);
+    relative = parts.slice(nested.size).join("/");
+  }
+  return false;
+}
+
 function assertReviewedRustDirectory(root, job) {
   // Even a reviewed relative path can point outside the candidate if the
   // upstream update replaces one of its path components with a symlink.
@@ -39,6 +72,9 @@ function assertReviewedRustDirectory(root, job) {
   const manifestReal = realpathSync(manifest);
   if (manifestReal !== canonicalRoot && !manifestReal.startsWith(canonicalRoot + path.sep)) {
     throw new Error("strict Cargo.toml resolves outside the candidate: " + job.workingDirectory);
+  }
+  if (!isCandidateTrackedManifest(canonicalRoot, manifestReal)) {
+    throw new Error("strict Cargo.toml is not Git-tracked in the exact candidate: " + job.workingDirectory);
   }
 }
 

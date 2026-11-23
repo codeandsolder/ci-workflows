@@ -100,6 +100,22 @@ test("candidate validation calls reviewed Python and Rust in order, and failures
     executePlan(nestedPlan, "nightly-2026-11-19", candidate, gate);
     assert.match(readFileSync(path.join(candidate, ".events"), "utf8"), /rust:nested:--locked --workspace --all-targets:false/);
 
+    // An injected provider checkout lies inside GITHUB_WORKSPACE, but is
+    // untracked by the exact upstream candidate. A candidate-controlled
+    // symlink must not make a reviewed job compile that provider instead.
+    mkdirSync(path.join(candidate, ".ci-workflows", "policy-wasm"), {recursive:true});
+    writeFileSync(path.join(candidate, ".ci-workflows", "policy-wasm", "Cargo.toml"), "[workspace]\\n");
+    writeFileSync(path.join(candidate, ".git", "info", "exclude"), ".events\\n.ci-workflows/\\n");
+    symlinkSync(".ci-workflows/policy-wasm", path.join(candidate, "selected"));
+    git(candidate, "add", "selected");
+    git(candidate, "-c", "user.name=CI integration test", "-c", "user.email=ci@example.invalid", "commit", "-qm", "symlinked candidate source");
+    const injectedPlan = structuredClone(plan);
+    injectedPlan.jobs[0].workingDirectory = "selected";
+    assert.throws(
+      () => executePlan(injectedPlan, "nightly-2026-11-19", candidate, gate),
+      /not Git-tracked in the exact candidate/
+    );
+
     // A tracked symlink in the candidate must not redirect even a reviewed,
     // syntactically safe working-directory into a different filesystem tree.
     const external = path.join(temp, "external");
