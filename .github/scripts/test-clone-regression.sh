@@ -13,6 +13,7 @@ git -C "$repo" config user.name "Clone Regression Test"
 git -C "$repo" config user.email "ci@example.invalid"
 
 cat > "$repo/src/engine.rs" <<'RUST'
+#[must_use]
 pub fn fold_bytes(input: &[u8]) -> Vec<u8> {
     let mut output = Vec::with_capacity(input.len());
     let mut pending = false;
@@ -94,6 +95,22 @@ reset_case() {
 }
 
 check accepted-baseline 0
+
+# Changing only an existing Rust must-use reason changes scanner fingerprints,
+# but must remain advisory because the implementation itself is unchanged.
+sed -i 's/#\[must_use\]/#[must_use = "The returned bytes must be observed."]/' \
+  "$repo/src/engine.rs" "$repo/src/legacy.rs"
+git -C "$repo" add src/engine.rs src/legacy.rs
+git -C "$repo" commit -qm "document existing must-use contracts"
+check annotation-reason-only-passes 0
+jq -e '.policy.annotation_only_diff == true and (.new | length) == 0' \
+  "$run_dir/doppelscan-report.json" >/dev/null
+jq -e '.new | length > 0' "$run_dir/doppelscan-raw-report.json" >/dev/null || {
+  echo 'FAIL metadata-only regression did not exercise a changed clone fingerprint' >&2
+  exit 1
+}
+reset_case
+
 sed 's/fn fold_bytes(/fn fold_bytes_copy(/' "$repo/src/engine.rs" > "$repo/src/copy.rs"
 check third-copy-blocked 1
 jq -e '.new|length>0' "$run_dir/doppelscan-report.json" >/dev/null

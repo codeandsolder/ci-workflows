@@ -4,6 +4,9 @@ use crate::{
     rust_tests,
     workspace::{Kind, resolve},
 };
+mod annotation_diff;
+pub(crate) use annotation_diff::emit_proof;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -48,6 +51,8 @@ struct Group {
 struct Report {
     new: Vec<Group>,
     smaller: Vec<Group>,
+    #[serde(default)]
+    annotation_only_diff: bool,
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
 }
@@ -76,6 +81,8 @@ struct PolicySummary {
     blocking: usize,
     advisory: usize,
     accepted: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annotation_only_diff: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -221,6 +228,7 @@ impl Classifier<'_> {
         let Report {
             new,
             smaller,
+            annotation_only_diff,
             mut extra,
         } = report;
         let mut blocked = Vec::new();
@@ -251,7 +259,7 @@ impl Classifier<'_> {
             {
                 classified.accept_reason = Some(Value::String(reason.clone()));
                 accepted.push(classified);
-            } else if classified.group.tokens >= threshold {
+            } else if classified.group.tokens >= threshold && !annotation_only_diff {
                 blocked.push(classified);
             } else {
                 advisory.push(classified);
@@ -266,14 +274,22 @@ impl Classifier<'_> {
             blocking: blocked.len(),
             advisory: advisory.len(),
             accepted: accepted.len(),
+            annotation_only_diff: annotation_only_diff.then_some(true),
         };
-        let note = format!(
-            "{} new clone groups remain advisory under their {}-token production / {}-token test thresholds; {} explicitly accepted by documented fingerprint.",
-            advisory.len(),
-            self.thresholds.production,
-            self.thresholds.testing,
-            accepted.len()
-        );
+        let note = if annotation_only_diff {
+            format!(
+                "{} clone groups remain advisory because the verified Git diff changes only existing Rust must-use explanations; no executable duplication was introduced.",
+                advisory.len()
+            )
+        } else {
+            format!(
+                "{} new clone groups remain advisory under their {}-token production / {}-token test thresholds; {} explicitly accepted by documented fingerprint.",
+                advisory.len(),
+                self.thresholds.production,
+                self.thresholds.testing,
+                accepted.len()
+            )
+        };
         ClassifiedReport {
             new: blocked,
             smaller: advisory,
