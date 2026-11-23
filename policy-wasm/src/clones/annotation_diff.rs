@@ -10,6 +10,7 @@ use serde::Serialize;
 use std::{
     error::Error,
     io::{self, Read, Write},
+    path::Path,
     sync::LazyLock,
 };
 
@@ -47,6 +48,13 @@ fn finish_hunk(removed: &mut Vec<String>, added: &mut Vec<String>) -> Option<usi
     valid.then_some(count)
 }
 
+const fn invalid_proof() -> AnnotationProof {
+    AnnotationProof {
+        annotation_only: false,
+        changed_attributes: 0,
+    }
+}
+
 fn inspect_patch(patch: &str) -> AnnotationProof {
     let mut file_seen = false;
     let mut old_path = false;
@@ -61,24 +69,15 @@ fn inspect_patch(patch: &str) -> AnnotationProof {
         if line.starts_with("diff --git ") {
             if inside_hunk {
                 let Some(count) = finish_hunk(&mut removed, &mut added) else {
-                    return AnnotationProof {
-                        annotation_only: false,
-                        changed_attributes: 0,
-                    };
+                    return invalid_proof();
                 };
                 total += count;
             }
             if file_seen && (!old_path || !new_path || !hunk_seen) {
-                return AnnotationProof {
-                    annotation_only: false,
-                    changed_attributes: 0,
-                };
+                return invalid_proof();
             }
             if !line.starts_with("diff --git a/") {
-                return AnnotationProof {
-                    annotation_only: false,
-                    changed_attributes: 0,
-                };
+                return invalid_proof();
             }
             file_seen = true;
             old_path = false;
@@ -87,17 +86,11 @@ fn inspect_patch(patch: &str) -> AnnotationProof {
             inside_hunk = false;
         } else if line.starts_with("@@ ") {
             if !file_seen || !old_path || !new_path {
-                return AnnotationProof {
-                    annotation_only: false,
-                    changed_attributes: 0,
-                };
+                return invalid_proof();
             }
             if inside_hunk {
                 let Some(count) = finish_hunk(&mut removed, &mut added) else {
-                    return AnnotationProof {
-                        annotation_only: false,
-                        changed_attributes: 0,
-                    };
+                    return invalid_proof();
                 };
                 total += count;
             }
@@ -109,41 +102,28 @@ fn inspect_patch(patch: &str) -> AnnotationProof {
             } else if let Some(value) = line.strip_prefix('+') {
                 added.push(value.to_owned());
             } else {
-                return AnnotationProof {
-                    annotation_only: false,
-                    changed_attributes: 0,
-                };
+                return invalid_proof();
             }
         } else if let Some(value) = line.strip_prefix("--- ") {
-            old_path = value.starts_with("a/") && value.ends_with(".rs");
+            old_path = value.starts_with("a/")
+                && Path::new(value).extension().is_some_and(|ext| ext == "rs");
             if !old_path {
-                return AnnotationProof {
-                    annotation_only: false,
-                    changed_attributes: 0,
-                };
+                return invalid_proof();
             }
         } else if let Some(value) = line.strip_prefix("+++ ") {
-            new_path = value.starts_with("b/") && value.ends_with(".rs");
+            new_path = value.starts_with("b/")
+                && Path::new(value).extension().is_some_and(|ext| ext == "rs");
             if !new_path {
-                return AnnotationProof {
-                    annotation_only: false,
-                    changed_attributes: 0,
-                };
+                return invalid_proof();
             }
         } else if !(line.starts_with("index ") || line.is_empty()) {
-            return AnnotationProof {
-                annotation_only: false,
-                changed_attributes: 0,
-            };
+            return invalid_proof();
         }
     }
 
     if inside_hunk {
         let Some(count) = finish_hunk(&mut removed, &mut added) else {
-            return AnnotationProof {
-                annotation_only: false,
-                changed_attributes: 0,
-            };
+            return invalid_proof();
         };
         total += count;
     }
@@ -154,7 +134,7 @@ fn inspect_patch(patch: &str) -> AnnotationProof {
 }
 
 /// Inspect a unified Git patch from stdin and output an exact metadata-only proof.
-pub(crate) fn emit_proof() -> Result<(), Box<dyn Error>> {
+pub fn emit_proof() -> Result<(), Box<dyn Error>> {
     let mut patch = String::new();
     io::stdin().read_to_string(&mut patch)?;
     let result = inspect_patch(&patch);
