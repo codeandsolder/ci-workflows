@@ -42,3 +42,9 @@ maintaining a compatibility wrapper for the bug.
 
 For the local comparison parser contract:
 node --test .github/actions/rust-test-impact/compare.test.mjs.
+
+The shared provider runs its own Rust/WASI policy crate (policy-wasm) as the
+first canary in rust-test-impact-smoke.yml. This is an actively changed nested
+Cargo workspace with 47 unit tests. Until the upstream path fix is released,
+shadow comparisons on this crate can observe missed regressions caused by the
+known Git-root mismatch; they never omit tests from the full run.

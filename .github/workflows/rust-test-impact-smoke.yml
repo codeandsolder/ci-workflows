@@ -8,6 +8,7 @@ on:
       - ".github/workflows/rust-test-impact-smoke.yml"
       - ".github/actions/rust-test-impact/**"
       - "smoke-cache/**"
+      - "policy-wasm/**"
   push:
     branches: [main]
     paths:
@@ -16,6 +17,7 @@ on:
       - ".github/workflows/rust-test-impact-smoke.yml"
       - ".github/actions/rust-test-impact/**"
       - "smoke-cache/**"
+      - "policy-wasm/**"
   workflow_dispatch:
 
 concurrency:
@@ -38,4 +40,4 @@ jobs:
   end-to-end:
     uses: ./.github/workflows/rust-test-impact.yml
     with:
-      working-directory: smoke-cache
+      working-directory: policy-wasm
