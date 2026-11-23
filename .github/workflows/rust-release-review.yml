@@ -23,6 +23,7 @@ jobs:
             policy-wasm/module.json
             policy-wasm/module.wasm.gz
             policy-wasm/module.mjs
+            policy-wasm/bridge.mjs
             policy-wasm/run.mjs
             policy-wasm/workspace.mjs
           sparse-checkout-cone-mode: false

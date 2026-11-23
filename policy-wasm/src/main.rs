@@ -4,6 +4,7 @@ mod checklist_labels;
 mod clones;
 mod concurrency;
 mod quarantine;
+mod runner_admission;
 mod rust_tests;
 mod shell;
 mod stable_review;
@@ -26,6 +27,10 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
     match policy.as_str() {
         "cargo-affected-plan" | "cargo-affected-args" => {
             cargo_affected::decide(&policy)?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        "runner-admission" => {
+            runner_admission::execute()?;
             return Ok(ExitCode::SUCCESS);
         }
         "stable-release-parse" | "stable-release-plan" => {
