@@ -214,4 +214,115 @@ mod tests {
         );
         Ok(())
     }
+    #[test]
+    fn workspace_consolidation_requires_a_tracked_member_lock()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let registry = "registry+https://github.com/rust-lang/crates.io-index";
+        let before = BTreeMap::from([(
+            "package/Cargo.lock".into(),
+            lock("serde", "1.0.0", registry),
+        )]);
+        let after = BTreeMap::from([("Cargo.lock".into(), lock("serde", "1.0.0", registry))]);
+        let manifests = |members: Vec<String>, workspace_lock: Option<String>| {
+            BTreeMap::from([(
+                "package/Cargo.lock".into(),
+                RemovedManifest {
+                    manifest: "package/Cargo.toml".into(),
+                    workspace_lock,
+                    members,
+                },
+            )])
+        };
+        assert_eq!(
+            Diff {
+                selector: "auto".into(),
+                before: before.clone(),
+                after: after.clone(),
+                removed_manifests: manifests(
+                    vec!["package/Cargo.toml".into()],
+                    Some("Cargo.lock".into())
+                ),
+            }
+            .introduced()?,
+            Vec::<Package>::new()
+        );
+        for (members, workspace_lock) in [
+            (vec![], Some("Cargo.lock".into())),
+            (
+                vec!["package/Cargo.toml".into()],
+                Some("untracked/Cargo.lock".into()),
+            ),
+            (
+                vec!["unrelated/Cargo.toml".into()],
+                Some("Cargo.lock".into()),
+            ),
+        ] {
+            let rejected = Diff {
+                selector: "auto".into(),
+                before: before.clone(),
+                after: after.clone(),
+                removed_manifests: manifests(members, workspace_lock),
+            }
+            .introduced();
+            assert!(
+                rejected
+                    .err()
+                    .is_some_and(|error| error.to_string().contains("still exists"))
+            );
+        }
+        let explicit = Diff {
+            selector: "package/Cargo.lock".into(),
+            before: before.clone(),
+            after: BTreeMap::new(),
+            removed_manifests: BTreeMap::new(),
+        }
+        .introduced();
+        assert!(
+            explicit
+                .err()
+                .is_some_and(|error| error.to_string().contains("explicitly selected"))
+        );
+        assert_eq!(
+            Diff {
+                selector: "auto".into(),
+                before,
+                after: BTreeMap::new(),
+                removed_manifests: BTreeMap::new(),
+            }
+            .introduced()?,
+            Vec::<Package>::new()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn external_registry_versions_remain_quarantined_across_first_party_updates()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let index = "registry+https://index.crates.io/";
+        let git_old = "git+https://github.com/codeandsolder/own#old";
+        let git_new = "git+https://github.com/codeandsolder/own#new";
+        let prior = lock("serde", "1.0.0", index) + &lock("own", "0.1.0", git_old);
+        let current = prior.replace(git_old, git_new)
+            + &lock("serde", "1.0.1", index)
+            + &lock(
+                "other",
+                "1.0.0",
+                "registry+https://example.invalid/third-party",
+            );
+        let introduced = Diff {
+            selector: "auto".into(),
+            before: BTreeMap::from([("a/Cargo.lock".into(), prior)]),
+            after: BTreeMap::from([("b/Cargo.lock".into(), current)]),
+            removed_manifests: BTreeMap::new(),
+        }
+        .introduced()?;
+        assert_eq!(
+            introduced
+                .iter()
+                .map(|pkg| (pkg.name.as_str(), pkg.version.as_str()))
+                .collect::<Vec<_>>(),
+            [("serde", "1.0.1")],
+        );
+        Ok(())
+    }
 }

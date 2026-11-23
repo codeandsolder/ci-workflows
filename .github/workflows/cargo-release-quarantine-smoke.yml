@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - ".github/actions/cargo-release-quarantine/**"
-      - ".github/scripts/cargo-release-quarantine-oracle.py"
       - "policy-wasm/**"
       - ".github/workflows/cargo-release-quarantine.yml"
       - ".github/workflows/cargo-release-quarantine-smoke.yml"
@@ -12,7 +11,6 @@ on:
     branches: [main]
     paths:
       - ".github/actions/cargo-release-quarantine/**"
-      - ".github/scripts/cargo-release-quarantine-oracle.py"
       - "policy-wasm/**"
       - ".github/workflows/cargo-release-quarantine.yml"
       - ".github/workflows/cargo-release-quarantine-smoke.yml"
@@ -34,14 +32,9 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
-        with:
-          enable-cache: false
       - name: Check baseline Git transport
         run: node --test .github/actions/cargo-release-quarantine/fetch_baseline.test.mjs
-      - name: Check multi-workspace quarantine invariants
-        run: uv run --project .github --locked python -B -m unittest discover -v -s .github/actions/cargo-release-quarantine -p 'test_*.py'
-      - name: Check portable quarantine behavior
+      - name: Verify quarantine invariants through real Git and Rust/WASI
         run: node policy-wasm/quarantine.test.mjs policy-wasm/module.json
 
       - name: Assert PR base is available without Git credentials
@@ -61,7 +54,6 @@ jobs:
             git -C "$gate" sparse-checkout set --no-cone --stdin
           git -C "$gate" checkout --detach "$(git rev-parse HEAD)"
           test ! -e "$gate/policy-wasm/src"
-          test ! -e "$gate/.github/scripts/cargo-release-quarantine-oracle.py"
           node "$gate/policy-wasm/quarantine.mjs" "$gate/policy-wasm/module.json" HEAD 72 .quarantine-smoke/not-present.lock
 
       - name: Create synthetic introduced crates.io entry
