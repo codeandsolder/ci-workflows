@@ -2,7 +2,7 @@
 // Each case invokes the real compiled Rust/WASI policy, including host FS checks.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, rmSync, symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -18,9 +18,11 @@ assert.equal(golden.schema, 1);
 assert.equal(golden.cases.length, 23);
 
 function workspace(t) {
-  const root = mkdtempSync(path.join(tmpdir(), 'ci-policy-clones-'));
-  t.after(() => rmSync(root, {recursive: true, force: true}));
-  return root;
+  const temporary = mkdtempSync(path.join(tmpdir(), 'ci-policy-clones-'));
+  t.after(() => rmSync(temporary, {recursive: true, force: true}));
+  // macOS presents /var as a symlink to /private/var. Match the host bridge's
+  // canonical root before passing an absolute scan-root path into WASI.
+  return realpathSync(temporary);
 }
 function write(root, file, content) {
   const target = path.join(root, file);
