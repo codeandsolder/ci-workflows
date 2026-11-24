@@ -13,33 +13,17 @@ permissions:
   contents: read
 
 jobs:
-  pin:
-    runs-on: ubuntu-26.04
-    outputs:
-      channel: ${{ steps.compiler.outputs.channel }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/resolve-rust-toolchain
-        id: compiler
   strict-rust-smoke-cache:
-    needs: pin
     uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@aca7fd6b3cee50e3c1ccdd46ddd0bc0ec431ccff # main
     with:
       working-directory: smoke-cache
-      rust-toolchain: ${{ needs.pin.outputs.channel }}
   strict-rust-portable-policy:
-    needs: pin
     uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@aca7fd6b3cee50e3c1ccdd46ddd0bc0ec431ccff # main
     with:
       working-directory: policy-wasm
-      rust-toolchain: ${{ needs.pin.outputs.channel }}
   strict-rust-portable-wasi:
-    needs: pin
     uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@aca7fd6b3cee50e3c1ccdd46ddd0bc0ec431ccff # main
     with:
       working-directory: policy-wasm
-      rust-toolchain: ${{ needs.pin.outputs.channel }}
       rust-targets: wasm32-wasip1
       cargo-args: --locked --workspace --bins --target wasm32-wasip1

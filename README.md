@@ -144,8 +144,11 @@ non-Rust tasks, and rejects missing/disabled cancellation, PR-key collisions,
 invalid PR-target group identity and unsafe mixed-event groups. Pure
 PR-close cleanup, workflow_call-only, release-only and non-PR workflows
 do not require PR supersession. Test fixtures and the provider's own hosted
-check are in .github/scripts/test-workflow-concurrency.py and
-.github/workflows/workflow-concurrency-policy.yml.
+check are the frozen, independently derived 56-case WASI fixtures in
+[policy-wasm/concurrency.test.mjs](policy-wasm/concurrency.test.mjs) and
+[policy-wasm/fixtures/concurrency.json](policy-wasm/fixtures/concurrency.json),
+with a standalone gate at .github/workflows/provider-checks.yml.
+No Python runtime is required for workflow cancellation tests.
 
 A workflow whose every invocation recomputes a *global snapshot* (for
 example, all open pull-request conflict labels) deliberately uses one
@@ -176,10 +179,9 @@ for public callers. Static-only private repositories without registered
 to lint workflow YAML. This is enforcement of native GitHub Actions
 cancellation, not a custom polling daemon.
 
-The concurrency checker uses the provider's committed `.github/uv.lock`,
-including when its reusable workflow checks out only the required action
-and lock files. Consumers do not duplicate Python package versions for this
-check.
+The concurrency checker executes the provider's digest-verified Rust/WASI
+module with a thin Node host adapter, including sparse consumer checkouts.
+It requires neither a Python runtime nor a Python package lockfile.
 
 Example validated workflow group (this declaration is necessarily local,
 because GitHub requires concurrency at the *caller* workflow level):
@@ -552,3 +554,7 @@ strict lint and any relevant package or cross-target checks must run on
 compiler-pin-only PRs. No special scheduler, credentials or cohort registry
 are required. Stable or independently pinned release compatibility jobs stay
 separate and review-only.
+
+### Provider CI scheduling
+
+Provider policy tests share the portable-policy workflow and a single Linux build. Its WASI fixture suite runs against both the freshly built and checked-in bundle; Windows and macOS test the checked-in bundle. The same Linux job also exercises real quarantine transport and composite-action behavior. Provider workflow validation and toolchain/cache policy checks run together in provider-checks. Clone, language and Rust integration canaries use targeted inputs rather than triggering on unrelated policy fixtures or README edits. Reusable consumer workflows are unchanged.

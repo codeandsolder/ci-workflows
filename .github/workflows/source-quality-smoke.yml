@@ -4,19 +4,39 @@ on:
   pull_request:
     paths:
       - languages/**
-      - .github/actions/**
+      - .github/actions/**/*.sh
+      - .github/actions/**/*.bash
+      - .github/actions/**/*.js
+      - .github/actions/**/*.mjs
+      - .github/actions/**/*.cjs
+      - .github/actions/**/*.ts
+      - .github/actions/**/*.wgsl
+      - .github/actions/detect-languages/**
+      - .github/actions/shell-quality/**
+      - .github/actions/javascript-quality/**
+      - .github/actions/wgsl-quality/**
       - .github/workflows/source-quality*.yml
   push:
     branches: [main]
     paths:
       - languages/**
-      - .github/actions/**
+      - .github/actions/**/*.sh
+      - .github/actions/**/*.bash
+      - .github/actions/**/*.js
+      - .github/actions/**/*.mjs
+      - .github/actions/**/*.cjs
+      - .github/actions/**/*.ts
+      - .github/actions/**/*.wgsl
+      - .github/actions/detect-languages/**
+      - .github/actions/shell-quality/**
+      - .github/actions/javascript-quality/**
+      - .github/actions/wgsl-quality/**
       - .github/workflows/source-quality*.yml
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -47,5 +67,3 @@ jobs:
     with:
       shell-format: false
       python-quality: false
-  actionlint:
-    uses: ./.github/workflows/workflow-concurrency.yml
