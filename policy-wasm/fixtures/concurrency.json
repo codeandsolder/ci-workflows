@@ -1,0 +1,470 @@
+{
+  "format": 1,
+  "cases": [
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yaml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request_target:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  pull_request_target:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request_target:\nconcurrency:\n  group: ci-${{ github.event.pull_request.number }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  push:\n    branches: [main]\nconcurrency:\n  group: \n  cancel-in-progress: false\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  workflow_call:\nconcurrency:\n  group: \n  cancel-in-progress: false\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  workflow_dispatch:\nconcurrency:\n  group: \n  cancel-in-progress: false\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n    types: [closed]\nconcurrency:\n  group: \n  cancel-in-progress: false\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ (github.event_name == 'pull_request') }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: CI\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ci-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n",
+        "lint.yml": "name: Lint\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: lint-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "\nname: CI\non:\n  pull_request:\nx-concurrency: &policy\n  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: true\nconcurrency: *policy\njobs:\n  build:\n    runs-on: ubuntu-24.04\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "on: pull_request\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: PR-triggered workflow requires top-level concurrency"
+      ],
+      "expected_substring": "requires top-level"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: test\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: concurrency.group lacks a PR-unique key",
+        ".github/workflows/ci.yml: mixed-event group requires non-PR fallback"
+      ],
+      "expected_substring": "lacks a PR-unique key"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: \n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: concurrency.group must be nonempty"
+      ],
+      "expected_substring": "group must be nonempty"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: false\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: cancel-in-progress must cancel every PR revision (true or event-name PR-only condition)"
+      ],
+      "expected_substring": "cancel-in-progress must cancel"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'push' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: cancel-in-progress must cancel every PR revision (true or event-name PR-only condition)"
+      ],
+      "expected_substring": "cancel-in-progress must cancel"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: cancel-in-progress must cancel every PR revision (true or event-name PR-only condition)"
+      ],
+      "expected_substring": "cancel-in-progress must cancel"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.event.pull_request.number }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: mixed-event group requires non-PR fallback"
+      ],
+      "expected_substring": "requires non-PR fallback"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request_target:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: pull_request_target group must include github.event.pull_request.number (github.ref names the target branch)"
+      ],
+      "expected_substring": "pull_request_target group"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  workflow_call:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: workflow_call mixed with PR triggers risks cancelling its caller; split reusable and event-triggered workflows"
+      ],
+      "expected_substring": "workflow_call mixed"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  pull_request_target:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: PR and PR-target events need separate event-specific groups"
+      ],
+      "expected_substring": "separate event-specific groups"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.head_ref }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: concurrency.group lacks a PR-unique key",
+        ".github/workflows/ci.yml: mixed-event group requires non-PR fallback"
+      ],
+      "expected_substring": "lacks a PR-unique key"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Same Name\non:\n  pull_request:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n",
+        "also.yml": "name: Same Name\non:\n  pull_request:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: concurrency.group collides with .github/workflows/also.yml"
+      ],
+      "expected_substring": "collides"
+    },
+    {
+      "files": {
+        "ci.yml": "on: [pull_request]\nconcurrency:\n  group: test\n  cancel-in-progress: false\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: concurrency.group lacks a PR-unique key",
+        ".github/workflows/ci.yml: cancel-in-progress must cancel every PR revision (true or event-name PR-only condition)"
+      ],
+      "expected_substring": "lacks a PR-unique key"
+    },
+    {
+      "files": {
+        "ci.yml": "on: [pull_request\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: invalid YAML: while parsing a flow sequence\n  in \"<unicode string>\", line 1, column 5:\n    on: [pull_request\n        ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 1:\n    \n    ^"
+      ],
+      "expected_substring": "invalid YAML"
+    },
+    {
+      "files": {
+        "ci.yml": "\non: pull_request\njobs:\n  test:\n    runs-on: ubuntu-latest\n    concurrency:\n      group: ${{ github.workflow }}-${{ github.ref }}\n      cancel-in-progress: true\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: PR-triggered workflow requires top-level concurrency"
+      ],
+      "expected_substring": "requires top-level"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n    types: [closed, synchronize]\nconcurrency:\n  group: \n  cancel-in-progress: false\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: concurrency.group must be nonempty",
+        ".github/workflows/ci.yml: cancel-in-progress must cancel every PR revision (true or event-name PR-only condition)"
+      ],
+      "expected_substring": "group must be nonempty"
+    },
+    {
+      "files": {
+        "one-shot.yml": "name: Check\non:\n  pull_request:\n    types: [opened]\nconcurrency:\n  group: bonk-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}\n  cancel-in-progress: false\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "oxc.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\n  merge_group:\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.sha }}\n  cancel-in-progress: ${{ github.ref_name != 'main' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "monitor.yml": "name: Check\non:\n  pull_request:\n    types: [labeled]\n  issue_comment:\n    types: [created]\nconcurrency:\n  group: monitor-${{ github.event.pull_request.number || github.event.issue.number }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "security.yml": "name: Check\non:\n  pull_request:\n  push:\nconcurrency:\n  group: security-${{ github.event.pull_request.number || github.sha }}\n  cancel-in-progress: ${{ github.ref_name != 'main' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "wrong.yml": "name: Check\non:\n  pull_request_target:\nconcurrency:\n  group: security-${{ github.event.pull_request.number }}\n  cancel-in-progress: ${{ github.ref_name != 'main' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/wrong.yml: cancel-in-progress must cancel every PR revision (true or event-name PR-only condition)"
+      ],
+      "expected_substring": "cancel-in-progress must cancel"
+    },
+    {
+      "files": {
+        "fake.yml": "name: Check\non:\n  pull_request:\nconcurrency:\n  group: security-${{ 'github.ref' }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/fake.yml: concurrency.group lacks a PR-unique key"
+      ],
+      "expected_substring": "lacks a PR-unique key"
+    },
+    {
+      "files": {
+        "global.yml": "name: Check\non:\n  push:\n    branches: [master]\n  pull_request_target:\n    types: [synchronize]\n# ci-workflow-supersession: global-snapshot; every run rescans all open PRs and recomputes all conflict labels\nconcurrency:\n  group: ${{ github.workflow }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "global.yml": "name: Check\non:\n  push:\n    branches: [master]\n  pull_request_target:\n    types: [synchronize]\nconcurrency:\n  group: ${{ github.workflow }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/global.yml: pull_request_target group must include github.event.pull_request.number (github.ref names the target branch)",
+        ".github/workflows/global.yml: mixed-event group requires non-PR fallback"
+      ],
+      "expected_substring": "pull_request_target group"
+    },
+    {
+      "files": {
+        "global.yml": "name: Check\non:\n  push:\n    branches: [master]\n  pull_request_target:\n    types: [synchronize]\n# ci-workflow-supersession: global-snapshot; every run rescans all open PRs and recomputes all conflict labels\nconcurrency:\n  group: ${{ github.workflow }}\n  cancel-in-progress: false\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/global.yml: global-snapshot requires unconditional cancellation"
+      ],
+      "expected_substring": "requires unconditional cancellation"
+    },
+    {
+      "files": {
+        "global.yml": "name: Check\non:\n  push:\n    branches: [master]\n  pull_request_target:\n    types: [synchronize]\n# ci-workflow-supersession: global-snapshot; every run rescans all open PRs and recomputes all conflict labels\nconcurrency:\n  group: global-static\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/global.yml: global-snapshot requires github.workflow group"
+      ],
+      "expected_substring": "requires github.workflow group"
+    },
+    {
+      "files": {
+        "global.yml": "name: Check\non:\n  push:\n    branches: [master]\n  pull_request_target:\n    types: [synchronize]\n# ci-workflow-supersession: global-snapshot; every run rescans all open PRs and recomputes all conflict labels\n# unrelated annotation break\nconcurrency:\n  group: ${{ github.workflow }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/global.yml: pull_request_target group must include github.event.pull_request.number (github.ref names the target branch)",
+        ".github/workflows/global.yml: mixed-event group requires non-PR fallback"
+      ],
+      "expected_substring": "pull_request_target group"
+    },
+    {
+      "files": {
+        "global.yml": "name: Check\non:\n  push:\n    branches: [master]\n  workflow_call:\n  pull_request_target:\n    types: [synchronize]\n# ci-workflow-supersession: global-snapshot; every run rescans all open PRs and recomputes all conflict labels\nconcurrency:\n  group: ${{ github.workflow }}\n  cancel-in-progress: true\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/global.yml: global-snapshot cannot be combined with workflow_call"
+      ],
+      "expected_substring": "global-snapshot cannot be combined with workflow_call"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: [self-hosted, Linux, X64, local-ci, acer]\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: job rust: physical host selector; use a declared runner capability instead"
+      ],
+      "expected_substring": "physical host selector"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: asus\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: job rust: physical host selector; use a declared runner capability instead"
+      ],
+      "expected_substring": "physical host selector"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ${{ fromJSON('[\"self-hosted\",\"Asus\"]') }}\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: job rust: physical host selector; use a declared runner capability instead"
+      ],
+      "expected_substring": "physical host selector"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: [self-hosted, Linux, X64, local-ci]\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: [self-hosted, Linux, hopper]\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    strategy:\n      matrix:\n        include:\n          - os: [self-hosted, Linux, acer]\n    runs-on: ${{ matrix.os }}\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: job rust: physical host selector; use a declared runner capability instead"
+      ],
+      "expected_substring": "physical host selector"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    uses: example/repo/.github/workflows/ci.yml@main\n    with:\n      runner: '[\"self-hosted\",\"asus\"]'\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: job rust: physical host selector; use a declared runner capability instead"
+      ],
+      "expected_substring": "physical host selector"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: cat /srv/ci/toolchains/kernel.tar.zst\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: job rust: host-local build path; use runner temporary storage or a verified artifact"
+      ],
+      "expected_substring": "host-local build path"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo /home/jan/build/output\n"
+      },
+      "expected_errors": [
+        ".github/workflows/ci.yml: job rust: host-local build path; use runner temporary storage or a verified artifact"
+      ],
+      "expected_substring": "host-local build path"
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo /usr/local/libexec/sccache-client\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "ci.yml": "name: Check\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo a\n# /srv/ci/toolchains/kernel.tar.zst\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    },
+    {
+      "files": {
+        "a.yml": "name: Straße\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n",
+        "b.yml": "name: STRASSE\non:\n  pull_request:\n  push:\n    branches: [main]\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\njobs:\n  rust:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo pass\n"
+      },
+      "expected_errors": [
+        ".github/workflows/b.yml: concurrency.group collides with .github/workflows/a.yml"
+      ],
+      "expected_substring": "collides"
+    },
+    {
+      "files": {
+        "crlf.yml": "name: Check\r\non:\r\n  push:\r\n    branches: [master]\r\n  pull_request_target:\r\n    types: [synchronize]\r\n# ci-workflow-supersession: global-snapshot; every run rescans all open PRs and recomputes all conflict labels\r\nconcurrency:\r\n  group: ${{ github.workflow }}\r\n  cancel-in-progress: true\r\njobs:\r\n  rust:\r\n    runs-on: ubuntu-24.04\r\n    steps:\r\n      - run: echo pass\r\n"
+      },
+      "expected_errors": [],
+      "expected_substring": null
+    }
+  ],
+  "source": "Pre-migration independent workflow-concurrency-oracle.py plus test-workflow-concurrency.py",
+  "description": "Frozen canonical positive and negative GitHub workflow supersession examples, including comments, anchors, portability, workflow_call and Unicode case folding"
+}
