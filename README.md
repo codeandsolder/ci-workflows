@@ -229,6 +229,16 @@ Central changes do **not** override project-specific `packageRules` applied late
 
 These rules standardize execution by repository visibility, not by a host's name or incompatible repository-specific runner labels. They do not force a common compiler/target choice or release artifact across project boundaries. The reusable `rust-sccache.yml` and shared setup/finalize actions implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
 
+
+Routine Linux Rust jobs now run advisory test-impact checks automatically when the
+workspace has a `Cargo.toml`. The original `command` still runs unchanged;
+main-branch pushes collect per-test coverage, and PRs run full Nextest plus an
+impact-selection comparison. Failed analysis cannot mask or replace the original
+validation gate. Set `test-impact-mode: none` when the job cannot support
+Nextest; set `test-impact-working-directory` for nested workspaces. Dedicated
+`collect` and `shadow` modes are still available for jobs that intentionally
+replace the normal command. The comparison is not yet a test-skipping gate.
+
 The Cargo release-age quarantine's `runner` input defaults to `auto`:
 public repositories use `ubuntu-24.04`, private repositories use the same
 registered `local-ci` pool as the shared Rust and strict workflows. Specialized

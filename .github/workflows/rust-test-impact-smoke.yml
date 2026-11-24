@@ -41,3 +41,11 @@ jobs:
     uses: ./.github/workflows/rust-test-impact.yml
     with:
       working-directory: policy-wasm
+
+  automatic-end-to-end:
+    # Exercise the shared Rust job's default mode without explicitly opting in.
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      command: cargo test --locked --manifest-path policy-wasm/Cargo.toml
+      test-impact-working-directory: policy-wasm
+      sccache-cache-scope: rust-test-impact-auto
