@@ -12,7 +12,7 @@ runs:
       with:
         toolchain: stable
     - name: Configure managed sccache
-      uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7b23cbecfad3c032467c8e31bae2837cff7d18db # main
+      uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@609668894671a19ce894b979094529beeee4339a # main
       with:
         rust-toolchain: stable
         rustflags: ""
@@ -29,4 +29,4 @@ runs:
           "$GITHUB_WORKSPACE" "${{ inputs.manifest }}"
     - name: Finalize managed sccache
       if: always()
-      uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@7b23cbecfad3c032467c8e31bae2837cff7d18db # main
+      uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@609668894671a19ce894b979094529beeee4339a # main
