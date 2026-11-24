@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Assert shadow miss and cache-miss semantics
-        run: node --test .github/actions/rust-test-impact/compare.test.mjs
+        run: node --test .github/actions/rust-test-impact/*.test.mjs
 
   end-to-end:
     uses: ./.github/workflows/rust-test-impact.yml

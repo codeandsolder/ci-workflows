@@ -301,8 +301,10 @@ jobs:
           cargo-args: ${{ inputs.coverage-cargo-args }}
           working-directory: ${{ inputs.coverage-working-directory }}
 
-      - name: Execute and compare test impact (informational selection)
-        if: inputs.test-impact-mode != 'none'
+      - name: Execute and compare test impact (explicit collect/shadow)
+        # Auto has its own path below. Sending mode=auto to the composite
+        # would install Nextest and cargo-affected twice per normal job.
+        if: ${{ inputs.test-impact-mode == 'collect' || inputs.test-impact-mode == 'shadow' }}
         uses: ./.ci-workflows/.github/actions/rust-test-impact
         with:
           mode: ${{ inputs.test-impact-mode }}
