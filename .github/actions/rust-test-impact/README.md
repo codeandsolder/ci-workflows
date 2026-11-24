@@ -1,7 +1,19 @@
 # Informational Rust test-impact shadow
 
-This is an **opt-in replacement for a full Nextest test job**, not a second
-test run. On a pull request, it executes the entire Nextest suite once and
+The shared `rust-sccache.yml` enables advisory test-impact analysis **by
+default** on ordinary Linux PR and main-branch jobs with a Cargo workspace at
+`test-impact-working-directory` (default `.`). It runs the caller's command
+unchanged, then collects a baseline on main or compares against the complete
+Nextest suite on a PR. Analysis also runs after a failed caller command, because failing tests
+expose missed regressions. It cannot hide or override the caller's Rust CI result. Set `test-impact-mode: none` to
+disable it, or set `test-impact-working-directory` and
+`test-impact-cargo-args` for a non-root workspace or custom test arguments.
+Release-tier jobs, tag events, non-Linux runners, and informational coverage
+jobs do not start automatic impact analysis.
+
+The dedicated `rust-test-impact.yml` workflow can still replace a full
+Nextest job when test-impact analysis itself is the intended job. On a pull
+request, it executes the entire Nextest suite once and
 compares failing test identities against the cargo-affected status selection
 computed from the latest compatible main-branch coverage baseline. The
 comparison never affects the test gate; an actual full-suite failure still
@@ -26,9 +38,11 @@ Consumer workflow (call on both PRs and main pushes):
           working-directory: .
           cargo-args: --workspace --locked
 
-Main-branch collection currently adds a second instrumented compilation beside
-an independently enabled rust-coverage.yml job. Do not enable both without
-understanding that cost. The lightweight selection on PRs reuses the full
+Automatic mode adds instrumented baseline collection on main, and an
+additional full Nextest run plus comparison on PRs. This reuses managed sccache
+but does incur extra CPU time; the ordinary caller command remains authoritative.
+The dedicated mode avoids a second test run when it replaces an existing
+full-Nextest job. The lightweight selection on PRs reuses the full
 Nextest build output and ordinarily takes a fraction of a second after the
 suite finishes. No tests are skipped.
 
