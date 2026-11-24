@@ -8,7 +8,8 @@ on:
       - ".github/workflows/rust-test-impact-smoke.yml"
       - ".github/actions/rust-test-impact/**"
       - "smoke-cache/**"
-      - "policy-wasm/**"
+      - "policy-wasm/Cargo.*"
+      - "policy-wasm/src/**"
   push:
     branches: [main]
     paths:
@@ -17,7 +18,8 @@ on:
       - ".github/workflows/rust-test-impact-smoke.yml"
       - ".github/actions/rust-test-impact/**"
       - "smoke-cache/**"
-      - "policy-wasm/**"
+      - "policy-wasm/Cargo.*"
+      - "policy-wasm/src/**"
   workflow_dispatch:
 
 concurrency:

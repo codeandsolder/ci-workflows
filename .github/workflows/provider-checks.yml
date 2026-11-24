@@ -1,0 +1,54 @@
+name: Provider workflow checks
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/resolve-rust-toolchain/**"
+      - ".github/actions/workflow-concurrency-policy/**"
+      - ".github/actions/rust-ci-sccache-policy/**"
+      - ".github/actions/actionlint-policy/**"
+      - "languages/actionlint/**"
+      - "languages/tools/**"
+      - "scripts/nightly-toolchain*.mjs"
+      - "rust-toolchain.toml"
+      - "policy-wasm/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/resolve-rust-toolchain/**"
+      - ".github/actions/workflow-concurrency-policy/**"
+      - ".github/actions/rust-ci-sccache-policy/**"
+      - ".github/actions/actionlint-policy/**"
+      - "languages/actionlint/**"
+      - "languages/tools/**"
+      - "scripts/nightly-toolchain*.mjs"
+      - "rust-toolchain.toml"
+      - "policy-wasm/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Toolchain, cache and workflow policy
+    runs-on: ubuntu-26.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --test scripts/nightly-toolchain.test.mjs
+      - uses: ./.github/actions/resolve-rust-toolchain
+      - name: Enforce Rust CI sccache rules on provider workflows
+        uses: ./.github/actions/rust-ci-sccache-policy
+      - name: Verify the checked-out workflow cancellation policy
+        uses: ./.github/actions/workflow-concurrency-policy
+      - name: Validate workflow structure and expressions
+        uses: ./.github/actions/actionlint-policy

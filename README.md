@@ -147,7 +147,7 @@ do not require PR supersession. Test fixtures and the provider's own hosted
 check are the frozen, independently derived 56-case WASI fixtures in
 [policy-wasm/concurrency.test.mjs](policy-wasm/concurrency.test.mjs) and
 [policy-wasm/fixtures/concurrency.json](policy-wasm/fixtures/concurrency.json),
-with a standalone gate at .github/workflows/workflow-concurrency-policy.yml.
+with a standalone gate at .github/workflows/provider-checks.yml.
 No Python runtime is required for workflow cancellation tests.
 
 A workflow whose every invocation recomputes a *global snapshot* (for
@@ -554,3 +554,7 @@ strict lint and any relevant package or cross-target checks must run on
 compiler-pin-only PRs. No special scheduler, credentials or cohort registry
 are required. Stable or independently pinned release compatibility jobs stay
 separate and review-only.
+
+### Provider CI scheduling
+
+Provider policy tests share the portable-policy workflow and a single Linux build. Its WASI fixture suite runs against both the freshly built and checked-in bundle; Windows and macOS test the checked-in bundle. The same Linux job also exercises real quarantine transport and composite-action behavior. Provider workflow validation and toolchain/cache policy checks run together in provider-checks. Clone, language and Rust integration canaries use targeted inputs rather than triggering on unrelated policy fixtures or README edits. Reusable consumer workflows are unchanged.

@@ -8,7 +8,15 @@ on:
       - .github/workflows/clone-regression.yml
       - .github/workflows/clone-regression-smoke.yml
       - .github/scripts/run-clone-regression.sh
-      - policy-wasm/**
+      - policy-wasm/src/clones.rs
+      - policy-wasm/src/clones/**
+      - policy-wasm/src/main.rs
+      - policy-wasm/src/workspace.rs
+      - policy-wasm/src/yaml.rs
+      - policy-wasm/run.mjs
+      - policy-wasm/workspace.mjs
+      - policy-wasm/module.mjs
+      - policy-wasm/Cargo.*
       - .github/scripts/test-clone-regression.sh
   push:
     branches: [main]
@@ -18,13 +26,21 @@ on:
       - .github/workflows/clone-regression.yml
       - .github/workflows/clone-regression-smoke.yml
       - .github/scripts/run-clone-regression.sh
-      - policy-wasm/**
+      - policy-wasm/src/clones.rs
+      - policy-wasm/src/clones/**
+      - policy-wasm/src/main.rs
+      - policy-wasm/src/workspace.rs
+      - policy-wasm/src/yaml.rs
+      - policy-wasm/run.mjs
+      - policy-wasm/workspace.mjs
+      - policy-wasm/module.mjs
+      - policy-wasm/Cargo.*
       - .github/scripts/test-clone-regression.sh
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
