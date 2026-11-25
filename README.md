@@ -196,6 +196,13 @@ concurrency:
 
 Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate.json`. Keep only project-specific constraints there (e.g. pinned ABI/toolchain floors, incompatible dependency pairs, genuinely exceptional grouping). The shared preset includes `config:recommended`, pinned GitHub Actions, the [first-party CI trust-root preset](renovate-ci-trust-root.json), and the common update lifecycle.
 
+For small-patch upstream-tracking forks that leave dependency ownership with
+upstream, extend `github>codeandsolder/ci-workflows:renovate-upstream-fork`
+instead. This explicitly enables fork processing and limits Renovate to shared
+first-party workflow/action pins, using the same CI-gated automerge policy.
+All other dependency upgrades come through the reviewed upstream tracker.
+
+
 ```json
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
