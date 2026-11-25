@@ -1,12 +1,135 @@
 # ci-workflows
 
+## Language-specific quality modules
+
+The shared CI keeps language-neutral orchestration separate from language
+quality checks. [Tracked-source detection](languages/detect.mjs) reads the
+caller's Git index (not the injected CI checkout) and reports which languages
+actually occur. Modules live under `languages/<language>/`; Rust's existing
+`rust-sccache.yml`, `rust-coverage.yml` and strict Rust workflows remain
+independent and retain their established consumer interfaces.
+
+### Java: automatic PMD gate
+
+The [reusable Java quality workflow](.github/workflows/java-quality.yml)
+checks for **any Git-tracked `.java` source anywhere in the caller repo**,
+including scripts and mixed-language repositories. It only installs Java,
+Gradle and runs [PMD 7.29.0](languages/java/quality.xml) when such source
+exists. Otherwise it reports an explicit successful no-Java skip. It requires
+no Maven/Gradle setup, Java project layout or dependencies in the caller.
+
+~~~yaml
+jobs:
+  java-quality:
+    uses: codeandsolder/ci-workflows/.github/workflows/java-quality.yml@<full-sha> # main
+~~~
+
+This is a **strict, blocking, zero-debt** static-analysis gate with **228
+rules** from PMD's Best Practices, Error Prone, Performance and Security
+categories, plus selected concurrency, design, code-style and documentation
+rules. These check resource lifetime, control-flow mistakes, API correctness,
+common unsafe patterns, dead code, questionable string/collection operations,
+and unnecessary Java constructs. The full-category rule groups exclude a
+handful of patterns that are not universally bugs (such as literal protocol
+discriminants, null sentinels, allocations in loops, or logger-specific
+guarding). The rationale and exact exclusions are in
+[the central ruleset](languages/java/quality.xml). All findings are fatal;
+there is no per-repository baseline.
+
+PMD diagnostics appear in the job log; failing jobs also upload the complete
+HTML/XML PMD reports for seven days. The check uses the same reusable workflow
+and job name as before, and only prepares Java tooling when Git-tracked Java
+exists. Project-specific compilation with `javac -Werror`, tests and
+integration/build prerequisites still run in the caller's native workflow:
+arbitrary Java cannot safely be compiled without its real dependencies and
+toolchain. The Gradle-based Java module is used only as an independent PMD
+runner, not to build the caller's Java project.
+
+Public callers use GitHub-hosted Ubuntu; private callers use the registered
+`local-ci` Linux x64 pool, consistently with the existing Rust workflow.
+The shared source detector has independent Node regression tests, and
+[`java-quality-smoke.yml`](.github/workflows/java-quality-smoke.yml)
+executes the actual reusable analyzer on the provider's clean Java fixture.
+
+For additional languages, add an isolated quality module and corresponding
+reusable workflow alongside Java; do not insert language-specific checks into
+the Rust compiler/cache workflow. Keep required check identities stable even
+on a no-source skip.
+
+## Conditional shell, JavaScript, WGSL and Actions quality
+
+The source-only reusable workflow (.github/workflows/source-quality.yml) now discovers tracked source and conditionally runs ShellCheck, shfmt syntax checking, Oxlint correctness and headless Naga WGSL validation, all in one Linux runner. Rust-first repositories already using strict Ruff/ty must not duplicate that check; Python-first repositories can opt in to the same pinned action. Shell formatting is opt-in until consumer formatting debt is resolved. The existing reusable workflow-concurrency policy also runs pinned actionlint in its own existing runner. The language modules README has the consumer invocation contract, source-composition rules and version pins.
+
 ## Two-tier Rust CI and stale-run cancellation
 
-The standard lane uses `rust-sccache.yml` with the current project Rust toolchain (default `1.99.1`) and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.
+The standard lane uses `rust-sccache.yml` with the repository's fleet-approved dated nightly and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.
 
 The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners; other architectures get no CPU override. Explicit `rustflags` are passed through unchanged. Cross-compilation from an X64 runner to another architecture must explicitly set `rustflags: ""` or its own target-appropriate flags. sccache keys use the resolved effective flags, not the `auto` placeholder.
 
 Additional MSRV, older/newer toolchain, alternative OS/architecture, sanitizer and compatibility lanes are optional **release-tier** jobs. Call the same reusable workflow with `validation-tier: release`. These jobs are skipped unless the caller is running on a release tag (`refs/tags/*`). For example, the caller may define separate jobs invoking this workflow with distinct `rust-toolchain`, `runner` and `rust-targets` inputs. A release tag must be included in the caller's `on.push.tags` trigger (and not excluded by other conditions); `workflow_dispatch` is not a release trigger.
+
+## Informational Rust dependency quality
+
+The shared [`.github/actions/rust-dependency-quality`](.github/actions/rust-dependency-quality/action.yml)
+composite scans a selected Cargo workspace **without compiling it**. The pinned
+`cargo-deny@0.20.2` checks RustSec advisories (including relevant unsound and
+unmaintained records) plus yanked dependencies, and `cargo-machete@0.10.1`
+reports potentially unused direct dependencies. It uses Cargo metadata for
+renamed dependencies but never calls `cargo check` or `cargo test`.
+
+Results are advisory while the fleet's existing debt and scanner false
+positives are reviewed: neither scanner's findings are a merge gate. The
+GitHub job summary distinguishes findings from unavailable/incomplete scans;
+raw diagnostics and structured results are available in a 14-day artifact.
+The existing 72-hour external registry quarantine stays mandatory and
+independent.
+
+Call the composite **after** an existing successful strict Rust gate in the
+same job, using the same checkout and toolchain. No extra runner or source
+build is necessary. Use `working-directory` for nested workspaces, and avoid
+running the scanner again for each feature/target configuration. The provider's
+`rust-dependency-quality-smoke.yml` validates both tools against an intentionally
+unused path dependency. To suppress known `cargo-machete` false positives,
+use reasoned `[package.metadata.cargo-machete]` or
+`[workspace.metadata.cargo-machete]` `ignored = ["dep"]` entries in the
+caller manifest; do not suppress a vulnerability in this shared config.
+
+## Informational Rust test coverage
+
+Use [`.github/workflows/rust-coverage.yml`](.github/workflows/rust-coverage.yml)
+as a **separate, advisory** job. It runs `cargo-llvm-cov` with workspace tests,
+publishes available line/function/region/branch totals to the GitHub Actions step summary,
+and uploads a 14-day artifact containing browsable `html/index.html`, LCOV,
+and LLVM JSON coverage data. There is **no minimum coverage percentage**, and
+the coverage job is best-effort: incomplete coverage does not prevent a PR merge
+or replace the normal strict Rust tests.
+
+~~~yaml
+jobs:
+  coverage:
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-coverage.yml@<full-sha> # main
+    with:
+      working-directory: .
+      cargo-args: --workspace --locked
+~~~
+
+The Rust toolchain is resolved from the caller's pinned manifest, like the
+normal shared Rust workflow; `rust-toolchain` can override that pin. Private
+repositories run on the managed `local-ci` Linux runner pool and public
+repositories on `ubuntu-24.04` by default. The coverage workflow reuses the
+normal compiler cache setup/finalization (including Garage on private runners)
+and selects `--no-rustc-wrapper` to preserve the already configured sccache
+wrapper. Its instrumentation uses `llvm-tools-preview` from the matching Rust
+toolchain and pinned `cargo-llvm-cov@0.9.2`. The normal code-quality and test
+jobs are unchanged and remain mandatory.
+
+`cargo-args` is a space-separated list of Cargo test-selection flags (for
+example `--workspace --locked --all-features`); shell quoting within that
+string is not supported. Set `working-directory` for nested workspaces. The
+report does not instrument doctests by default. Prefer one dedicated coverage
+job per workspace rather than adding coverage to every build/Clippy matrix.
+The provider's `rust-coverage-smoke.yml` exercises the reusable workflow
+against `smoke-cache` on relevant changes.
 
 ## Enforced PR workflow supersession policy
 
@@ -21,8 +144,11 @@ non-Rust tasks, and rejects missing/disabled cancellation, PR-key collisions,
 invalid PR-target group identity and unsafe mixed-event groups. Pure
 PR-close cleanup, workflow_call-only, release-only and non-PR workflows
 do not require PR supersession. Test fixtures and the provider's own hosted
-check are in .github/scripts/test-workflow-concurrency.py and
-.github/workflows/workflow-concurrency-policy.yml.
+check are the frozen, independently derived 56-case WASI fixtures in
+[policy-wasm/concurrency.test.mjs](policy-wasm/concurrency.test.mjs) and
+[policy-wasm/fixtures/concurrency.json](policy-wasm/fixtures/concurrency.json),
+with a standalone gate at .github/workflows/provider-checks.yml.
+No Python runtime is required for workflow cancellation tests.
 
 A workflow whose every invocation recomputes a *global snapshot* (for
 example, all open pull-request conflict labels) deliberately uses one
@@ -53,10 +179,9 @@ for public callers. Static-only private repositories without registered
 to lint workflow YAML. This is enforcement of native GitHub Actions
 cancellation, not a custom polling daemon.
 
-The concurrency checker uses the provider's committed `.github/uv.lock`,
-including when its reusable workflow checks out only the required action
-and lock files. Consumers do not duplicate Python package versions for this
-check.
+The concurrency checker executes the provider's digest-verified Rust/WASI
+module with a thin Node host adapter, including sparse consumer checkouts.
+It requires neither a Python runtime nor a Python package lockfile.
 
 Example validated workflow group (this declaration is necessarily local,
 because GitHub requires concurrency at the *caller* workflow level):
@@ -80,15 +205,15 @@ Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate
 
 | Update | Central behavior |
 | --- | --- |
-| Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks, with no release-age delay; compatible Cargo minor/patch updates are grouped |
-| Pre-1.0 patch | PR automerge after green checks |
-| Rust toolchain (stable and nightly) | PR for review; do not silently change pinned compiler versions or project MSRV |
+| Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks, after the applicable release-age check; compatible Cargo minor/patch updates are grouped |
+| Pre-1.0 patch | PR automerge after green checks and applicable release-age check |
+| Rust compiler | Weekly Renovate dated-nightly updates with CI-gated automerge; stable release compatibility pins remain review-only |
 | Pre-1.0 minor, major, replacement | PR for review |
 | Third-party GitHub Actions digest/pinning | PR automerge after green checks |
 | `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped; PR automerge after consumer CI succeeds |
-| Lockfile maintenance | Weekly, PR automerge after green checks |
+| Lockfile maintenance | Weekly, PR automerge after green checks including newly introduced external crates.io versions |
 
-When a workflow uses one pinned Rust nightly for several steps (such as cache identity, `dtolnay/rust-toolchain` and `cargo +...`), declare `RUST_NIGHTLY_TOOLCHAIN: nightly-YYYY-MM-DD` once in the workflow `env`. Reference `${{ env.RUST_NIGHTLY_TOOLCHAIN }}` in action inputs and `"$RUST_NIGHTLY_TOOLCHAIN"` in shell commands. The fleet Renovate regex manager tracks that env declaration as the same review-only `rust`/`rust-version` dependency as explicit `rust-toolchain:` inputs; it prevents drift between the cache key, installed compiler and executed compiler.
+Direct workflows resolve the native root Rust toolchain manifest with the shared resolve-rust-toolchain action, and pass its channel output to setup-sccache and rustup. Do not maintain multiple version literals or workflow environment pins. The promotion controller owns dated nightly updates.
 
 Use immutable SHA references to shared workflows and actions with a tracking `# main` suffix:
 
@@ -96,7 +221,7 @@ Use immutable SHA references to shared workflows and actions with a tracking `# 
 uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> # main
 ```
 
-`platformAutomerge: false` and `ignoreTests: false` deliberately require Renovate itself to observe passing branch checks; this matters for repositories without GitHub required-check protection. A repository without checks **does not automatically merge**. The codeandsolder fleet explicitly sets `minimumReleaseAge: null` globally **and in a final catch-all package rule** (which overrides inherited package-specific holds, including `config:best-practices`): there is **no age-based waiting period** for dependency updates. Ordinary failed, pending, or unknown CI checks still block automerge.
+`platformAutomerge: false` and `ignoreTests: false` deliberately require Renovate itself to observe passing branch checks; this matters for repositories without GitHub required-check protection. A repository without checks **does not automatically merge**. The final source-based Renovate rule requires a 72-hour release age for Cargo registry crate releases. First-party Git dependencies and pinned shared CI SHAs do not incur a release-age delay. The independent Cargo lockfile gate checks newly introduced registry versions, including transitive dependencies, in every consuming repository regardless of its owner. A registry crate is not first-party merely because its metadata claims a codeandsolder repository; registry exceptions would require independently verified ownership. Other dependency ecosystems retain their existing no-age defaults. Ordinary failed, pending, or unknown CI checks still block automerge.
 
 ### Keep routine dependency maintenance from flooding CI
 
@@ -105,6 +230,16 @@ The fleet allows at most one newly created Renovate PR and one automated Renovat
 Central changes do **not** override project-specific `packageRules` applied later. Remove old local `automerge: false` GitHub Actions and first-party trust-root copies when migrating. Changes to the shared CI's callable workflow inputs may break consumers; those PR checks must be repaired, not bypassed. Do not manually merge ordinary green PRs seconds after they appear: Renovate merges on later runs and insists that the head be up-to-date.
 
 These rules standardize execution by repository visibility, not by a host's name or incompatible repository-specific runner labels. They do not force a common compiler/target choice or release artifact across project boundaries. The reusable `rust-sccache.yml` and shared setup/finalize actions implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
+
+
+Routine Linux Rust jobs now run advisory test-impact checks automatically when the
+workspace has a `Cargo.toml`. The original `command` still runs unchanged;
+main-branch pushes collect per-test coverage, and PRs run full Nextest plus an
+impact-selection comparison. Failed analysis cannot mask or replace the original
+validation gate. Set `test-impact-mode: none` when the job cannot support
+Nextest; set `test-impact-working-directory` for nested workspaces. Dedicated
+`collect` and `shadow` modes are still available for jobs that intentionally
+replace the normal command. The comparison is not yet a test-skipping gate.
 
 The Cargo release-age quarantine's `runner` input defaults to `auto`:
 public repositories use `ubuntu-24.04`, private repositories use the same
@@ -164,17 +299,25 @@ Private builds use the existing managed sccache backend (Garage) and never creat
 
 The caller still controls toolchain, components, targets, `RUSTFLAGS`, timeout, command, and validation tier. Public callers may choose the GitHub-hosted runner label and Actions cache size. Private executor selection and compiler-cache backend are centralized. Existing direct-workflow jobs that hardcode `asus` must migrate to these shared workflows or update their own `runs-on` labels; a shared workflow cannot rewrite a separate caller's direct jobs.
 
+### Independent reference tools
+
+A caller that needs Python-based reference tooling may set `uv-version` to an
+exact version (for example, `"0.13.9"`). The workflow uses the shared pinned
+setup-uv action with package caching disabled; the caller owns interpreter and
+package provisioning in its explicit asset tree. No venv/pip bootstrap is
+needed. Leaving the input empty skips uv installation entirely.
+
 ### Test suites that manage sccache daemons
 
 `isolate-public-sccache-server: true` places the hosted Linux/macOS compiler-cache daemon on a dedicated Unix-domain socket, distinct from the default TCP endpoint used by the program's integration tests. This is designed for repositories such as `sccache-deduplicated` whose tests deliberately start/stop their own sccache instance. The compiler and finalizer retain the dedicated socket; the caller should launch **only the test executables** with `SCCACHE_SERVER_UDS` unset using Cargo's target runner, preserving the compiler's mandatory cache. This option is public-Unix only and explicitly rejects Windows instead of silently failing to isolate. Do not use it on a private local/Garage runner; the root-managed daemon there remains unchanged.
 
-## Optional Cargo release-age checker (not used by codeandsolder fleet)
+## Cargo release-age quarantine
 
-The optional `.github/workflows/cargo-release-quarantine.yml` can reject newly introduced crates.io package versions under 72 hours old when explicitly used by **non-codeandsolder** consumers. The codeandsolder fleet does not invoke the age checker from its strict gate or mandatory dependency CI. The caller keeps only a tiny trigger workflow; the implementation lives here and is checked out at the exact reusable-workflow SHA via `job.workflow_sha`. The reusable action `.github/actions/cargo-release-quarantine` can also be invoked directly from a different shared CI gate, without adding another checkout to the caller's source workspace.
+The shared `.github/workflows/cargo-release-quarantine.yml` rejects newly introduced crates.io package versions under 72 hours old. Standard strict Rust CI invokes the same action for all repository owners; first-party Git-sourced dependencies are outside the registry check, but their newly introduced external transitive crates remain subject to it. The caller keeps only a tiny trigger workflow; the implementation lives here and is checked out at the exact reusable-workflow SHA via `job.workflow_sha`. The reusable action `.github/actions/cargo-release-quarantine` can also be invoked directly from a different shared CI gate, without adding another checkout to the caller's source workspace.
 
 By default, `lockfile: auto` scans **all git-tracked `Cargo.lock` files**, including nested independent Rust workspaces. It compares the union of crates.io package identities across all lockfiles in the PR checkout with the union in the base commit, so shared versions are looked up once and moving a lockfile does not produce a spurious introduction. A newly introduced crate version is blocked until its crates.io publication is at least 72 hours old; metadata lookup failures fail closed. Removing a lockfile while the same workspace's Cargo.toml remains is rejected, but deleting an entire workspace is valid. Repositories without any tracked Cargo.lock have nothing for this lockfile-based gate to inspect.
 
-Use `lockfile: path/to/Cargo.lock` only when a *single* explicit lockfile is desired, for example a synthetic CI fixture. Opt-in external Rust CI should use the `auto` default. The action also supports `fail-on-blocked: "false"` when a maintenance process wants to probe eligibility without making CI red. The checker discovers tracked paths via Git, not untracked `target` or CI checkout folders; no code from lockfiles is executed. For private caller repositories, check out the PR merge ref with `fetch-depth: 2` before invoking the direct action: the exact PR base commit will already exist locally, so no network fetch (and no retained Git authentication) is required. The action verifies the SHA exists locally before attempting a fallback fetch; if GitHub did not supply that commit, a failed fetch is a hard CI failure, not a quarantine bypass.
+Use `lockfile: path/to/Cargo.lock` only when a *single* explicit lockfile is desired, for example a synthetic CI fixture. Standard Rust CI should use the `auto` default. The action also supports `fail-on-blocked: "false"` when a maintenance process wants to probe eligibility without making CI red. The checker discovers tracked paths via Git, not untracked `target` or CI checkout folders; no code from lockfiles is executed. For private caller repositories, check out the PR merge ref with `fetch-depth: 2` before invoking the direct action: the exact PR base commit will already exist locally, so no network fetch (and no retained Git authentication) is required. The action verifies the SHA exists locally before attempting a fallback fetch; if GitHub did not supply that commit, a failed fetch is a hard CI failure, not a quarantine bypass.
 
 The underlying `.github/actions/cargo-release-quarantine` composite also supports non-failing eligibility probes (`fail-on-blocked: "false"`) for automation that needs to wait for a frozen lockfile snapshot to age without modifying it.
 
@@ -276,3 +419,146 @@ renamed clones, accepted changes, moves, test-only advisory findings, production
 copies inside tests, larger test clones, malformed configuration, and reviewed
 fingerprint accepts. The policy module has additional lexer and classification
 unit tests.
+
+### Portable CI runners and inputs
+
+Ordinary jobs must not select physical host identity labels such as `acer`
+or `asus`. Use `[self-hosted, Linux, X64, local-ci]` for private Linux
+builds, or a real prerequisite capability when a job genuinely needs a
+specific platform, licensed application or benchmark hardware. Confirm
+that matching runners exist before enabling a new private gate or an
+automatic specialized job. Physical labels remain useful in inventory.
+
+Do not refer to developer home directories, scratch paths or host-only
+prepared toolchains from workflows. Use the runner's temporary directory,
+digest-pinned containers, checked-in versioned inputs, or authenticated
+artifact downloads with content verification. Clean job-owned temporary
+files and containers after upload. The existing managed sccache paths
+are the shared runner contract, not a project-specific cache provisioning
+mechanism.
+
+#### Private runner admission
+
+Before publishing a new private CI caller, use the installation's authenticated
+GitHub CLI (on the controller, not in the PR's unprivileged CI job):
+
+```sh
+node scripts/runner-availability.mjs require codeandsolder/REPO self-hosted Linux X64 local-ci
+```
+
+An idle or busy *online* matching registration is sufficient for admission.
+No registration or offline-only matches fail admission. Never substitute a
+public hosted runner for a private missing capability.
+
+```sh
+node scripts/runner-availability.mjs audit
+```
+
+The read-only fleet scan expands queued and running workflow records into actual
+jobs, using GitHub's resolved labels (not a homemade matrix evaluator), and
+distinguishes missing registrations, offline pools, busy pools, available capacity,
+non-self-hosted jobs and unresolved selectors. API failures are reported as errors,
+not empty inventories. Explicitly pass repository names to limit the audit.
+
+The generic admission decisions run in the single shared Rust/WASI policy
+module, using a batched native GitHub transport bridge. Hosted-runner labels
+are recognized by the guest, so the audit only accesses private runner
+registrations for custom selectors. See
+[portable runner policy](policy-wasm/RUNNER_ADMISSION.md) for the JSON contract,
+semantics and parity tests.
+
+Contribution-only forks (Anubis, Hayro, OXC) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.
+
+## Upstream-tracking forks
+
+Use the pinned reusable workflow `.github/workflows/upstream-tracking.yml` with
+one daily UTC cron (manual dispatch is also age- and daily-rate-limited).
+Do not introduce independent sync, rebase, or upstream parity schedules.
+
+The observer stores an append-only Git state history on
+`automation/upstream-observations`; the state tree contains only observation
+metadata, not upstream code. The cursor selects the newest **actually observed**
+upstream snapshot that has aged at least 72 hours and is still reachable from
+the fetched upstream branch. A newly pushed backdated commit cannot bypass the
+quarantine. The initial observation ages for three days before it can be
+adopted; continuously moving upstreams continue to advance on mature
+snapshots. Force-pushed-away observations are discarded. The UTC-day attempt
+is recorded before fetching and is not reset on failure.
+
+Callers retain their explicit strategy (`merge`, `rebase`, `squash-rebase`, or
+`source-merge` for a separately reviewed source checkpoint) and reviewed
+validation script. Preparation creates an exact Git bundle; validation and
+publication use that same immutable candidate and distinct read/write jobs.
+Rust candidates also run the existing 72-hour external crates.io release gate
+and mandatory sccache setup. Workflow edits require explicit review; the
+Cargo patch stack can retain its reviewed workflow subtree and file a separate
+workflow-drift issue. Publication uses fast-forward or an explicit expected
+base lease; the PR mode waits for the declared normal CI checks, never merging
+when checks are missing or failing. PR mode accepts a narrowly scoped
+`upstream-pr-token` secret if the default workflow token cannot create PRs or
+trigger their CI.
+
+For reproducible generated files, set the merge strategy, `generated-files`
+(whitespace-separated exact tracked regular file paths), `generation-script`
+(a script reviewed on the fork base), and `generation-container` (a digest-pinned
+image). Preparation preserves those files from the reviewed fork even when
+upstream changed the same generated artifacts. The read-only regeneration job
+runs the external crate age gate and mandatory sccache where applicable, rebuilds
+the files, and exports an immutable Git bundle containing at most one generated
+commit. Validation consumes that bundle in a fresh checkout, and publication
+independently checks the exact parent and file allowlist before updating the fork
+with its existing base lease. Any non-generated conflict still requires review.
+
+For release-driven forks, set `upstream-release-prefix` (for example
+`crate-v`). The observer chooses the highest published stable semantic version
+in that series on the configured upstream branch, rather than untagged commits.
+Tag identity is part of the 72-hour observation state; removed, retargeted and
+prerelease tags cannot pass the gate. The validator also receives the eligible
+upstream tag as its third argument and should check the actual package version.
+After validation and exact-revision integration, publication creates the fork's
+`vMAJOR.MINOR.PATCH` tag and GitHub release with the upstream tag and both commit
+identities in the notes. Tags are immutable; a conflicting tag fails instead of
+being moved. This is GitHub release publication, not crates.io or npm publishing.
+
+Tracking failures open/update a single issue including the upstream tip,
+eligible revision, fork base and run URL. Quarantine is a pending state, not an
+error. A successful retry closes the old failure issue. Do not force the cursor
+or edit first-observed timestamps to bypass the quarantine.
+
+## Fleet Rust compiler updates
+
+Routine Rust work uses a native root rust-toolchain.toml with a dated nightly.
+The fleet shares the same Renovate update policy and initial pin, not a
+global transaction or cross-repository rollback. Local Cargo, tests, Clippy
+and compiler-cache selection all use that repository's native pin. Routine
+shared CI requires it and rejects a mismatching explicit compiler input.
+Stable toolchains remain review-only and are reserved for explicit release
+compatibility contracts.
+
+Renovate's built-in rust-toolchain manager proposes a separate compiler PR
+for each repository on Mondays (UTC), with CI-gated PR automerge after
+successful checks. An unsuccessful repository stays on its previous pin
+without blocking the others. Existing PRs can merge when green; compiler
+update commits are limited to the weekly window. Normal shared CI uses the
+caller's pin rather than the provider's own pin, so temporary differences
+are permitted.
+
+Renovate's Rust datasource supplies publication dates rather than exact times.
+Its four-day minimum release age accounts conservatively for that precision;
+the shared resolver independently enforces the real 72 elapsed hours using
+the official dated manifest's publication timestamp. Normal Rustup installation
+and Clippy, rustfmt, required targets and components must succeed. Upstream
+issue labels are not promotion criteria. A compiler regression should acquire
+a regression test rather than an issue filter.
+
+Only the native root dated nightly is automatically updated by this policy.
+Do not duplicate compiler versions in environment variables, workflow inputs,
+or scripts. Every normal check must use the native pin, and required tests,
+strict lint and any relevant package or cross-target checks must run on
+compiler-pin-only PRs. No special scheduler, credentials or cohort registry
+are required. Stable or independently pinned release compatibility jobs stay
+separate and review-only.
+
+### Provider CI scheduling
+
+Provider policy tests share the portable-policy workflow and a single Linux build. Its WASI fixture suite runs against both the freshly built and checked-in bundle; Windows and macOS test the checked-in bundle. The same Linux job also exercises real quarantine transport and composite-action behavior. Provider workflow validation and toolchain/cache policy checks run together in provider-checks. Clone, language and Rust integration canaries use targeted inputs rather than triggering on unrelated policy fixtures or README edits. Reusable consumer workflows are unchanged.

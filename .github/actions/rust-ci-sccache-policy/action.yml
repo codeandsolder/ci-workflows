@@ -8,15 +8,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install uv for locked policy dependencies
-      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
     - name: Validate Rust CI cache contracts
       shell: bash
       env:
-        POLICY_ACTION_DIR: ${{ github.action_path }}
         EXPECTED_STRICT_REF: ${{ inputs.strict-ref }}
       run: >-
-        uv run --project "$POLICY_ACTION_DIR/../.." --locked python
-        "$POLICY_ACTION_DIR/check.py"
-        --root "$GITHUB_WORKSPACE"
-        --strict-ref "$EXPECTED_STRICT_REF"
+        node "$GITHUB_ACTION_PATH/../../../policy-wasm/run.mjs"
+        "$GITHUB_ACTION_PATH/../../../policy-wasm/module.json"
+        sccache "$GITHUB_WORKSPACE" "$EXPECTED_STRICT_REF"

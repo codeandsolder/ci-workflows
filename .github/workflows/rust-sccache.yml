@@ -8,14 +8,19 @@ on:
         required: true
         type: string
       rust-toolchain:
-        description: Rust toolchain used for the caller command
+        description: Explicit release compatibility toolchain, or the exact routine repository pin
         required: false
-        default: "1.99.1"
+        default: ""
         type: string
       validation-tier:
         description: "routine (each PR/main) or release (only release tags); use release for MSRV and nonprimary OS/targets"
         required: false
         default: "routine"
+        type: string
+      uv-version:
+        description: Exact uv version to provision for callers using independent Python reference tools; empty skips installation
+        required: false
+        default: ""
         type: string
       rust-components:
         description: Space-separated rustup components to install
@@ -57,6 +62,36 @@ on:
         required: false
         default: 6144
         type: number
+      coverage-report:
+        description: "Run an informational Rust coverage report instead of the caller command"
+        required: false
+        default: false
+        type: boolean
+      coverage-cargo-args:
+        description: "Whitespace-separated cargo llvm-cov test arguments"
+        required: false
+        default: "--workspace --locked"
+        type: string
+      coverage-working-directory:
+        description: "Cargo workspace path relative to the caller checkout"
+        required: false
+        default: "."
+        type: string
+      test-impact-mode:
+        description: "auto (advisory after routine Rust CI, default), none (disable), collect (dedicated baseline), or shadow (dedicated comparison)"
+        type: string
+        required: false
+        default: "auto"
+      test-impact-working-directory:
+        description: Cargo workspace directory for test-impact runs
+        type: string
+        required: false
+        default: "."
+      test-impact-cargo-args:
+        description: Whitespace-separated Cargo build/test flags passed to Nextest
+        type: string
+        required: false
+        default: "--workspace --locked"
       isolate-public-sccache-server:
         description: Give the public CI compiler cache an isolated Unix socket so test suites managing their own sccache daemon cannot stop it.
         required: false
@@ -66,9 +101,15 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # Each job already has its own Cargo target. Retain coherent fingerprints,
+  # build scripts, and dependency artifacts between Cargo commands in that
+  # job; hosted runners are ephemeral and private runners clean after the job.
+  # Do not override managed sccache, which remains the shared compiler cache.
+  CARGO_BUILD_EPHEMERAL_INTERMEDIATES: "false"
 
 jobs:
   rust:
+    continue-on-error: ${{ inputs.coverage-report || inputs.test-impact-mode == 'collect' }}
     # Unknown values run into the validation step instead of silently skipping CI.
     if: ${{ inputs.validation-tier != 'release' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || inputs.runner }}
@@ -76,8 +117,6 @@ jobs:
     permissions:
       contents: read
     env:
-      RUST_TOOLCHAIN: ${{ inputs.rust-toolchain }}
-      RUSTUP_TOOLCHAIN: ${{ inputs.rust-toolchain }}
       RUST_COMPONENTS: ${{ inputs.rust-components }}
       RUST_TARGETS: ${{ inputs.rust-targets }}
       RUSTFLAGS: ${{ inputs.rustflags }}
@@ -92,9 +131,20 @@ jobs:
             routine|release) ;;
             *) echo "Unknown validation-tier: $VALIDATION_TIER" >&2; exit 2 ;;
           esac
+          case "${{ inputs.test-impact-mode }}" in
+            auto|none|collect|shadow) ;;
+            *) echo "Unknown test-impact-mode" >&2; exit 2 ;;
+          esac
+          if [[ "${{ inputs.coverage-report }}" == true && "${{ inputs.test-impact-mode }}" != none && "${{ inputs.test-impact-mode }}" != auto ]]; then
+            echo "Coverage report and test-impact mode cannot both own a single test job" >&2
+            exit 2
+          fi
 
       - name: Checkout caller repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The Git baseline SHA may be outside a PR's default shallow clone.
+          fetch-depth: ${{ (inputs.test-impact-mode == 'shadow' || (inputs.test-impact-mode == 'auto' && !inputs.coverage-report && github.event_name == 'pull_request')) && '0' || '1' }}
 
       - name: Checkout shared CI implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,8 +154,11 @@ jobs:
           path: .ci-workflows
           persist-credentials: false
           sparse-checkout: |
+            .github/actions/rust-coverage
+            .github/actions/rust-test-impact
             .github/actions/setup-sccache
             .github/actions/finalize-sccache
+            .github/actions/resolve-rust-toolchain
           sparse-checkout-cone-mode: true
 
       - name: Exclude injected CI checkout from caller Git packaging
@@ -121,6 +174,13 @@ jobs:
             echo "Injected CI checkout is still visible as untracked source" >&2
             exit 1
           fi
+
+      - name: Resolve one quarantined compiler
+        id: compiler
+        uses: ./.ci-workflows/.github/actions/resolve-rust-toolchain
+        with:
+          rust-toolchain: ${{ inputs.rust-toolchain }}
+          validation-tier: ${{ inputs.validation-tier }}
 
       - name: Resolve portable RUSTFLAGS
         shell: bash
@@ -139,6 +199,11 @@ jobs:
 
       - name: Install Rust toolchain
         shell: bash
+        env:
+          RUST_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
+          VALIDATION_TIER: ${{ inputs.validation-tier }}
+          COVERAGE_REPORT: ${{ inputs.coverage-report }}
+          TEST_IMPACT_MODE: ${{ inputs.test-impact-mode }}
         run: |
           set -euo pipefail
           if ! rustup run "$RUST_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
@@ -147,9 +212,29 @@ jobs:
             echo "Rust toolchain $RUST_TOOLCHAIN is already installed on the runner."
           fi
 
-          if [[ -n "$RUST_COMPONENTS" ]]; then
+          if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" || "$COVERAGE_REPORT" == true || "$TEST_IMPACT_MODE" == collect ]]; then
             read -r -a components <<< "$RUST_COMPONENTS"
-            rustup component add --toolchain "$RUST_TOOLCHAIN" "${components[@]}"
+            if [[ "$VALIDATION_TIER" == routine ]]; then
+              components+=(clippy rustfmt)
+            fi
+            if [[ "$COVERAGE_REPORT" == true || "$TEST_IMPACT_MODE" == collect || ( "$TEST_IMPACT_MODE" == auto && "${{ github.event_name }}" == push && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" ) ]]; then
+              components+=(llvm-tools-preview)
+            fi
+            # Rustup may schedule concurrent downloads for repeated components.
+            # Pass each requested component exactly once.
+            unique_components=()
+            while IFS= read -r component; do
+              unique_components+=("$component")
+            done < <(printf '%s\n' "${components[@]}" | sort -u)
+            rustup component add --toolchain "$RUST_TOOLCHAIN" "${unique_components[@]}"
+          fi
+
+          # Rustup's native manifest may declare additional components/targets.
+          # Honor it in routine jobs rather than treating workflow inputs as a
+          # second, incomplete toolchain configuration.
+          if [[ "$VALIDATION_TIER" == routine ]]; then
+            rustup show active-toolchain
+            test "$(rustc --version)" = "$(rustup run "$RUST_TOOLCHAIN" rustc --version)"
           fi
 
           if [[ -n "$RUST_TARGETS" ]]; then
@@ -160,6 +245,7 @@ jobs:
           rustc_path="$(rustup which rustc --toolchain "$RUST_TOOLCHAIN")"
           rustdoc_path="$(rustup which rustdoc --toolchain "$RUST_TOOLCHAIN")"
           {
+            echo "RUSTUP_TOOLCHAIN=$RUST_TOOLCHAIN"
             echo "RUSTC=$rustc_path"
             echo "RUSTDOC=$rustdoc_path"
           } >> "$GITHUB_ENV"
@@ -181,7 +267,7 @@ jobs:
       - name: Setup mandatory sccache
         uses: ./.ci-workflows/.github/actions/setup-sccache
         with:
-          rust-toolchain: ${{ inputs.rust-toolchain }}
+          rust-toolchain: ${{ steps.compiler.outputs.channel }}
           # Let setup derive its key from the resolved effective RUSTFLAGS.
           rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
@@ -196,11 +282,85 @@ jobs:
           mkdir -p "$target_dir"
           echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
 
+      - name: Provision explicitly requested uv
+        if: ${{ inputs.uv-version != '' }}
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: ${{ inputs.uv-version }}
+          enable-cache: false
+
       - name: Run caller command
+        id: caller-command
+        if: ${{ !inputs.coverage-report && (inputs.test-impact-mode == 'none' || inputs.test-impact-mode == 'auto') }}
+        # An automatic advisory check must still run when the original test
+        # command fails. Defer the original failure until after the comparison.
+        continue-on-error: ${{ inputs.test-impact-mode == 'auto' }}
         shell: bash
         run: |
           set -euo pipefail
           ${{ inputs.command }}
+
+      - name: Collect Rust source coverage (informational)
+        if: inputs.coverage-report
+        uses: ./.ci-workflows/.github/actions/rust-coverage
+        with:
+          cargo-args: ${{ inputs.coverage-cargo-args }}
+          working-directory: ${{ inputs.coverage-working-directory }}
+
+      - name: Execute and compare test impact (explicit collect/shadow)
+        # Auto has its own path below. Sending mode=auto to the composite
+        # would install Nextest and cargo-affected twice per normal job.
+        if: ${{ inputs.test-impact-mode == 'collect' || inputs.test-impact-mode == 'shadow' }}
+        uses: ./.ci-workflows/.github/actions/rust-test-impact
+        with:
+          mode: ${{ inputs.test-impact-mode }}
+          working-directory: ${{ inputs.test-impact-working-directory }}
+          cargo-args: ${{ inputs.test-impact-cargo-args }}
+
+      - name: Select automatic Rust test-impact analysis
+        id: auto-impact
+        continue-on-error: true
+        # Compare even when the caller fails: failed tests are the evidence
+        # needed to detect under-selection. The caller remains authoritative.
+        if: ${{ !cancelled() && inputs.test-impact-mode == 'auto' && !inputs.coverage-report && runner.os == 'Linux' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)) }}
+        shell: bash
+        env:
+          IMPACT_WORKING_DIRECTORY: ${{ inputs.test-impact-working-directory }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$GITHUB_WORKSPACE/$IMPACT_WORKING_DIRECTORY/Cargo.toml" ]]; then
+            echo "Automatic test-impact analysis skipped: no Cargo.toml in $IMPACT_WORKING_DIRECTORY"
+            exit 0
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            echo 'mode=collect' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=shadow' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Analyze Rust test impact automatically (informational)
+        if: ${{ !cancelled() && steps.auto-impact.outputs.mode != '' }}
+        id: auto-impact-run
+        continue-on-error: true
+        uses: ./.ci-workflows/.github/actions/rust-test-impact
+        with:
+          mode: ${{ steps.auto-impact.outputs.mode }}
+          working-directory: ${{ inputs.test-impact-working-directory }}
+          cargo-args: ${{ inputs.test-impact-cargo-args }}
+
+      - name: Note automatic impact-analysis failure
+        if: ${{ !cancelled() && steps.auto-impact-run.outcome == 'failure' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "Automatic test-impact analysis failed; the original Rust CI command remains authoritative." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce original Rust validation result
+        if: ${{ !cancelled() && inputs.test-impact-mode == 'auto' && steps.caller-command.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "The original Rust CI command failed; its result is authoritative." >&2
+          exit 1
 
       - name: Finalize mandatory sccache
         if: always()

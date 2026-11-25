@@ -10,6 +10,8 @@ on:
       - .github/scripts/test-cross-cache-stats.cjs
       - .github/actions/setup-sccache/**
       - .github/actions/finalize-sccache/**
+      - .github/actions/resolve-rust-toolchain/**
+      - rust-toolchain.toml
       - smoke-cache/**
   push:
     branches: [main]
@@ -21,6 +23,8 @@ on:
       - .github/scripts/test-cross-cache-stats.cjs
       - .github/actions/setup-sccache/**
       - .github/actions/finalize-sccache/**
+      - .github/actions/resolve-rust-toolchain/**
+      - rust-toolchain.toml
       - smoke-cache/**
   workflow_dispatch:
 
@@ -36,15 +40,18 @@ jobs:
     # Regression for Rust integration suites that start/stop their own sccache.
     uses: ./.github/workflows/rust-sccache.yml
     with:
-      rust-toolchain: "1.99.1"
       isolate-public-sccache-server: true
+      uv-version: "0.13.9"
+      # Repeated explicit/default component requests must not race in rustup.
+      rust-components: "clippy rustfmt clippy"
       command: |
         # A nested checkout inside the caller must never appear as untracked
         # packaging input (cargo package rejects dirty source trees).
         test -z "$(git ls-files --others --exclude-standard -- .ci-workflows)"
         git check-ignore -q .ci-workflows/README.md
         test -S "$SCCACHE_SERVER_UDS"
-        cargo +1.99.1 test --locked --offline --manifest-path smoke-cache/Cargo.toml
+        [[ "$(uv --version)" == "uv 0.13.9"* ]]
+        cargo test --locked --offline --manifest-path smoke-cache/Cargo.toml
         sccache --show-stats >/dev/null
         test -S "$SCCACHE_SERVER_UDS"
 
@@ -82,9 +89,8 @@ jobs:
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: >-
-        cargo +1.99.0 test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
+        cargo test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
       sccache-cache-scope: smoke-release
-      rust-toolchain: "1.99.0"
       rustflags: "auto"
       runner: ${{ matrix.runner }}
 
@@ -98,14 +104,13 @@ jobs:
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: |
-        cargo +1.99.0 test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
+        cargo test --release --locked --offline --manifest-path smoke-cache/Cargo.toml
         rust_hits="$(sccache --show-stats --stats-format json | jq -r '.stats.cache_hits.counts.Rust // 0')"
         if (( rust_hits < 1 )); then
           echo "expected restored compiler cache to produce at least one Rust hit" >&2
           exit 1
         fi
       sccache-cache-scope: smoke-release
-      rust-toolchain: "1.99.0"
       rustflags: "auto"
       runner: ${{ matrix.runner }}
 

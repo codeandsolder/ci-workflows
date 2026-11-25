@@ -14,6 +14,16 @@ permissions:
 
 jobs:
   strict-rust-smoke-cache:
-    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@6ab68f64fa917fa2dc4fa859dca3ecf83f54baa5 # main
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@aca7fd6b3cee50e3c1ccdd46ddd0bc0ec431ccff # main
     with:
       working-directory: smoke-cache
+  strict-rust-portable-policy:
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@aca7fd6b3cee50e3c1ccdd46ddd0bc0ec431ccff # main
+    with:
+      working-directory: policy-wasm
+  strict-rust-portable-wasi:
+    uses: codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@aca7fd6b3cee50e3c1ccdd46ddd0bc0ec431ccff # main
+    with:
+      working-directory: policy-wasm
+      rust-targets: wasm32-wasip1
+      cargo-args: --locked --workspace --bins --target wasm32-wasip1

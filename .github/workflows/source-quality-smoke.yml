@@ -1,0 +1,69 @@
+name: Source quality module smoke
+
+on:
+  pull_request:
+    paths:
+      - languages/**
+      - .github/actions/**/*.sh
+      - .github/actions/**/*.bash
+      - .github/actions/**/*.js
+      - .github/actions/**/*.mjs
+      - .github/actions/**/*.cjs
+      - .github/actions/**/*.ts
+      - .github/actions/**/*.wgsl
+      - .github/actions/detect-languages/**
+      - .github/actions/shell-quality/**
+      - .github/actions/javascript-quality/**
+      - .github/actions/wgsl-quality/**
+      - .github/workflows/source-quality*.yml
+  push:
+    branches: [main]
+    paths:
+      - languages/**
+      - .github/actions/**/*.sh
+      - .github/actions/**/*.bash
+      - .github/actions/**/*.js
+      - .github/actions/**/*.mjs
+      - .github/actions/**/*.cjs
+      - .github/actions/**/*.ts
+      - .github/actions/**/*.wgsl
+      - .github/actions/detect-languages/**
+      - .github/actions/shell-quality/**
+      - .github/actions/javascript-quality/**
+      - .github/actions/wgsl-quality/**
+      - .github/workflows/source-quality*.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  detection:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --test languages/detect.test.mjs languages/run.test.mjs
+      - name: Exercise independent Naga crate inside a caller Cargo workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          caller="$(mktemp -d "$RUNNER_TEMP/nested-caller.XXXXXX")"
+          printf '[package]\nname = "caller"\nversion = "0.1.0"\nedition = "2024"\n\n[workspace]\nmembers = ["tools/*"]\n' > "$caller/Cargo.toml"
+          mkdir -p "$caller/.shared-language-quality/languages"
+          cp -a languages/wgsl "$caller/.shared-language-quality/languages/wgsl"
+          cargo metadata --locked --no-deps --format-version 1 \
+            --manifest-path "$caller/.shared-language-quality/languages/wgsl/Cargo.toml" \
+            > "$RUNNER_TEMP/nested-wgsl-metadata.json"
+          node -e 'const assert = require("node:assert/strict"); const metadata = require(process.argv[1]); assert.equal(metadata.packages.length, 1); assert.equal(metadata.packages[0].name, "shared-ci-wgsl-quality"); assert.equal(metadata.workspace_root, metadata.packages[0].manifest_path.replace(/\/Cargo.toml$/, ""));' \
+            "$RUNNER_TEMP/nested-wgsl-metadata.json"
+  source-quality:
+    uses: ./.github/workflows/source-quality.yml
+    with:
+      shell-format: false
+      python-quality: false

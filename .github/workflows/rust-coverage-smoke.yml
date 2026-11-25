@@ -1,0 +1,62 @@
+name: Rust source coverage smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rust-sccache.yml"
+      - ".github/workflows/rust-coverage.yml"
+      - ".github/workflows/rust-coverage-smoke.yml"
+      - ".github/actions/rust-coverage/**"
+      - "smoke-cache/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rust-sccache.yml"
+      - ".github/workflows/rust-coverage.yml"
+      - ".github/workflows/rust-coverage-smoke.yml"
+      - ".github/actions/rust-coverage/**"
+      - "smoke-cache/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    uses: ./.github/workflows/rust-coverage.yml
+    with:
+      working-directory: smoke-cache
+
+  verify-report:
+    if: ${{ always() && !cancelled() }}
+    name: Validate actual LLVM coverage artifact
+    needs: coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Download report from advisory coverage job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: rust-coverage-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/coverage
+      - name: Confirm HTML, LCOV, and nonempty measured totals
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/coverage"
+          test -s "$report/html/index.html"
+          test -s "$report/lcov.info"
+          test -s "$report/coverage.json"
+          node - "$report/coverage.json" <<'JS'
+          const fs = require('node:fs');
+          const assert = require('node:assert/strict');
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const lines = report.data?.[0]?.totals?.lines;
+          assert(lines && lines.count > 0 && lines.covered > 0, 'Smoke crate must produce covered source lines');
+          console.log('Measured lines:', lines.covered, '/', lines.count);
+          JS

@@ -1,0 +1,15 @@
+name: Source-only JavaScript correctness
+description: Run checksummed Oxlint correctness rules on tracked JS/TS without project dependencies
+inputs:
+  manifest:
+    required: true
+    description: Exact Git-tracked source manifest
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Oxlint
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../../languages/tools/install.sh" oxlint "$RUNNER_TEMP/oxlint"
+    - name: Reject JavaScript and TypeScript correctness errors
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/../../../languages/run.mjs" javascript "${{ inputs.manifest }}" "$RUNNER_TEMP/oxlint/oxlint"

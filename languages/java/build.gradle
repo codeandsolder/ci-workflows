@@ -1,0 +1,45 @@
+import groovy.json.JsonSlurper
+import org.gradle.api.plugins.quality.Pmd
+
+plugins {
+    id 'java'
+    id 'pmd'
+}
+
+repositories {
+    mavenCentral()
+}
+
+pmd {
+    toolVersion = '7.29.0'
+    ruleSets = []
+    ruleSetFiles = files('quality.xml')
+    ignoreFailures = false
+    consoleOutput = true
+}
+
+def sourceRoot = providers.gradleProperty('sourceRoot').get()
+def manifestFile = providers.gradleProperty('sourceManifest').get()
+def manifest = new JsonSlurper().parse(new File(manifestFile))
+if (manifest.format != 1 || !(manifest.java instanceof List)) {
+    throw new GradleException('Invalid Java source manifest from language detection')
+}
+
+def javaFiles = manifest.java.collect { path ->
+    if (!(path instanceof String) || !path.endsWith('.java') || path.startsWith('/') ||
+            path.split('/').any { it == '..' || it == '.' }) {
+        throw new GradleException('Unsafe Java source path: ' + path)
+    }
+    new File(sourceRoot, path)
+}
+
+tasks.register('analyzeJava', Pmd) {
+    description = 'Analyze caller Git-tracked Java sources with shared zero-debt PMD rules'
+    group = 'verification'
+    source = files(javaFiles)
+    classpath = files(new File(System.getProperty('java.home'), 'lib/jrt-fs.jar'))
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}

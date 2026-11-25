@@ -1,0 +1,14 @@
+name: Validate caller workflow expressions with actionlint
+description: Enforce structural and expression correctness inside the existing workflow policy job
+runs:
+  using: composite
+  steps:
+    - name: Install pinned actionlint
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../../languages/tools/install.sh" actionlint "$RUNNER_TEMP/actionlint"
+    - name: Analyze tracked GitHub Actions workflows
+      shell: bash
+      run: |
+        bash "$GITHUB_ACTION_PATH/../../../languages/actionlint/run.sh" \
+          "$GITHUB_WORKSPACE" "$RUNNER_TEMP/actionlint/actionlint" \
+          "$GITHUB_ACTION_PATH/../../../languages/actionlint/actionlint.yaml"

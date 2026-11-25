@@ -1,0 +1,42 @@
+name: Shared upstream tracking tests
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/upstream-tracking/**"
+      - ".github/workflows/upstream-tracking*.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/actions/upstream-tracking/**"
+      - ".github/workflows/upstream-tracking*.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Test exact-candidate strict runner
+        run: node --test .github/actions/upstream-tracking/run-strict.test.mjs
+      - name: Test 72-hour observation gate
+        run: node --test .github/actions/upstream-tracking/*.test.mjs
+      - name: Test persistent observation state
+        run: bash .github/actions/upstream-tracking/observe.integration.test.sh
+      - name: Test real merge and rebase scenarios
+        run: bash .github/actions/upstream-tracking/prepare.test.sh
+      - name: Test exact-revision publication and concurrent changes
+        run: bash .github/actions/upstream-tracking/publish.test.sh
+      - name: Test generated-file commit boundaries
+        run: bash .github/actions/upstream-tracking/generated.test.sh
+      - name: Test exact release tag publication
+        run: bash .github/actions/upstream-tracking/releases.integration.test.sh
