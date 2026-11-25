@@ -1,14 +1,11 @@
-# Unified Rust test suite
+# Unified Rust test suites
 
-One authoritative instrumented Nextest execution produces:
+One authoritative instrumented Nextest execution **per named scope** produces
+full regression results, shadow selection against the prior compatible
+baseline, a refreshed per-test coverage database, and optional HTML, LCOV
+and LLVM JSON from the same profile.
 
-- full per-test outcomes and the CI regression gate;
-- a shadow selection report computed against the prior compatible baseline;
-- a refreshed per-test coverage database;
-- optional HTML, LCOV and LLVM JSON reports from the same indexed LLVM profile.
-
-The provider does not implicitly duplicate a caller's opaque shell command.
-Instead, explicitly specify the test scope, with the command containing only
+Explicitly specify disjoint test scopes; the caller command contains only
 non-overlapping setup, formatting, Clippy, builds and other validation:
 
 ```yaml
@@ -17,42 +14,53 @@ jobs:
     uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<reviewed-provider-sha>
     with:
       command: cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
-      test-suite: |
-        {
-          "directory": ".",
-          "cargo": ["--workspace", "--locked", "--all-features"],
-          "nextest": ["--profile", "ci"],
-          "doctests": ["--workspace", "--locked", "--all-features"],
-          "coverage": true
-        }
+      test-suites: |
+        [
+          {
+            "name": "unit",
+            "cargo": ["--locked", "--lib", "--all-features"],
+            "nextest": ["--profile", "ci"],
+            "doctests": ["--locked", "--all-features"]
+          },
+          {
+            "name": "integration",
+            "cargo": ["--locked", "--test", "integration", "--all-features"]
+          }
+        ]
 ```
 
-All arguments are arrays, passed directly without shell expansion. The
-directory must be a workspace root within the caller checkout. Defaults are
-directory ".", cargo ["--workspace","--locked"], nextest [], no doctests,
-and aggregate coverage enabled. Keep doctests as a distinct scope when the
-old authoritative command ran them; Nextest does not execute doctests.
-Keep genuinely different feature/target matrices and instrumentation-sensitive
-tests in their own jobs. Remove a standalone coverage job only when its scope
-is covered by the unified suite. The standalone coverage workflow remains
-available for different coverage scopes.
+The input is a nonempty JSON array. Names are unique filesystem-safe identifiers.
+Each scope defaults to directory ".", cargo ["--workspace","--locked"],
+nextest [], no doctests, and aggregate coverage enabled. All arguments are
+arrays, passed directly without shell expansion. The directory must be a
+workspace root within the checkout. Distinct feature configurations, filters,
+and nested independent workspaces can share a single CI job. Doctests are a
+distinct scope and remain authoritative when configured. Binary-only packages
+must omit doctests. Keep instrumentation-sensitive tests in their original
+Cargo commands until equivalence is established.
 
-A full checkout is required for baseline ancestry. The cache scope incorporates
-the immutable collector source, toolchain, runner, workspace, canonical test
-arguments and Rust flags. Successful PR collections can be reused on that PR
-ref; successful default-branch collections can seed future PRs. GitHub cache
-ref isolation prevents publishing PR coverage directly to the default branch.
-Incompatible or missing coverage is reported as not evaluable, not a false
-negative-free observation. No tests are skipped in shadow mode.
+Each scope has its own collector state directory, database, instrumented
+build, and report subdirectory. The shared cache transports only databases;
+scope hashes include the immutable collector and Nextest pins, compiler,
+workspace, platform, Rust flags, and exact Cargo/Nextest arguments.
+Changing one scope's arguments does not invalidate the other scopes' data.
+Successful PR collections are reusable on the PR ref; default-branch
+collections seed future PRs. Incompatible or missing data is reported as
+not evaluable. No tests are skipped in shadow mode.
 
-The collector reuses its instrumented listing to compute the prediction before
-updating the database. The coverage reporter reads the actual build directories
-from Nextest metadata and generates all reports with `cargo llvm-cov report`,
-which does not execute tests. Reports describe workspace code exercised in that
-Nextest scope (doctests are separate). Coverage and comparison artifacts remain
-advisory; failure of the authoritative full Nextest or configured doctest scope
-fails the job.
+Instrumented build directories are removed after each scope's report so a
+multi-feature job does not retain all the instrumented copies simultaneously.
+Reporter/comparison failures are advisory. Every requested authoritative
+scope executes even if an earlier one fails, and any failed execution fails
+the job. Reports describe workspace code exercised in that scope; doctests
+are separate.
 
-The initial draft integration pin points to the upstream contribution branch
-on the existing fork. Switch to an observed, reviewed upstream revision before
+For callers needing test-only isolation, use a Nextest run-wrapper configured
+with `target-runner = "within-wrapper"` to execute the collector's runner
+inside the caller's wrapper. Do not set a competing Cargo target runner.
+Process-local serial-test locks do not serialize Nextest processes: configure
+Nextest test groups for tests sharing ports, daemons, or other global resources.
+
+The draft integration pin points to the upstream contribution branch on the
+existing fork. Switch to an observed, reviewed upstream revision before
 retiring the fork. Never deploy a floating branch or bypass managed sccache.

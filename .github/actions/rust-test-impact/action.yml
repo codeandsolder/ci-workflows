@@ -1,17 +1,17 @@
-name: Unified Rust test suite
-description: Run the full Nextest suite once, collect per-test coverage, predict affected tests, and generate aggregate reports
+name: Unified Rust test suites
+description: Execute each named Nextest scope once and derive regression, coverage and impact results
 inputs:
-  test-suite:
-    description: JSON test configuration (directory, cargo, nextest, doctests, coverage)
+  test-suites:
+    description: JSON array of named test configurations
     required: true
 runs:
   using: composite
   steps:
-    - name: Prepare canonical test suite and baseline scope
+    - name: Prepare canonical test scopes and baseline cache
       id: suite
       shell: bash
       env:
-        TEST_SUITE: ${{ inputs.test-suite }}
+        TEST_SUITES: ${{ inputs.test-suites }}
       run: node "$GITHUB_ACTION_PATH/suite.mjs" prepare
 
     - name: Install pinned Nextest
@@ -23,43 +23,37 @@ runs:
       shell: bash
       run: node "$GITHUB_ACTION_PATH/suite.mjs" install
 
-    - name: Restore last compatible coverage baseline
+    - name: Restore compatible coverage baselines
       id: restore
       continue-on-error: true
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
-        path: ${{ steps.suite.outputs.db-path }}
+        path: ${{ steps.suite.outputs.baseline-dir }}
         key: ${{ steps.suite.outputs.prefix }}${{ github.sha }}
         restore-keys: |
           ${{ steps.suite.outputs.prefix }}
 
-    - name: Execute full instrumented Nextest suite once
+    - name: Install pinned cargo-llvm-cov reporter
+      if: ${{ steps.suite.outputs.coverage == 'true' }}
+      continue-on-error: true
+      uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+      with:
+        tool: cargo-llvm-cov@0.9.2
+
+    - name: Execute authoritative test scopes and generate reports
       id: full
       continue-on-error: true
       shell: bash
       env:
-        TEST_SUITE: ${{ inputs.test-suite }}
-        IMPACT_DIR: ${{ steps.suite.outputs.impact-dir }}
-      run: node "$GITHUB_ACTION_PATH/suite.mjs" collect
+        TEST_SUITE_PLAN: ${{ steps.suite.outputs.plan }}
+      run: node "$GITHUB_ACTION_PATH/suite.mjs" execute
 
-    - name: Compare prior selection with actual full-suite results
-      if: ${{ !cancelled() && steps.suite.outcome == 'success' }}
-      continue-on-error: true
-      shell: bash
-      env:
-        FULL_SUCCESS: ${{ steps.full.outcome == 'success' }}
-        IMPACT_DIR: ${{ steps.suite.outputs.impact-dir }}
-      run: |
-        node "$GITHUB_ACTION_PATH/compare.mjs" \
-          "$IMPACT_DIR/selection.json" "$IMPACT_DIR/nextest.jsonl" \
-          "$FULL_SUCCESS" "$IMPACT_DIR/comparison.json"
-
-    - name: Save successful coverage baseline
+    - name: Save successful coverage baselines
       if: ${{ steps.full.outcome == 'success' && steps.restore.outputs.cache-hit != 'true' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)) }}
       continue-on-error: true
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
-        path: ${{ steps.suite.outputs.db-path }}
+        path: ${{ steps.suite.outputs.baseline-dir }}
         key: ${{ steps.suite.outputs.prefix }}${{ github.sha }}
 
     - name: Publish test-impact diagnostics
@@ -68,30 +62,9 @@ runs:
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       with:
         name: rust-test-impact-${{ github.job }}-${{ github.run_attempt }}-${{ steps.suite.outputs.artifact-suffix }}
-        path: |
-          ${{ steps.suite.outputs.impact-dir }}/nextest.jsonl
-          ${{ steps.suite.outputs.impact-dir }}/selection.json
-          ${{ steps.suite.outputs.impact-dir }}/comparison.json
+        path: ${{ steps.suite.outputs.impact-dir }}
         if-no-files-found: warn
         retention-days: 14
-
-    - name: Install pinned cargo-llvm-cov reporter
-      if: ${{ steps.full.outcome == 'success' && steps.suite.outputs.coverage == 'true' }}
-      continue-on-error: true
-      uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
-      with:
-        tool: cargo-llvm-cov@0.9.2
-
-    - name: Generate coverage reports from the same execution
-      if: ${{ steps.full.outcome == 'success' && steps.suite.outputs.coverage == 'true' }}
-      id: coverage
-      continue-on-error: true
-      shell: bash
-      env:
-        TEST_SUITE: ${{ inputs.test-suite }}
-        IMPACT_DIR: ${{ steps.suite.outputs.impact-dir }}
-        COVERAGE_DIR: ${{ steps.suite.outputs.coverage-dir }}
-      run: node "$GITHUB_ACTION_PATH/suite.mjs" report
 
     - name: Upload coverage artifact
       if: ${{ !cancelled() && steps.suite.outputs.coverage == 'true' }}
@@ -104,35 +77,22 @@ runs:
         retention-days: 14
         if-no-files-found: warn
 
-    - name: Write coverage summary
+    - name: Write per-scope coverage summaries
       if: ${{ !cancelled() && steps.suite.outputs.coverage == 'true' }}
       continue-on-error: true
       shell: bash
       env:
-        COVERAGE_JSON: ${{ steps.suite.outputs.coverage-dir }}/coverage.json
-        COVERAGE_STATUS: ${{ steps.coverage.outcome }}
+        TEST_SUITE_PLAN: ${{ steps.suite.outputs.plan }}
         COVERAGE_ARTIFACT_URL: ${{ steps.upload-coverage.outputs.artifact-url }}
-        COVERAGE_DIRECTORY: ${{ steps.suite.outputs.directory }}
-      run: node "$GITHUB_ACTION_PATH/../rust-coverage/summary.mjs"
+      run: node "$GITHUB_ACTION_PATH/suite.mjs" summarize
 
-    - name: Execute separate doctest scope
-      if: ${{ !cancelled() && steps.suite.outputs.doctests == 'true' }}
-      id: doctests
-      continue-on-error: true
-      shell: bash
-      env:
-        TEST_SUITE: ${{ inputs.test-suite }}
-      run: node "$GITHUB_ACTION_PATH/suite.mjs" doctests
-
-    - name: Enforce authoritative full-suite result
+    - name: Enforce authoritative test results
       if: ${{ !cancelled() }}
       shell: bash
       env:
         FULL_OUTCOME: ${{ steps.full.outcome }}
-        DOCTESTS: ${{ steps.suite.outputs.doctests }}
-        DOCTEST_OUTCOME: ${{ steps.doctests.outcome }}
       run: |
-        if [[ "$FULL_OUTCOME" != success || ( "$DOCTESTS" == true && "$DOCTEST_OUTCOME" != success ) ]]; then
+        if [[ "$FULL_OUTCOME" != success ]]; then
           echo "Authoritative test execution failed or did not complete." >&2
           exit 1
         fi

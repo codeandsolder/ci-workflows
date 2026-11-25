@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       command:
-        description: Rust/Cargo validation command; when test-suite is set, only non-overlapping setup/lint/build checks
+        description: Rust/Cargo validation command; when test-suites is set, only non-overlapping setup/lint/build checks
         required: true
         type: string
       rust-toolchain:
@@ -72,8 +72,8 @@ on:
         required: false
         default: "."
         type: string
-      test-suite:
-        description: JSON configuration of the authoritative unified Nextest suite (empty runs only command)
+      test-suites:
+        description: JSON array of named authoritative unified Nextest scopes (empty runs only command)
         required: false
         default: ""
         type: string
@@ -94,7 +94,7 @@ env:
 
 jobs:
   rust:
-    continue-on-error: ${{ inputs.coverage-report && inputs.test-suite == '' }}
+    continue-on-error: ${{ inputs.coverage-report && inputs.test-suites == '' }}
     # Unknown values run into the validation step instead of silently skipping CI.
     if: ${{ inputs.validation-tier != 'release' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || inputs.runner }}
@@ -112,13 +112,13 @@ jobs:
         env:
           VALIDATION_TIER: ${{ inputs.validation-tier }}
           COVERAGE_REPORT: ${{ inputs.coverage-report }}
-          HAS_TEST_SUITE: ${{ inputs.test-suite != '' }}
+          HAS_TEST_SUITES: ${{ inputs.test-suites != '' }}
         run: |
           case "$VALIDATION_TIER" in
             routine|release) ;;
             *) echo "Unknown validation-tier: $VALIDATION_TIER" >&2; exit 2 ;;
           esac
-          if [[ "$COVERAGE_REPORT" == true && "$HAS_TEST_SUITE" == true ]]; then
+          if [[ "$COVERAGE_REPORT" == true && "$HAS_TEST_SUITES" == true ]]; then
             echo "Standalone coverage and the unified test suite cannot both own one job" >&2
             exit 2
           fi
@@ -127,7 +127,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The Git baseline SHA may be outside a PR's default shallow clone.
-          fetch-depth: ${{ inputs.test-suite != '' && '0' || '1' }}
+          fetch-depth: ${{ inputs.test-suites != '' && '0' || '1' }}
 
       - name: Checkout shared CI implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -186,7 +186,7 @@ jobs:
           RUST_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
           VALIDATION_TIER: ${{ inputs.validation-tier }}
           COVERAGE_REPORT: ${{ inputs.coverage-report }}
-          HAS_TEST_SUITE: ${{ inputs.test-suite != '' }}
+          HAS_TEST_SUITES: ${{ inputs.test-suites != '' }}
         run: |
           set -euo pipefail
           if ! rustup run "$RUST_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
@@ -195,12 +195,12 @@ jobs:
             echo "Rust toolchain $RUST_TOOLCHAIN is already installed on the runner."
           fi
 
-          if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" || "$COVERAGE_REPORT" == true || "$HAS_TEST_SUITE" == true ]]; then
+          if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" || "$COVERAGE_REPORT" == true || "$HAS_TEST_SUITES" == true ]]; then
             read -r -a components <<< "$RUST_COMPONENTS"
             if [[ "$VALIDATION_TIER" == routine ]]; then
               components+=(clippy rustfmt)
             fi
-            if [[ "$COVERAGE_REPORT" == true || "$HAS_TEST_SUITE" == true ]]; then
+            if [[ "$COVERAGE_REPORT" == true || "$HAS_TEST_SUITES" == true ]]; then
               components+=(llvm-tools-preview)
             fi
             # Rustup may schedule concurrent downloads for repeated components.
@@ -254,7 +254,7 @@ jobs:
           # Let setup derive its key from the resolved effective RUSTFLAGS.
           rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
-          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}:{2}', inputs.command, inputs.rust-targets, inputs.test-suite) }}
+          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}:{2}', inputs.command, inputs.rust-targets, inputs.test-suites) }}
 
       - name: Configure runner-local Cargo target
         shell: bash
@@ -286,10 +286,10 @@ jobs:
           working-directory: ${{ inputs.coverage-working-directory }}
 
       - name: Run unified authoritative Rust test suite
-        if: ${{ inputs.test-suite != '' }}
+        if: ${{ inputs.test-suites != '' }}
         uses: ./.ci-workflows/.github/actions/rust-test-impact
         with:
-          test-suite: ${{ inputs.test-suite }}
+          test-suites: ${{ inputs.test-suites }}
 
       - name: Finalize mandatory sccache
         if: always()

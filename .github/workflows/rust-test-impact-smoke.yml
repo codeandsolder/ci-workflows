@@ -42,7 +42,7 @@ jobs:
   end-to-end:
     uses: ./.github/workflows/rust-test-impact.yml
     with:
-      test-suite: '{"directory":"policy-wasm"}'
+      test-suites: '[{"name":"policy","directory":"policy-wasm"}]'
 
   shared-provider-end-to-end:
     # Exercise the typed suite through the same provider used by consumers.
@@ -50,5 +50,9 @@ jobs:
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: cargo fmt --manifest-path policy-wasm/Cargo.toml --all -- --check
-      test-suite: '{"directory":"policy-wasm"}'
+      test-suites: |
+        [
+          {"name":"cache","directory":"policy-wasm","nextest":["-E","test(cache::tests::)"]},
+          {"name":"other","directory":"policy-wasm","nextest":["-E","not test(cache::tests::)"]}
+        ]
       sccache-cache-scope: rust-test-impact-unified

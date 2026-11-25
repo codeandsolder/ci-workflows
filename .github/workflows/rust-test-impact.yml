@@ -8,11 +8,11 @@ on:
         type: string
         required: false
         default: ""
-      test-suite:
-        description: JSON configuration of the authoritative Nextest suite
+      test-suites:
+        description: JSON array of named authoritative Nextest scopes
         type: string
         required: false
-        default: '{}'
+        default: '[{"name":"workspace"}]'
       runner:
         type: string
         required: false
@@ -35,4 +35,4 @@ jobs:
       runner: ${{ inputs.runner }}
       timeout-minutes: ${{ inputs.timeout-minutes }}
       sccache-cache-scope: rust-test-impact
-      test-suite: ${{ inputs.test-suite }}
+      test-suites: ${{ inputs.test-suites }}
