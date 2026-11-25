@@ -303,6 +303,14 @@ setup-uv action with package caching disabled; the caller owns interpreter and
 package provisioning in its explicit asset tree. No venv/pip bootstrap is
 needed. Leaving the input empty skips uv installation entirely.
 
+A caller that runs JavaScript reference/runtime tests may set `node-version`
+to the required Node.js version (for example, `"26.13.1"`). The reusable workflow
+uses the pinned setup-node action with automatic package-manager caching
+disabled. The selected Node executable is available to the caller and all its
+test subprocesses; leaving the input empty skips provisioning. Tests for
+ECMAScript explicit resource management must not depend on the hosted image's
+default Node release.
+
 ### Test suites that manage sccache daemons
 
 `isolate-public-sccache-server: true` places the hosted Linux/macOS compiler-cache daemon on a dedicated Unix-domain socket, distinct from the default TCP endpoint used by the program's integration tests. This is designed for repositories such as `sccache-deduplicated` whose tests deliberately start/stop their own sccache instance. The compiler and finalizer retain the dedicated socket; the caller should launch **only the test executables** with `SCCACHE_SERVER_UDS` unset using Cargo's target runner, preserving the compiler's mandatory cache. This option is public-Unix only and explicitly rejects Windows instead of silently failing to isolate. Do not use it on a private local/Garage runner; the root-managed daemon there remains unchanged.

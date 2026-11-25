@@ -22,6 +22,11 @@ on:
         required: false
         default: ""
         type: string
+      node-version:
+        description: Explicit Node.js version for callers with JavaScript runtime tests; empty skips provisioning
+        required: false
+        default: ""
+        type: string
       rust-components:
         description: Space-separated rustup components to install
         required: false
@@ -282,6 +287,13 @@ jobs:
         with:
           version: ${{ inputs.uv-version }}
           enable-cache: false
+
+      - name: Provision explicitly requested Node.js
+        if: ${{ inputs.node-version != '' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager-cache: false
 
       - name: Run caller command
         id: caller-command

@@ -40,6 +40,7 @@ jobs:
     with:
       isolate-public-sccache-server: true
       uv-version: "0.13.9"
+      node-version: "26.13.1"
       # Repeated explicit/default component requests must not race in rustup.
       rust-components: "clippy rustfmt clippy"
       command: |
@@ -49,6 +50,8 @@ jobs:
         git check-ignore -q .ci-workflows/README.md
         test -S "$SCCACHE_SERVER_UDS"
         [[ "$(uv --version)" == "uv 0.13.9"* ]]
+        test "$(node --version)" = v26.13.1
+        node -e 'let disposed=false; { using resource = { [Symbol.dispose]() { disposed=true; } }; } if (!disposed) throw Error("resource not disposed")'
         cargo test --locked --offline --manifest-path smoke-cache/Cargo.toml
         sccache --show-stats >/dev/null
         test -S "$SCCACHE_SERVER_UDS"
