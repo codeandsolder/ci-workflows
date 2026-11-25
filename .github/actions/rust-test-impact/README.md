@@ -46,14 +46,15 @@ full-Nextest job. The lightweight selection on PRs reuses the full
 Nextest build output and ordinarily takes a fraction of a second after the
 suite finishes. No tests are skipped.
 
-The current installation pins the exact source commit
-[codeandsolder/cargo-affected 3f5d5aad](https://github.com/codeandsolder/cargo-affected/commit/440c5b69bf46e6c46b58f949de1081da509c50b6),
-which contains the nested Cargo-workspace Git-path fix proposed upstream in
-[max-sixty/cargo-affected #167](https://github.com/max-sixty/cargo-affected/pull/167).
-It is built through Cargo with the workflow's managed sccache client, rather
-than substituting a prebuilt official 0.4.1 binary that still misses nested
-workspace changes. The tool revision is part of the cache key; old coverage
-maps are never reused across this change.
+The current installation pins the upstream source commit
+[max-sixty/cargo-affected 155695f2](https://github.com/max-sixty/cargo-affected/commit/155695f2dd6d66c41400ffb11d8883e946fa3b0d),
+which includes the Git-root coverage path fix in
+[upstream #170](https://github.com/max-sixty/cargo-affected/pull/170)
+and the incremental-collection backstop fix in #169. It is built with
+managed sccache, rather than using the older 0.4.1 release.
+The upstream source revision and source identity are part of the cache key;
+migration intentionally starts with a fresh baseline because upstream did
+not adopt the fork's coverage-path fingerprint component.
 
 Shadow selection remains advisory: the upstream project does not yet guarantee
 absence of false negatives for build scripts, non-Rust inputs or external state.
@@ -63,6 +64,5 @@ node --test .github/actions/rust-test-impact/compare.test.mjs.
 
 The shared provider runs its own Rust/WASI policy crate (policy-wasm) as the
 first canary in rust-test-impact-smoke.yml. This is an actively changed nested
-Cargo workspace with 47 unit tests. Until the upstream path fix is released,
-shadow comparisons on this crate can observe missed regressions caused by the
-known Git-root mismatch; they never omit tests from the full run.
+Cargo workspace with 47 unit tests. The canary exercises the upstream Git-root path fix; shadow comparisons never
+omit tests from the full run.
