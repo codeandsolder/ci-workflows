@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Keep shared CI pins current on small-patch upstream forks; upstream tracking owns all other dependency upgrades.",
+  "extends": ["github>codeandsolder/ci-workflows:renovate-ci-trust-root"],
+  "forkProcessing": "enabled",
+  "enabledManagers": ["github-actions"],
+  "dependencyDashboard": true,
+  "prConcurrentLimit": 1,
+  "prHourlyLimit": 1,
+  "commitHourlyLimit": 1,
+  "rebaseWhen": "auto",
+  "packageRules": [
+    {
+      "description": "Do not independently update upstream-owned actions or reusable workflows",
+      "matchPackageNames": ["!/^codeandsolder\\/(?:ci-workflows|rust-skills2)(?:\\/|$)/"],
+      "enabled": false
+    }
+  ]
+}
