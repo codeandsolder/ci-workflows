@@ -47,8 +47,17 @@ jobs:
           base-sha: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           pr-head-sha: ${{ github.event.pull_request.head.sha || '' }}
 
+      - name: Log complete clone findings in private repositories
+        if: always() && github.event.repository.private
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/doppelscan-report.json" ]]; then
+            jq . "$RUNNER_TEMP/doppelscan-report.json"
+          fi
+
       - name: Upload full clone findings
-        if: always()
+        if: always() && !github.event.repository.private
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: doppelscan-${{ github.run_id }}-${{ github.run_attempt }}
