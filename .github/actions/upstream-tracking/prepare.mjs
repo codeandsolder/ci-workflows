@@ -22,7 +22,12 @@ function unchanged(...args) {
 }
 
 function restore(ref, paths) {
-  if (paths.length) git("--literal-pathspecs", "restore", "--source=" + ref, "--staged", "--worktree", "--", ...paths);
+  // Git restore cannot remove an unmerged path absent from its source tree.
+  // Resolve those paths by removing their index stages and working copy.
+  const present = paths.filter(path => git("--literal-pathspecs", "ls-tree", ref, "--", path));
+  const absent = paths.filter(path => !present.includes(path));
+  if (absent.length) git("--literal-pathspecs", "rm", "-f", "--ignore-unmatch", "--", ...absent);
+  if (present.length) git("--literal-pathspecs", "restore", "--source=" + ref, "--staged", "--worktree", "--", ...present);
 }
 
 function commitIfChanged(...args) {

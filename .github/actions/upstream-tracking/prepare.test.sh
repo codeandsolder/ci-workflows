@@ -140,6 +140,39 @@ selected=$(git -C ../upstream rev-parse HEAD)
 if prepare preserve; then exit 1; fi
 test ! -e "$bundle"
 
+fixture preserve-deletion
+echo fork-script > .github/workflows/extra.yml
+git add .github/workflows/extra.yml
+git commit -qm 'fork-only workflow'
+base=$(git rev-parse HEAD)
+echo upstream-script > ../upstream/.github/workflows/extra.yml
+git -C ../upstream add .github/workflows/extra.yml
+git -C ../upstream commit -qm 'upstream introduces conflicting workflow'
+selected=$(git -C ../upstream rev-parse HEAD)
+prepare preserve
+test "$(cat .github/workflows/extra.yml)" = fork-script
+verify
+
+fixture historical-add-add
+echo fork-change > fork-extra
+git add fork-extra
+git commit -qm 'fork creates file'
+echo upstream-change > ../upstream/fork-extra
+git -C ../upstream add fork-extra
+git -C ../upstream commit -qm 'upstream creates file too'
+git fetch -q ../upstream main
+if git merge --no-ff --no-edit FETCH_HEAD; then exit 1; fi
+git rm fork-extra
+git commit -qm 'reviewed deletion of conflicting addition'
+base=$(git rev-parse HEAD)
+echo more > ../upstream/more
+git -C ../upstream add more
+git -C ../upstream commit -qm more
+selected=$(git -C ../upstream rev-parse HEAD)
+prepare reject
+test ! -e fork-extra
+verify
+
 fixture historical-merge
 echo local-resolution > common
 git commit -qam 'fork source patch'
@@ -216,4 +249,4 @@ prepare preserve artifact.bin
 cmp artifact.bin <(printf 'fork-only artifact\0')
 verify
 
-echo "All eleven real patch-rebase scenarios passed"
+echo "All thirteen real patch-rebase scenarios passed"
