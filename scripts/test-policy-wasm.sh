@@ -12,7 +12,6 @@ for test in \
   scripts/rust-release-review.test.mjs \
   scripts/runner-availability.test.mjs \
   scripts/renovate-quarantine-recheck.test.mjs \
-  policy-wasm/upstream.test.mjs \
   policy-wasm/clones.test.mjs; do
   node "$test" "$module"
 done

@@ -9,7 +9,6 @@ mod runner_admission;
 mod rust_tests;
 mod shell;
 mod stable_review;
-mod upstream;
 mod workspace;
 mod yaml;
 
@@ -108,10 +107,6 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
         None
     };
     let paths: Vec<PathBuf> = args.map(PathBuf::from).collect();
-    if policy == "strict-plan" {
-        upstream::print_plan(root, &paths)?;
-        return Ok(ExitCode::SUCCESS);
-    }
     let (problems, success, failure) = match policy.as_str() {
         "concurrency" => (
             concurrency::inspect(root, paths)?,
