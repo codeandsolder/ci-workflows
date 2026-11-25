@@ -93,6 +93,74 @@
       "automerge": false
     },
     {
+      "description": "Group Cargo Git digest updates from the same first-party source to preserve shared type and native-link identity",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
+      "matchPackageNames": [
+        "/^https:\\/\\/github\\.com\\/codeandsolder\\/btls-fast(?:\\.git)?$/"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "groupName": "BTLS git family",
+      "groupSlug": "btls-git-family"
+    },
+    {
+      "description": "Group Cargo Git digest updates from the same first-party source to preserve shared type and native-link identity",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
+      "matchPackageNames": [
+        "/^https:\\/\\/github\\.com\\/codeandsolder\\/wreq-exp(?:\\.git)?$/"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "groupName": "Wreq git family",
+      "groupSlug": "wreq-git-family"
+    },
+    {
+      "description": "Group Cargo Git digest updates from the same first-party source to preserve shared type and native-link identity",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
+      "matchPackageNames": [
+        "/^https:\\/\\/github\\.com\\/codeandsolder\\/quiescence(?:\\.git)?$/"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "groupName": "Quiescence git family",
+      "groupSlug": "quiescence-git-family"
+    },
+    {
+      "description": "Group Cargo Git digest updates from the same first-party source to preserve shared type and native-link identity",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
+      "matchPackageNames": [
+        "/^https:\\/\\/github\\.com\\/codeandsolder\\/quiche-fast(?:\\.git)?$/"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "groupName": "Quiche git family",
+      "groupSlug": "quiche-git-family"
+    },
+    {
       "description": "Clear inherited generic age delays; the following rule enforces the external registry crate quarantine.",
       "matchPackageNames": [
         "/.*/"
