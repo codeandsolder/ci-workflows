@@ -478,7 +478,7 @@ registrations for custom selectors. See
 [portable runner policy](policy-wasm/RUNNER_ADMISSION.md) for the JSON contract,
 semantics and parity tests.
 
-Contribution-only forks (Anubis, Hayro, OXC) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.
+Contribution-only forks (Anubis, Hayro) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.
 
 ## Upstream-tracking forks
 
