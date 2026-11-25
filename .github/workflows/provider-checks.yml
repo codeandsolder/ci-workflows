@@ -8,6 +8,7 @@ on:
       - ".github/actions/workflow-concurrency-policy/**"
       - ".github/actions/rust-ci-sccache-policy/**"
       - ".github/actions/actionlint-policy/**"
+      - ".github/actions/merge-gate/**"
       - "languages/actionlint/**"
       - "languages/tools/**"
       - "scripts/nightly-toolchain*.mjs"
@@ -21,6 +22,7 @@ on:
       - ".github/actions/workflow-concurrency-policy/**"
       - ".github/actions/rust-ci-sccache-policy/**"
       - ".github/actions/actionlint-policy/**"
+      - ".github/actions/merge-gate/**"
       - "languages/actionlint/**"
       - "languages/tools/**"
       - "scripts/nightly-toolchain*.mjs"
@@ -44,7 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: node --test scripts/nightly-toolchain.test.mjs
+      - run: node --test scripts/nightly-toolchain.test.mjs .github/actions/merge-gate/evaluate.test.mjs
       - uses: ./.github/actions/resolve-rust-toolchain
       - name: Enforce Rust CI sccache rules on provider workflows
         uses: ./.github/actions/rust-ci-sccache-policy
