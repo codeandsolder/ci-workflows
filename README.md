@@ -491,7 +491,11 @@ is recorded before fetching and is not reset on failure.
 
 Callers retain their explicit strategy (`merge`, `rebase`, `squash-rebase`, or
 `source-merge` for a separately reviewed source checkpoint) and reviewed
-validation script. Preparation creates an exact Git bundle; validation and
+validation script. The reviewed fork-specific validator is the source-quality
+and behavioral gate for automatic upstream integration. Do not impose the
+first-party strict Rust/Python or clone-regression policies on inherited upstream
+source. Ordinary first-party CI remains unchanged. Preparation creates an exact
+Git bundle; validation and
 publication use that same immutable candidate and distinct read/write jobs.
 Rust candidates also run the existing 72-hour external crates.io release gate
 and mandatory sccache setup. Workflow edits require explicit review; the
