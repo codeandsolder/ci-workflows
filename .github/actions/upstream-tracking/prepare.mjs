@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { generatedPaths } from "./generated.mjs";
+import { ancestor, priorAnchor } from "./history.mjs";
 import { appendFileSync } from "node:fs";
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -50,7 +51,12 @@ git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.c
 const generated = new Set(generatedPaths(generatedInput, base));
 const common = git("merge-base", "--all", base, upstream).split("\n");
 if (common.length !== 1 || !SHA.test(common[0])) throw new Error("Ambiguous fork divergence");
-const divergence = common[0];
+const recorded = priorAnchor(base);
+let divergence = common[0];
+if (recorded !== null && !ancestor(recorded, divergence)) {
+  if (!ancestor(divergence, recorded)) throw new Error("Ambiguous fork divergence after upstream history rewrite");
+  divergence = recorded;
+}
 const checkpoint = git("ls-tree", base, "--", CHECKPOINT) ? git("show", base + ":" + CHECKPOINT) : null;
 if (checkpoint !== null) {
   if (!SHA.test(checkpoint)) throw new Error("Invalid reviewed-source checkpoint");

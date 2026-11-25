@@ -23,7 +23,7 @@ git bundle create -q ../candidate.bundle HEAD ^"$ancestor"
 git checkout -q --detach "$base"
 publish() { node "$here/publish.mjs" main "$base" "$1" "$2" ../candidate.bundle; }
 remote_ref() { git --git-dir=../origin.git rev-parse "$1"; }
-archive="refs/tags/fork-history/$base"
+archive="refs/tags/fork-history/$base/$upstream"
 # Wrong exact candidate and missing upstream ancestry must both fail.
 if publish "$ancestor" "$upstream"; then exit 1; fi
 if publish "$head" "$base"; then exit 1; fi

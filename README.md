@@ -516,8 +516,10 @@ keeps the exact reviewed workflow tree and reports upstream drift separately.
 
 Publication verifies that the mature upstream revision is an ancestor of the
 validated candidate. It atomically archives the previous fork HEAD at
-`refs/tags/fork-history/<full SHA>` and updates the target branch with an exact
-expected-base lease. Old Git dependency pins therefore remain reachable.
+`refs/tags/fork-history/<old fork SHA>/<accepted upstream SHA>` and updates the target branch with an exact
+expected-base lease. Old Git dependency pins therefore remain reachable. The accepted upstream
+identity also prevents an upstream history rewrite from turning discarded
+upstream commits into downstream patches.
 A competing target update or inconsistent archive blocks both changes.
 Existing released version tags are never moved.
 

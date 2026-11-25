@@ -221,6 +221,34 @@ test ! -e .github/upstream-reconciliation/reviewed-source-sha
 git log --format=%s "$selected"..HEAD | grep -Fx 'post-checkpoint patch'
 verify
 
+fixture upstream-rewrite
+# Simulate a previously integrated upstream tip, then an upstream force-push
+# replacing its history. The old upstream-only file must not become a patch.
+git checkout -q --detach "$selected" 2>/dev/null || {
+  git fetch -q ../upstream main
+  git checkout -q --detach "$selected"
+}
+echo fork-only > local
+git add local
+echo reviewed > .github/workflows/ci.yml
+git add .github/workflows/ci.yml
+git commit -qm 'real fork patch'
+base=$(git rev-parse HEAD)
+git -C ../upstream tag "fork-history/$divergence/$selected" "$divergence"
+git -C ../upstream reset -q --hard "$divergence"
+echo rewritten > ../upstream/rewritten
+echo dependency-v2 > ../upstream/dependency.lock
+git -C ../upstream add .
+git -C ../upstream commit -qm 'rewritten upstream'
+selected=$(git -C ../upstream rev-parse HEAD)
+prepare reject
+test ! -e new
+test "$(cat rewritten)" = rewritten
+test "$(cat local)" = fork-only
+test "$(git log --format=%s "$selected"..HEAD)" = 'real fork patch'
+git merge-base --is-ancestor "$selected" HEAD
+git bundle verify "$bundle"
+
 fixture generated-conflict
 printf 'fork artifact\0' > artifact.bin
 git add artifact.bin
@@ -249,4 +277,4 @@ prepare preserve artifact.bin
 cmp artifact.bin <(printf 'fork-only artifact\0')
 verify
 
-echo "All thirteen real patch-rebase scenarios passed"
+echo "All fourteen real patch-rebase scenarios passed"

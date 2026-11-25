@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { verifyGenerated } from "./generated.mjs";
+import { archiveRef } from "./history.mjs";
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 const [target, base, head, upstream, bundle, source, generated] = process.argv.slice(2);
@@ -17,7 +18,7 @@ if (source) verifyGenerated(source, head, generated);
 // Keep immutable reachability for downstream Cargo Git pins and old reviewed
 // commits. Publish the archive and new branch in the same atomic transaction;
 // an unexpected concurrent base (even a rollback) cannot be overwritten.
-const archive = "refs/tags/fork-history/" + base;
+const archive = archiveRef(base, upstream);
 const remote = git("ls-remote", "--refs", "origin", archive);
 if (remote && remote !== base + "\t" + archive) throw new Error("Fork history archive points elsewhere");
 git("push", "--atomic", "--force-with-lease=" + ref + ":" + base,
