@@ -3,10 +3,12 @@
 # compiler inputs actually exist. No host sccache server is started.
 set -eu
 export RUSTC_WRAPPER=/ci-sccache/sccache
+export CMAKE_C_COMPILER_LAUNCHER="$RUSTC_WRAPPER"
+export CMAKE_CXX_COMPILER_LAUNCHER="$RUSTC_WRAPPER"
 export SCCACHE_DIR=/ci-sccache-cache
 export SCCACHE_SERVER_UDS=/tmp/codeandsolder-ci-sccache.sock
 export CARGO_INCREMENTAL=0
-unset SCCACHE_SERVER_PORT
+unset SCCACHE_SERVER_PORT SCCACHE_CLIENT_SIDE SCCACHE_START_SERVER SCCACHE_NO_AUTO_START_SERVER
 "$RUSTC_WRAPPER" --start-server
 "$RUSTC_WRAPPER" --zero-stats
 finish() {

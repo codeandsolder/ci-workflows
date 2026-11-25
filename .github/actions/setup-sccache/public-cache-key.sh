@@ -26,7 +26,7 @@ effective_rustflags="${CACHE_RUSTFLAGS:-${RUSTFLAGS:-}}"
 semantic_hash="$(
   printf '%s\0' "$RUNNER_OS" "$RUNNER_ARCH" "${ImageOS:-$RUNNER_OS}" \
     "${CACHE_RUST_TOOLCHAIN:-}" "$compiler_identity" "$effective_rustflags" \
-    'sccache-v0.19.0' "$CACHE_SIZE_MIB" | git -C "$repo_root" hash-object --stdin
+    'sccache-v0.20.0' "$CACHE_SIZE_MIB" | git -C "$repo_root" hash-object --stdin
 )"
 scope="${CACHE_SCOPE:-$GITHUB_WORKFLOW:$GITHUB_JOB}"
 if [[ "${CACHE_EXECUTION:-native}" == cross ]]; then
