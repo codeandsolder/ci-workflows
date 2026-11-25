@@ -10,7 +10,7 @@ export const nextestVersion = "0.9.152";
 
 export const collector = {
   repository: 'https://github.com/codeandsolder/cargo-affected.git',
-  revision: '182a1e7915f32dbca4fd93e20296f02c252ba91e',
+  revision: 'f266fe3eb6da297e1f5aa056afab2cc0a67e6eec',
 };
 
 const reserved = new Set([
