@@ -1,152 +1,138 @@
-name: Rust test-impact shadow
-description: Collect an opt-in per-test baseline or compare the full Nextest suite against coverage-based selection
+name: Unified Rust test suite
+description: Run the full Nextest suite once, collect per-test coverage, predict affected tests, and generate aggregate reports
 inputs:
-  mode:
-    description: collect on default branch, shadow on pull requests
+  test-suite:
+    description: JSON test configuration (directory, cargo, nextest, doctests, coverage)
     required: true
-  working-directory:
-    description: Cargo workspace within the caller checkout
-    required: false
-    default: "."
-  cargo-args:
-    description: Whitespace-separated Cargo build/test flags forwarded to Nextest
-    required: false
-    default: "--workspace --locked"
 runs:
   using: composite
   steps:
+    - name: Prepare canonical test suite and baseline scope
+      id: suite
+      shell: bash
+      env:
+        TEST_SUITE: ${{ inputs.test-suite }}
+      run: node "$GITHUB_ACTION_PATH/suite.mjs" prepare
+
     - name: Install pinned Nextest
       uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
       with:
         tool: cargo-nextest@0.9.152
 
-    - name: Install pinned upstream cargo-affected
-      continue-on-error: true
+    - name: Install pinned cargo-affected collector
       shell: bash
-      run: |
-        set -euo pipefail
-        tool_root="$RUNNER_TEMP/cargo-affected-install"
-        mkdir -p "$tool_root"
-        # Use the already configured managed sccache and runner-local Cargo
-        # target. Pin the source commit rather than tracking a moving branch.
-        cargo install --locked \
-          --git https://github.com/max-sixty/cargo-affected.git \
-          --rev 155695f2dd6d66c41400ffb11d8883e946fa3b0d \
-          --root "$tool_root" cargo-affected
-        echo "$tool_root/bin" >> "$GITHUB_PATH"
+      run: node "$GITHUB_ACTION_PATH/suite.mjs" install
 
-    - name: Compute scope for per-test coverage baseline
-      id: key
-      continue-on-error: true
-      shell: bash
-      env:
-        IMPACT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
-        IMPACT_CARGO_ARGS: ${{ inputs.cargo-args }}
-      run: |
-        set -euo pipefail
-        node - <<'JS'
-        const crypto = require('node:crypto');
-        const { execFileSync } = require('node:child_process');
-        const { appendFileSync } = require('node:fs');
-        const values = [
-          'cargo-affected-upstream-155695f2dd6d66c41400ffb11d8883e946fa3b0d',
-          process.platform, process.arch,
-          process.env.IMPACT_WORKING_DIRECTORY,
-          process.env.IMPACT_CARGO_ARGS,
-          execFileSync('rustc', ['-vV'], {encoding: 'utf8'}),
-        ];
-        const digest = crypto.createHash('sha256').update(JSON.stringify(values)).digest('hex').slice(0, 24);
-        appendFileSync(process.env.GITHUB_OUTPUT, 'prefix=rust-test-impact-v1-' + digest + '-\n');
-        JS
-
-    - name: Restore last default-branch coverage baseline
-      if: inputs.mode == 'shadow' && steps.key.outcome == 'success'
+    - name: Restore last compatible coverage baseline
       id: restore
       continue-on-error: true
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
-        path: ${{ inputs.working-directory }}/target/affected/coverage.db
-        key: ${{ steps.key.outputs.prefix }}${{ github.sha }}
+        path: ${{ steps.suite.outputs.db-path }}
+        key: ${{ steps.suite.outputs.prefix }}${{ github.sha }}
         restore-keys: |
-          ${{ steps.key.outputs.prefix }}
+          ${{ steps.suite.outputs.prefix }}
 
-    - name: Collect per-test LLVM coverage on main (informational)
-      if: inputs.mode == 'collect'
-      id: collect
-      continue-on-error: true
-      shell: bash
-      env:
-        IMPACT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
-        IMPACT_CARGO_ARGS: ${{ inputs.cargo-args }}
-      run: |
-        set -euo pipefail
-        cd "$IMPACT_WORKING_DIRECTORY"
-        read -r -a args <<< "$IMPACT_CARGO_ARGS"
-        cargo affected collect -- "${args[@]}"
-
-    - name: Save main-branch coverage baseline
-      if: inputs.mode == 'collect' && steps.key.outcome == 'success' && steps.collect.outcome == 'success' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-      continue-on-error: true
-      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-      with:
-        path: ${{ inputs.working-directory }}/target/affected/coverage.db
-        key: ${{ steps.key.outputs.prefix }}${{ github.sha }}
-
-    - name: Execute authoritative full Nextest suite
-      if: inputs.mode == 'shadow'
+    - name: Execute full instrumented Nextest suite once
       id: full
       continue-on-error: true
       shell: bash
       env:
-        IMPACT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
-        IMPACT_CARGO_ARGS: ${{ inputs.cargo-args }}
-        NEXTEST_EXPERIMENTAL_LIBTEST_JSON: "1"
-      run: |
-        set -euo pipefail
-        mkdir -p "$RUNNER_TEMP/rust-test-impact"
-        cd "$IMPACT_WORKING_DIRECTORY"
-        read -r -a args <<< "$IMPACT_CARGO_ARGS"
-        cargo nextest run --no-fail-fast --message-format libtest-json-plus "${args[@]}" > "$RUNNER_TEMP/rust-test-impact/nextest.jsonl"
+        TEST_SUITE: ${{ inputs.test-suite }}
+        IMPACT_DIR: ${{ steps.suite.outputs.impact-dir }}
+      run: node "$GITHUB_ACTION_PATH/suite.mjs" collect
 
-    - name: Predict affected tests without executing them again
-      if: inputs.mode == 'shadow'
-      continue-on-error: true
-      shell: bash
-      env:
-        IMPACT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
-        IMPACT_CARGO_ARGS: ${{ inputs.cargo-args }}
-      run: |
-        set -euo pipefail
-        cd "$IMPACT_WORKING_DIRECTORY"
-        read -r -a args <<< "$IMPACT_CARGO_ARGS"
-        cargo affected status --report-json "$RUNNER_TEMP/rust-test-impact/selection.json" --report-detail full -- "${args[@]}"
-
-    - name: Compare predicted tests with actual full-suite results
-      if: inputs.mode == 'shadow'
+    - name: Compare prior selection with actual full-suite results
+      if: ${{ !cancelled() && steps.suite.outcome == 'success' }}
       continue-on-error: true
       shell: bash
       env:
         FULL_SUCCESS: ${{ steps.full.outcome == 'success' }}
+        IMPACT_DIR: ${{ steps.suite.outputs.impact-dir }}
       run: |
         node "$GITHUB_ACTION_PATH/compare.mjs" \
-          "$RUNNER_TEMP/rust-test-impact/selection.json" \
-          "$RUNNER_TEMP/rust-test-impact/nextest.jsonl" \
-          "$FULL_SUCCESS" \
-          "$RUNNER_TEMP/rust-test-impact/comparison.json"
+          "$IMPACT_DIR/selection.json" "$IMPACT_DIR/nextest.jsonl" \
+          "$FULL_SUCCESS" "$IMPACT_DIR/comparison.json"
+
+    - name: Save successful coverage baseline
+      if: ${{ steps.full.outcome == 'success' && steps.restore.outputs.cache-hit != 'true' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)) }}
+      continue-on-error: true
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.suite.outputs.db-path }}
+        key: ${{ steps.suite.outputs.prefix }}${{ github.sha }}
 
     - name: Publish test-impact diagnostics
-      if: inputs.mode == 'shadow'
+      if: ${{ !cancelled() && steps.suite.outcome == 'success' }}
       continue-on-error: true
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       with:
-        name: rust-test-impact-${{ github.job }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/rust-test-impact/
+        name: rust-test-impact-${{ github.job }}-${{ github.run_attempt }}-${{ steps.suite.outputs.artifact-suffix }}
+        path: |
+          ${{ steps.suite.outputs.impact-dir }}/nextest.jsonl
+          ${{ steps.suite.outputs.impact-dir }}/selection.json
+          ${{ steps.suite.outputs.impact-dir }}/comparison.json
         if-no-files-found: warn
         retention-days: 14
 
-    - name: Retain the full-suite test gate
-      if: inputs.mode == 'shadow' && steps.full.outcome != 'success'
+    - name: Install pinned cargo-llvm-cov reporter
+      if: ${{ steps.full.outcome == 'success' && steps.suite.outputs.coverage == 'true' }}
+      continue-on-error: true
+      uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+      with:
+        tool: cargo-llvm-cov@0.9.2
+
+    - name: Generate coverage reports from the same execution
+      if: ${{ steps.full.outcome == 'success' && steps.suite.outputs.coverage == 'true' }}
+      id: coverage
+      continue-on-error: true
       shell: bash
+      env:
+        TEST_SUITE: ${{ inputs.test-suite }}
+        IMPACT_DIR: ${{ steps.suite.outputs.impact-dir }}
+        COVERAGE_DIR: ${{ steps.suite.outputs.coverage-dir }}
+      run: node "$GITHUB_ACTION_PATH/suite.mjs" report
+
+    - name: Upload coverage artifact
+      if: ${{ !cancelled() && steps.suite.outputs.coverage == 'true' }}
+      id: upload-coverage
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: rust-coverage-${{ github.job }}-${{ github.run_attempt }}-${{ steps.suite.outputs.artifact-suffix }}
+        path: ${{ steps.suite.outputs.coverage-dir }}
+        retention-days: 14
+        if-no-files-found: warn
+
+    - name: Write coverage summary
+      if: ${{ !cancelled() && steps.suite.outputs.coverage == 'true' }}
+      continue-on-error: true
+      shell: bash
+      env:
+        COVERAGE_JSON: ${{ steps.suite.outputs.coverage-dir }}/coverage.json
+        COVERAGE_STATUS: ${{ steps.coverage.outcome }}
+        COVERAGE_ARTIFACT_URL: ${{ steps.upload-coverage.outputs.artifact-url }}
+        COVERAGE_DIRECTORY: ${{ steps.suite.outputs.directory }}
+      run: node "$GITHUB_ACTION_PATH/../rust-coverage/summary.mjs"
+
+    - name: Execute separate doctest scope
+      if: ${{ !cancelled() && steps.suite.outputs.doctests == 'true' }}
+      id: doctests
+      continue-on-error: true
+      shell: bash
+      env:
+        TEST_SUITE: ${{ inputs.test-suite }}
+      run: node "$GITHUB_ACTION_PATH/suite.mjs" doctests
+
+    - name: Enforce authoritative full-suite result
+      if: ${{ !cancelled() }}
+      shell: bash
+      env:
+        FULL_OUTCOME: ${{ steps.full.outcome }}
+        DOCTESTS: ${{ steps.suite.outputs.doctests }}
+        DOCTEST_OUTCOME: ${{ steps.doctests.outcome }}
       run: |
-        echo "The full Nextest suite failed; coverage prediction is informational only." >&2
-        exit 1
+        if [[ "$FULL_OUTCOME" != success || ( "$DOCTESTS" == true && "$DOCTEST_OUTCOME" != success ) ]]; then
+          echo "Authoritative test execution failed or did not complete." >&2
+          exit 1
+        fi
