@@ -47,7 +47,7 @@ cd "$root/fork"
 # The default branch has a later untagged commit: release mode must ignore it.
 git -C "$root/upstream" commit -qm unreleased --allow-empty
 observe() {
-  PATH="$root/bin:$PATH" GITHUB_OUTPUT="$root/$1" node "$here/observe.mjs" example/project main merge crate-v
+  PATH="$root/bin:$PATH" GITHUB_OUTPUT="$root/$1" node "$here/observe.mjs" example/project main crate-v
 }
 observe first
 test "$(sed -n 's/^status=//p' "$root/first")" = quarantined

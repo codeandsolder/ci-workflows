@@ -17,14 +17,14 @@ git -C "$root/upstream" add new
 git -C "$root/upstream" commit -qm tip
 tip=$(git -C "$root/upstream" rev-parse HEAD)
 cd "$root/fork"
-GITHUB_OUTPUT="$root/first" node "$here/observe.mjs" example/project main merge
+GITHUB_OUTPUT="$root/first" node "$here/observe.mjs" example/project main
 test "$(sed -n 's/^status=//p' "$root/first")" = quarantined
 git --git-dir="$root/origin.git" show automation/upstream-observations:observations.json | node -e '
   const d = JSON.parse(require("fs").readFileSync(0));
   if (d.observations.length !== 1 || d.observations[0].sha !== process.argv[1]) process.exit(1);
 ' "$tip"
 state=$(git --git-dir="$root/origin.git" rev-parse automation/upstream-observations)
-GITHUB_OUTPUT="$root/second" node "$here/observe.mjs" example/project main merge
+GITHUB_OUTPUT="$root/second" node "$here/observe.mjs" example/project main
 test "$(sed -n 's/^status=//p' "$root/second")" = already-run
 test "$(git --git-dir="$root/origin.git" rev-parse automation/upstream-observations)" = "$state"
 test "$(git --git-dir="$root/origin.git" rev-parse main)" = "$(git rev-parse HEAD)"
