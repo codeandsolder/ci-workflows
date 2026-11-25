@@ -10,7 +10,7 @@ export const nextestVersion = "0.9.152";
 
 export const collector = {
   repository: 'https://github.com/codeandsolder/cargo-affected.git',
-  revision: '6fe72e145b2e156a407107ef6d7a454c208e2535',
+  revision: '9a92de8f286a10fe7e5cd7cfc60453a8e0a1cec8',
 };
 
 const reserved = new Set([
@@ -33,7 +33,7 @@ function argumentsArray(value, name) {
 function parseSuite(config) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('test-suite must be a JSON object');
   for (const key of Object.keys(config)) {
-    if (!['name', 'directory', 'cargo', 'nextest', 'doctests', 'coverage'].includes(key)) throw new Error('Unknown test-suite key: ' + key);
+    if (!['name', 'directory', 'cargo', 'nextest', 'doctests', 'coverage', 'continuous'].includes(key)) throw new Error('Unknown test-suite key: ' + key);
   }
   const name = config.name;
   if (typeof name !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(name)) throw new Error('test-suite name must be a filesystem-safe identifier');
@@ -43,6 +43,8 @@ function parseSuite(config) {
   }
   const coverage = config.coverage ?? true;
   if (typeof coverage !== 'boolean') throw new Error('test-suite coverage must be boolean');
+  const continuous = config.continuous ?? false;
+  if (typeof continuous !== 'boolean') throw new Error('test-suite continuous must be boolean');
   return {
     name,
     directory,
@@ -50,6 +52,7 @@ function parseSuite(config) {
     nextest: argumentsArray(config.nextest ?? [], 'nextest'),
     doctests: config.doctests == null ? null : argumentsArray(config.doctests, 'doctests'),
     coverage,
+    continuous,
   };
 }
 
@@ -64,6 +67,7 @@ export function parseSuites(source) {
 export function collectArgs(suite, impactDir, stateDir) {
   return [
     'affected', 'collect', '--state-dir', stateDir,
+    ...(suite.continuous ? ['--continuous'] : []),
     '--report-json', join(impactDir, 'selection.json'), '--report-detail', 'full',
     ...(suite.coverage ? [
       '--aggregate-profile', join(impactDir, 'aggregate.profdata'),
@@ -149,7 +153,7 @@ function prepare(suites) {
   if (!target || !isAbsolute(target)) throw new Error('Unified test suites require the provider runner-local Cargo target directory');
   const baselineDir = join(target, 'test-impact-baselines', group);
   const entries = compiler.map(({ suite, cwd, version }) => {
-    const scope = digest([identity, version, relative(root, cwd), suite.name, suite.cargo, suite.nextest]);
+    const scope = digest([identity, version, relative(root, cwd), suite.name, suite.cargo, suite.nextest, suite.continuous]);
     const stateDir = join(target, 'test-impact-state', group, scope);
     const impactDir = join(impact, suite.name);
     const coverageDir = join(coverage, suite.name);

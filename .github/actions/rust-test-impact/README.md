@@ -55,6 +55,16 @@ scope executes even if an earlier one fails, and any failed execution fails
 the job. Reports describe workspace code exercised in that scope; doctests
 are separate.
 
+On native Linux, set `"continuous": true` on a scope containing tests
+that terminate subprocesses without normal exit. The collector verifies
+LLVM's runtime support and maps counters continuously; the persistence mode
+is part of both the database fingerprint and scope cache identity. When a
+test constructs a sanitized child environment, explicitly preserve only
+`LLVM_PROFILE_FILE` (if present), and ensure the directory is accessible
+inside the child's sandbox. Wait for children before the test ends. Tests
+that intentionally sever all profiling context remain separate full gates
+or require explicit input rules.
+
 For callers needing test-only isolation, use a Nextest run-wrapper configured
 with `target-runner = "within-wrapper"` to execute the collector's runner
 inside the caller's wrapper. Do not set a competing Cargo target runner.

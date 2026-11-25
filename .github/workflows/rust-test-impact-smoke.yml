@@ -52,7 +52,7 @@ jobs:
       command: cargo fmt --manifest-path policy-wasm/Cargo.toml --all -- --check
       test-suites: |
         [
-          {"name":"cache","directory":"policy-wasm","nextest":["-E","test(cache::tests::)"]},
+          {"name":"cache","directory":"policy-wasm","continuous":true,"nextest":["-E","test(cache::tests::)"]},
           {"name":"other","directory":"policy-wasm","nextest":["-E","not test(cache::tests::)"]}
         ]
       sccache-cache-scope: rust-test-impact-unified

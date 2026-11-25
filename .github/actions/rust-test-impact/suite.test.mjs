@@ -60,3 +60,15 @@ test('coverage report layout is derived from actual Nextest metadata', () => {
   assert.throws(() => reportArgs({'base-output-directories':['debug','release']}));
   assert.throws(() => reportArgs({'base-output-directories':['../debug']}));
 });
+
+test('continuous profiling is explicit, independent of aggregate reporting and argument scope', () => {
+  const [normal, continuous] = parseSuites('[{"name":"normal"},{"name":"daemon","continuous":true,"coverage":false}]');
+  assert.equal(normal.continuous, false);
+  assert.equal(continuous.continuous, true);
+  assert.ok(!collectArgs(normal, '/tmp/impact', '/tmp/state').includes('--continuous'));
+  const args = collectArgs(continuous, '/tmp/impact', '/tmp/state');
+  assert.ok(args.includes('--continuous'));
+  assert.ok(!args.includes('--aggregate-profile'));
+  assert.ok(args.indexOf('--continuous') < args.indexOf('--'));
+  assert.throws(() => parseSuites('[{"name":"bad","continuous":"true"}]'));
+});
