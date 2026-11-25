@@ -12,14 +12,11 @@ on:
       target-branch:
         required: true
         type: string
-      strategy:
-        type: string
-        default: merge
       workflow-policy:
         type: string
         default: reject
       generated-files:
-        description: Whitespace-separated exact tracked files to regenerate after merging upstream.
+        description: Whitespace-separated exact tracked files to regenerate after rebasing onto upstream.
         type: string
         default: ""
       generation-script:
@@ -107,7 +104,6 @@ jobs:
         env:
           UPSTREAM_REPOSITORY: ${{ inputs.upstream-repository }}
           UPSTREAM_BRANCH: ${{ inputs.upstream-branch }}
-          STRATEGY: ${{ inputs.strategy }}
           VALIDATION: ${{ inputs.validation-script }}
           GENERATED_FILES: ${{ inputs.generated-files }}
           GENERATOR: ${{ inputs.generation-script }}
@@ -117,16 +113,14 @@ jobs:
           WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
         run: |
           set -euo pipefail
-          case "$STRATEGY" in merge|rebase|squash-rebase|source-merge) ;; *) exit 2;; esac
           case "$WORKFLOW_POLICY" in reject|preserve) ;; *) exit 2;; esac
           test -n "$VALIDATION"
           if [[ -n "$GENERATOR$GENERATED_FILES$GENERATION_CONTAINER" ]]; then
             test -n "$GENERATOR"
             test -n "$GENERATED_FILES"
-            test "$STRATEGY" = merge
             [[ "$GENERATION_CONTAINER" =~ @sha256:[0-9a-f]{64}$ ]]
           fi
-          node .ci-upstream/.github/actions/upstream-tracking/observe.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$STRATEGY" "$RELEASE_PREFIX"
+          node .ci-upstream/.github/actions/upstream-tracking/observe.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$RELEASE_PREFIX"
 
   prepare:
     needs: observe
@@ -158,11 +152,10 @@ jobs:
           UPSTREAM_BRANCH: ${{ inputs.upstream-branch }}
           UPSTREAM: ${{ needs.observe.outputs.upstream }}
           BASE: ${{ needs.observe.outputs.base }}
-          STRATEGY: ${{ inputs.strategy }}
           WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
           GENERATED_FILES: ${{ inputs.generated-files }}
         run: |
-          node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$STRATEGY" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle" "$GENERATED_FILES"
+          node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle" "$GENERATED_FILES"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: steps.prepare.outputs.changed == 'true'
         with:
@@ -483,16 +476,16 @@ jobs:
           HEAD: ${{ needs.validate.outputs.head }}
           SOURCE: ${{ needs.prepare.outputs.head }}
           GENERATED_HEAD: ${{ needs.generate.outputs.head }}
+          UPSTREAM: ${{ needs.observe.outputs.upstream }}
           GENERATED_FILES: ${{ inputs.generated-files }}
-          STRATEGY: ${{ inputs.strategy }}
         run: |
           set -euo pipefail
           if [[ -n "$GENERATED_HEAD" ]]; then
             test "$HEAD" = "$GENERATED_HEAD"
-            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/generated.bundle" "$SOURCE" "$GENERATED_FILES"
+            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$UPSTREAM" "$RUNNER_TEMP/generated.bundle" "$SOURCE" "$GENERATED_FILES"
           else
             test "$HEAD" = "$SOURCE"
-            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/candidate.bundle"
+            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$UPSTREAM" "$RUNNER_TEMP/candidate.bundle"
           fi
 
   release:

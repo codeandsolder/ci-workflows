@@ -496,33 +496,43 @@ adopted; continuously moving upstreams continue to advance on mature
 snapshots. Force-pushed-away observations are discarded. The UTC-day attempt
 is recorded before fetching and is not reset on failure.
 
-Callers retain their explicit strategy (`merge`, `rebase`, `squash-rebase`, or
-`source-merge` for a separately reviewed source checkpoint) and reviewed
-validation script. The reviewed fork-specific validator is the source-quality
-and behavioral gate for automatic upstream integration. Do not impose the
-first-party strict Rust/Python or clone-regression policies on inherited upstream
-source. Ordinary first-party CI remains unchanged. Preparation creates an exact
-Git bundle; validation and
-publication use that same immutable candidate and distinct read/write jobs.
-Rust candidates also run the existing 72-hour external crates.io release gate
-and mandatory sccache setup. Workflow edits require explicit review; the
-Cargo patch stack can retain its reviewed workflow subtree and file a separate
-workflow-drift issue. Publication uses fast-forward or an explicit expected
-base lease; the PR mode waits for the declared normal CI checks, never merging
-when checks are missing or failing. PR mode accepts a narrowly scoped
-`upstream-pr-token` secret if the default workflow token cannot create PRs or
-trigger their CI.
+The tracker rebases the fork-only commits onto the mature upstream revision,
+retaining their authors and messages and dropping already-absorbed and empty
+patches. Upstream owns dependency upgrades; do not independently duplicate
+them in a lightweight fork. Existing merge-based histories are normalized
+against their existing upstream anchor before advancing; any historical
+merge-resolution edits are retained explicitly, with an exact-tree check.
+Legacy reviewed-source checkpoints are migrated into real upstream ancestry
+on the next successful rebase. A new source conflict blocks publication.
 
-For reproducible generated files, set the merge strategy, `generated-files`
+The reviewed fork-specific validator is the source-quality and behavioral
+gate for automatic integration. Do not impose first-party strict Rust/Python
+or clone-regression policies on inherited upstream source. Ordinary
+first-party CI remains unchanged. Preparation creates an exact Git bundle;
+validation and publication use the same immutable candidate in distinct
+read/write jobs. Rust candidates retain the 72-hour external crates.io release
+gate and mandatory sccache. Workflow edits require review; preserve mode
+keeps the exact reviewed workflow tree and reports upstream drift separately.
+
+Publication verifies that the mature upstream revision is an ancestor of the
+validated candidate. It atomically archives the previous fork HEAD at
+`refs/tags/fork-history/<old fork SHA>/<accepted upstream SHA>` and updates the target branch with an exact
+expected-base lease. Old Git dependency pins therefore remain reachable. The accepted upstream
+identity also prevents an upstream history rewrite from turning discarded
+upstream commits into downstream patches.
+A competing target update or inconsistent archive blocks both changes.
+Existing released version tags are never moved.
+
+For reproducible generated files, configure `generated-files`
 (whitespace-separated exact tracked regular file paths), `generation-script`
 (a script reviewed on the fork base), and `generation-container` (a digest-pinned
-image). Preparation preserves those files from the reviewed fork even when
-upstream changed the same generated artifacts. The read-only regeneration job
-runs the external crate age gate and mandatory sccache where applicable, rebuilds
-the files, and exports an immutable Git bundle containing at most one generated
-commit. Validation consumes that bundle in a fresh checkout, and publication
-independently checks the exact parent and file allowlist before updating the fork
-with its existing base lease. Any non-generated conflict still requires review.
+image). Historic generated-file edits are omitted from the rebased patches;
+the new upstream artifact, or a reviewed fork-only seed, is regenerated in a
+read-only job. That job retains external crate age checks and mandatory
+sccache where applicable, exporting at most one generated commit. Validation
+consumes that bundle in a fresh checkout, and publication independently
+checks its exact parent and file allowlist. Non-generated source conflicts
+still require review.
 
 For release-driven forks, set `upstream-release-prefix` (for example
 `crate-v`). The observer chooses the highest published stable semantic version
