@@ -2,7 +2,6 @@
 const contributionOnly = new Set([
   'codeandsolder/anubis',
   'codeandsolder/hayro',
-  'codeandsolder/oxc',
 ]);
 
 export function isContributionOnly(fullName) {
