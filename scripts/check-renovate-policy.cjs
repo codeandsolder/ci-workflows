@@ -113,3 +113,15 @@ assert(fleet.packageRules.indexOf(nightlyGroup)>fleet.packageRules.indexOf(toolc
 assert(fleet.packageRules.indexOf(nightlyGroup)>fleet.packageRules.indexOf(noAge));
 assert.equal(fleet.lockFileMaintenance.automerge,true);
 console.log('Shared fleet Renovate configuration and trust-root precedence invariants: PASS');
+
+const upstreamFork=JSON.parse(fs.readFileSync('renovate-upstream-fork.json','utf8'));
+assert.deepEqual(upstreamFork.extends,[firstParty]);
+assert.equal(upstreamFork.forkProcessing,'enabled');
+assert.deepEqual(upstreamFork.enabledManagers,['github-actions']);
+assert.equal(upstreamFork.lockFileMaintenance,undefined);
+assert.equal(upstreamFork.rebaseWhen,'auto');
+assert.equal(upstreamFork.prConcurrentLimit,1);
+const [exclusion]=upstreamFork.packageRules;
+assert.deepEqual(exclusion.matchPackageNames,firstRule.matchPackageNames.map(pattern=>'!'+pattern));
+assert.equal(exclusion.enabled,false);
+console.log('Upstream patch-fork Renovate scope: PASS');
