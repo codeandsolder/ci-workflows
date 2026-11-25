@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseSuites, collectArgs, reportArgs } from './suite.mjs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseSuites, collectArgs, reportArgs, checkoutChanges } from './suite.mjs';
 
 test('one canonical argument list drives the full instrumented execution', () => {
   const [suite] = parseSuites(JSON.stringify([{
@@ -71,4 +75,27 @@ test('continuous profiling is explicit, independent of aggregate reporting and a
   assert.ok(!args.includes('--aggregate-profile'));
   assert.ok(args.indexOf('--continuous') < args.indexOf('--'));
   assert.throws(() => parseSuites('[{"name":"bad","continuous":"true"}]'));
+});
+
+test('checkout integrity diagnostics find tracked and untracked changes from nested workspaces', () => {
+  const root = mkdtempSync(join(tmpdir(), 'rust-suite-checkout-'));
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+    git('init', '-q');
+    writeFileSync(join(root, '.gitignore'), '/target/\n');
+    writeFileSync(join(root, 'tracked.rs'), 'original\n');
+    mkdirSync(join(root, 'nested'));
+    mkdirSync(join(root, 'target'));
+    git('add', '.');
+    git('-c', 'user.name=CI', '-c', 'user.email=ci@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture');
+    const cwd = join(root, 'nested');
+    writeFileSync(join(root, 'target', 'ignored.profraw'), 'ignored');
+    assert.equal(checkoutChanges(cwd), '');
+    writeFileSync(join(root, 'tracked.rs'), 'changed\n');
+    writeFileSync(join(root, 'default.profraw'), 'leaked');
+    const changes = checkoutChanges(cwd);
+    assert.match(changes, / M tracked\.rs/);
+    assert.match(changes, /\?\? default\.profraw/);
+    assert.doesNotMatch(changes, /ignored/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

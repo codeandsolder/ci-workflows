@@ -10,7 +10,7 @@ export const nextestVersion = "0.9.152";
 
 export const collector = {
   repository: 'https://github.com/codeandsolder/cargo-affected.git',
-  revision: '9a92de8f286a10fe7e5cd7cfc60453a8e0a1cec8',
+  revision: 'f2a3b14b91ac3b68d50b08fe3f9307577dd2f634',
 };
 
 const reserved = new Set([
@@ -253,6 +253,23 @@ function summaryHeading(name) {
   else process.stdout.write(line);
 }
 
+// Git's porcelain output is rooted at the repository even for nested
+// workspaces, and excludes ignored build outputs. Keep the exact paths in
+// diagnostics; do not clean a checkout or pass --allow-dirty to the collector.
+export function checkoutChanges(cwd) {
+  const result = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+    cwd, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error('git status failed: ' + result.stderr.trim());
+  return result.stdout.trimEnd();
+}
+
+function checkCheckout(cwd, phase) {
+  const changes = checkoutChanges(cwd);
+  if (changes) throw new Error(phase + ' left a dirty checkout:\n' + changes);
+}
+
 function execute(plan) {
   let failed = false;
   for (const { suite, cwd, stateDir, impactDir, coverageDir, baseline } of plan.entries) {
@@ -265,12 +282,18 @@ function execute(plan) {
         try { copyFileSync(baseline, join(stateDir, 'coverage.db')); }
         catch (error) { logWarning(suite.name + ': baseline restore: ' + error.message); }
       }
+      checkCheckout(cwd, suite.name + ' preflight');
       runFull(suite, cwd, impactDir, stateDir);
       full = true;
+      checkCheckout(cwd, suite.name + ' collection');
       try { copyFileSync(join(stateDir, 'coverage.db'), baseline); }
       catch (error) { logWarning(suite.name + ': baseline save: ' + error.message); }
     } catch (error) {
       process.stderr.write(suite.name + ': ' + error.message + '\n');
+      try {
+        const changes = checkoutChanges(cwd);
+        if (changes) process.stderr.write('Checkout status after ' + suite.name + ':\n' + changes + '\n');
+      } catch (statusError) { logWarning(statusError.message); }
       failed = true;
     }
     try {
@@ -304,6 +327,11 @@ function execute(plan) {
         process.stderr.write(suite.name + ' doctests: ' + error.message + '\n');
         failed = true;
       }
+    }
+    try { checkCheckout(cwd, suite.name + ' reports/doctests'); }
+    catch (error) {
+      process.stderr.write(error.message + '\n');
+      failed = true;
     }
   }
   if (failed) throw new Error('One or more authoritative test scopes failed');
