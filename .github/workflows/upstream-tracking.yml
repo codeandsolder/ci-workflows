@@ -200,7 +200,7 @@ jobs:
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git show "HEAD:$GENERATOR" > "$RUNNER_TEMP/generate-upstream.sh"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: upstream-candidate
           path: ${{ runner.temp }}
@@ -221,35 +221,46 @@ jobs:
           sparse-checkout: |
             .github/actions
             policy-wasm
+            rust-toolchain.toml
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "24"
+      - name: Detect tracked Rust source in the exact prepared candidate
+        id: rust-source
+        run: node .ci-upstream/.github/actions/upstream-tracking/detect-cargo.mjs "$GITHUB_WORKSPACE" "$GITHUB_OUTPUT"
       - name: Enforce external crate release age before regeneration
         id: quarantine
-        if: inputs.rust-toolchain != ''
+        if: steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != ''
         uses: ./.ci-upstream/.github/actions/cargo-release-quarantine
         with:
           base-ref: ${{ needs.observe.outputs.base }}
           hours: "72"
           fail-on-blocked: "false"
+      - name: Resolve reviewed provider compiler when Rust input is omitted
+        id: provider-compiler
+        if: steps.rust-source.outputs.rust == 'true' && inputs.rust-toolchain == '' && steps.quarantine.outputs.eligible == 'true'
+        uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
+        with:
+          repository-path: .ci-upstream
+          validation-tier: routine
       - name: Resolve quarantined repository nightly
         id: repository-compiler
         if: inputs.rust-toolchain == 'repository' && steps.quarantine.outputs.eligible == 'true'
         uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
         with:
           validation-tier: routine
-      - uses: dtolnay/rust-toolchain@stable
-        if: inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        if: (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
-          toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
+          toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
           components: rustfmt, clippy
-      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
-        if: inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
+        if: (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
-          rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
+          rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
       - name: Regenerate and commit only the declared artifacts
         id: commit
-        if: inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true'
+        if: (steps.rust-source.outputs.rust != 'true' && inputs.rust-toolchain == '') || steps.quarantine.outputs.eligible == 'true'
         env:
           SOURCE: ${{ needs.prepare.outputs.head }}
           BASE: ${{ needs.observe.outputs.base }}
@@ -268,7 +279,7 @@ jobs:
           if-no-files-found: error
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
 
   validate:
     needs: [observe, prepare, generate]
@@ -280,6 +291,7 @@ jobs:
       issues: read
     outputs:
       eligible: ${{ steps.quarantine.outputs.eligible }}
+      rust: ${{ steps.rust-source.outputs.rust }}
       checked: ${{ steps.check.outputs.checked }}
       release_needed: ${{ steps.check.outputs.release_needed }}
       head: ${{ steps.validated.outputs.head }}
@@ -325,7 +337,7 @@ jobs:
         run: |
           set -euo pipefail
           git show "HEAD:$VALIDATOR" > "$RUNNER_TEMP/validate-upstream.sh"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         if: needs.prepare.outputs.changed == 'true'
         with:
           name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
@@ -339,44 +351,61 @@ jobs:
           git fetch "$RUNNER_TEMP/$BUNDLE_NAME" HEAD
           test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED"
           git checkout --detach "$EXPECTED"
+      # The provider checkout is excluded by the canonical clone scanner.
+      # It is required even by non-Rust upstream trackers.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
+        if: steps.check.outputs.checked == 'true'
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
-          path: .ci-upstream
+          path: .ci-workflows
           persist-credentials: false
           sparse-checkout: |
             .github/actions
+            .github/scripts/run-clone-regression.sh
+            .github/workflows/rust-skills2-strict.yml
             policy-wasm
+            rust-toolchain.toml
+          sparse-checkout-cone-mode: false
+      - name: Detect tracked Rust source in the exact generated candidate
+        id: rust-source
+        if: steps.check.outputs.checked == 'true'
+        run: node .ci-workflows/.github/actions/upstream-tracking/detect-cargo.mjs "$GITHUB_WORKSPACE" "$GITHUB_OUTPUT"
       - name: Enforce external crate release age as well
         id: quarantine
-        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != ''
-        uses: ./.ci-upstream/.github/actions/cargo-release-quarantine
+        if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '')
+        uses: ./.ci-workflows/.github/actions/cargo-release-quarantine
         with:
           base-ref: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
           hours: "72"
           fail-on-blocked: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@6a52aad76a94a5fbc50d567bb5be24419801c1fb # nightly
         if: steps.check.outputs.checked == 'true' && inputs.nightly-format && steps.quarantine.outputs.eligible == 'true'
         with:
           components: rustfmt
+      - name: Resolve reviewed provider compiler when Rust input is omitted
+        id: provider-compiler
+        if: steps.check.outputs.checked == 'true' && steps.rust-source.outputs.rust == 'true' && inputs.rust-toolchain == '' && steps.quarantine.outputs.eligible == 'true'
+        uses: ./.ci-workflows/.github/actions/resolve-rust-toolchain
+        with:
+          repository-path: .ci-workflows
+          validation-tier: routine
       - name: Resolve quarantined repository nightly
         id: repository-compiler
         if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain == 'repository' && steps.quarantine.outputs.eligible == 'true'
-        uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
+        uses: ./.ci-workflows/.github/actions/resolve-rust-toolchain
         with:
           validation-tier: routine
-      - uses: dtolnay/rust-toolchain@stable
-        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
-          toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
+          toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
           components: rustfmt, clippy
-      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
-        if: steps.check.outputs.checked == 'true' && inputs.rust-toolchain != '' && steps.quarantine.outputs.eligible == 'true'
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
+        if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
-          rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || inputs.rust-toolchain }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+          rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         if: steps.check.outputs.checked == 'true' && inputs.go
         with:
           go-version: ${{ inputs.go-version-file == '' && 'stable' || '' }}
@@ -395,7 +424,7 @@ jobs:
           cache: false
           stripdown: true
       - name: Run reviewed fork validation
-        if: steps.check.outputs.checked == 'true' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
+        if: steps.check.outputs.checked == 'true' && ((steps.rust-source.outputs.rust != 'true' && inputs.rust-toolchain == '') || steps.quarantine.outputs.eligible == 'true')
         env:
           UPSTREAM_SHA: ${{ needs.observe.outputs.upstream }}
           FORK_BASE: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
@@ -405,9 +434,78 @@ jobs:
           if [[ -n "$RELEASE_TAG" ]]; then args+=("$RELEASE_TAG"); fi
           bash "$RUNNER_TEMP/validate-upstream.sh" "${args[@]}"
           git diff --exit-code HEAD --
+      # A fork's own validator may pass while new source duplicates existing code.
+      # Check the detached exact candidate against the observed target base.
+      - name: Enforce reviewed clone-regression gate
+        if: steps.check.outputs.checked == 'true' && ((steps.rust-source.outputs.rust != 'true' && inputs.rust-toolchain == '') || steps.quarantine.outputs.eligible == 'true')
+        uses: ./.ci-workflows/.github/actions/clone-regression
+        with:
+          base-sha: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
+          pr-head-sha: ""
+
+      # Read strict-gate options from the reviewed target-branch tree, never
+      # the upstream candidate. Saphyr parsing and plan generation run in
+      # the same signed/pinned shared policy WASM used by ordinary PR gates.
+      - name: Resolve reviewed strict-gate plan
+        id: reviewed-strict
+        if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
+        shell: bash
+        env:
+          BASE: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/reviewed-workflows"
+          git archive "$BASE" .github/workflows | tar -x -C "$RUNNER_TEMP/reviewed-workflows"
+          # Canonical defaults come from the pinned provider, never candidate.
+          cp .ci-workflows/.github/workflows/rust-skills2-strict.yml "$RUNNER_TEMP/reviewed-workflows/.ci-provider-strict.yml"
+          cp .ci-workflows/rust-toolchain.toml "$RUNNER_TEMP/reviewed-workflows/.ci-provider-toolchain.toml"
+          node .ci-workflows/policy-wasm/run.mjs .ci-workflows/policy-wasm/module.json strict-plan "$RUNNER_TEMP/reviewed-workflows" > "$RUNNER_TEMP/reviewed-strict-plan.json"
+          ref=$(jq -er '.refSha' "$RUNNER_TEMP/reviewed-strict-plan.json")
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Check out reviewed strict Rust implementation
+        if: steps.reviewed-strict.outputs.ref != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: codeandsolder/rust-skills2
+          ref: ${{ steps.reviewed-strict.outputs.ref }}
+          path: .rust-skills2-gate
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions
+            scripts
+            policy-wasm
+            rust-toolchain.toml
+
+      - name: Enforce reviewed workflow cancellation policy
+        if: steps.reviewed-strict.outputs.ref != ''
+        uses: ./.ci-workflows/.github/actions/workflow-concurrency-policy
+
+      - name: Enforce canonical Rust sccache policy
+        if: steps.reviewed-strict.outputs.ref != ''
+        uses: ./.ci-workflows/.github/actions/rust-ci-sccache-policy
+        with:
+          strict-ref: ${{ steps.reviewed-strict.outputs.ref }}
+
+      - name: Install uv for reviewed strict Python checks
+        if: steps.reviewed-strict.outputs.ref != ''
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: latest-known
+          enable-cache: false
+
+      - name: Enforce reviewed strict Rust and Python gates
+        if: steps.reviewed-strict.outputs.ref != ''
+        shell: bash
+        env:
+          STRICT_COMPILER: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
+        run: |
+          set -euo pipefail
+          node .ci-workflows/.github/actions/upstream-tracking/run-strict.mjs "$RUNNER_TEMP/reviewed-strict-plan.json" "$STRICT_COMPILER" "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/.rust-skills2-gate"
+
       - name: Record exactly validated revision
         id: validated
-        if: steps.check.outputs.checked == 'true' && (inputs.rust-toolchain == '' || steps.quarantine.outputs.eligible == 'true')
+        if: steps.check.outputs.checked == 'true' && ((steps.rust-source.outputs.rust != 'true' && inputs.rust-toolchain == '') || steps.quarantine.outputs.eligible == 'true')
         run: echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Upload validated Cargo binary
         if: inputs.cargo-artifact && steps.check.outputs.checked == 'true' && steps.quarantine.outputs.eligible == 'true'
@@ -421,11 +519,11 @@ jobs:
           if-no-files-found: error
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@7bbede943ffd14ba2a534cf1296a20fd11c177ae # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
 
   publish:
     needs: [observe, prepare, generate, validate]
-    if: ${{ !cancelled() && needs.prepare.outputs.changed == 'true' && needs.validate.result == 'success' && needs.validate.outputs.head != '' && (inputs.rust-toolchain == '' || needs.validate.outputs.eligible == 'true') }}
+    if: ${{ !cancelled() && needs.prepare.outputs.changed == 'true' && needs.validate.result == 'success' && needs.validate.outputs.head != '' && ((inputs.rust-toolchain == '' && needs.validate.outputs.rust != 'true') || needs.validate.outputs.eligible == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -443,7 +541,7 @@ jobs:
           path: .ci-upstream
           persist-credentials: false
           sparse-checkout: .github/actions/upstream-tracking
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
           path: ${{ runner.temp }}

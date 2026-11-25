@@ -1,5 +1,65 @@
 # ci-workflows
 
+## Language-specific quality modules
+
+The shared CI keeps language-neutral orchestration separate from language
+quality checks. [Tracked-source detection](languages/detect.mjs) reads the
+caller's Git index (not the injected CI checkout) and reports which languages
+actually occur. Modules live under `languages/<language>/`; Rust's existing
+`rust-sccache.yml`, `rust-coverage.yml` and strict Rust workflows remain
+independent and retain their established consumer interfaces.
+
+### Java: automatic PMD gate
+
+The [reusable Java quality workflow](.github/workflows/java-quality.yml)
+checks for **any Git-tracked `.java` source anywhere in the caller repo**,
+including scripts and mixed-language repositories. It only installs Java,
+Gradle and runs [PMD 7.29.0](languages/java/quality.xml) when such source
+exists. Otherwise it reports an explicit successful no-Java skip. It requires
+no Maven/Gradle setup, Java project layout or dependencies in the caller.
+
+~~~yaml
+jobs:
+  java-quality:
+    uses: codeandsolder/ci-workflows/.github/workflows/java-quality.yml@<full-sha> # main
+~~~
+
+This is a **strict, blocking, zero-debt** static-analysis gate with **228
+rules** from PMD's Best Practices, Error Prone, Performance and Security
+categories, plus selected concurrency, design, code-style and documentation
+rules. These check resource lifetime, control-flow mistakes, API correctness,
+common unsafe patterns, dead code, questionable string/collection operations,
+and unnecessary Java constructs. The full-category rule groups exclude a
+handful of patterns that are not universally bugs (such as literal protocol
+discriminants, null sentinels, allocations in loops, or logger-specific
+guarding). The rationale and exact exclusions are in
+[the central ruleset](languages/java/quality.xml). All findings are fatal;
+there is no per-repository baseline.
+
+PMD diagnostics appear in the job log; failing jobs also upload the complete
+HTML/XML PMD reports for seven days. The check uses the same reusable workflow
+and job name as before, and only prepares Java tooling when Git-tracked Java
+exists. Project-specific compilation with `javac -Werror`, tests and
+integration/build prerequisites still run in the caller's native workflow:
+arbitrary Java cannot safely be compiled without its real dependencies and
+toolchain. The Gradle-based Java module is used only as an independent PMD
+runner, not to build the caller's Java project.
+
+Public callers use GitHub-hosted Ubuntu; private callers use the registered
+`local-ci` Linux x64 pool, consistently with the existing Rust workflow.
+The shared source detector has independent Node regression tests, and
+[`java-quality-smoke.yml`](.github/workflows/java-quality-smoke.yml)
+executes the actual reusable analyzer on the provider's clean Java fixture.
+
+For additional languages, add an isolated quality module and corresponding
+reusable workflow alongside Java; do not insert language-specific checks into
+the Rust compiler/cache workflow. Keep required check identities stable even
+on a no-source skip.
+
+## Conditional shell, JavaScript, WGSL and Actions quality
+
+The source-only reusable workflow (.github/workflows/source-quality.yml) now discovers tracked source and conditionally runs ShellCheck, shfmt syntax checking, Oxlint correctness and headless Naga WGSL validation, all in one Linux runner. Rust-first repositories already using strict Ruff/ty must not duplicate that check; Python-first repositories can opt in to the same pinned action. Shell formatting is opt-in until consumer formatting debt is resolved. The existing reusable workflow-concurrency policy also runs pinned actionlint in its own existing runner. The language modules README has the consumer invocation contract, source-composition rules and version pins.
+
 ## Two-tier Rust CI and stale-run cancellation
 
 The standard lane uses `rust-sccache.yml` with the repository's fleet-approved dated nightly and Linux (`ubuntu-24.04` for public repos, an existing `local-ci` host-managed Linux x64 runner for private repos) on every PR and default-branch push.
@@ -7,6 +67,69 @@ The standard lane uses `rust-sccache.yml` with the repository's fleet-approved d
 The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners; other architectures get no CPU override. Explicit `rustflags` are passed through unchanged. Cross-compilation from an X64 runner to another architecture must explicitly set `rustflags: ""` or its own target-appropriate flags. sccache keys use the resolved effective flags, not the `auto` placeholder.
 
 Additional MSRV, older/newer toolchain, alternative OS/architecture, sanitizer and compatibility lanes are optional **release-tier** jobs. Call the same reusable workflow with `validation-tier: release`. These jobs are skipped unless the caller is running on a release tag (`refs/tags/*`). For example, the caller may define separate jobs invoking this workflow with distinct `rust-toolchain`, `runner` and `rust-targets` inputs. A release tag must be included in the caller's `on.push.tags` trigger (and not excluded by other conditions); `workflow_dispatch` is not a release trigger.
+
+## Informational Rust dependency quality
+
+The shared [`.github/actions/rust-dependency-quality`](.github/actions/rust-dependency-quality/action.yml)
+composite scans a selected Cargo workspace **without compiling it**. The pinned
+`cargo-deny@0.20.2` checks RustSec advisories (including relevant unsound and
+unmaintained records) plus yanked dependencies, and `cargo-machete@0.10.1`
+reports potentially unused direct dependencies. It uses Cargo metadata for
+renamed dependencies but never calls `cargo check` or `cargo test`.
+
+Results are advisory while the fleet's existing debt and scanner false
+positives are reviewed: neither scanner's findings are a merge gate. The
+GitHub job summary distinguishes findings from unavailable/incomplete scans;
+raw diagnostics and structured results are available in a 14-day artifact.
+The existing 72-hour external registry quarantine stays mandatory and
+independent.
+
+Call the composite **after** an existing successful strict Rust gate in the
+same job, using the same checkout and toolchain. No extra runner or source
+build is necessary. Use `working-directory` for nested workspaces, and avoid
+running the scanner again for each feature/target configuration. The provider's
+`rust-dependency-quality-smoke.yml` validates both tools against an intentionally
+unused path dependency. To suppress known `cargo-machete` false positives,
+use reasoned `[package.metadata.cargo-machete]` or
+`[workspace.metadata.cargo-machete]` `ignored = ["dep"]` entries in the
+caller manifest; do not suppress a vulnerability in this shared config.
+
+## Informational Rust test coverage
+
+Use [`.github/workflows/rust-coverage.yml`](.github/workflows/rust-coverage.yml)
+as a **separate, advisory** job. It runs `cargo-llvm-cov` with workspace tests,
+publishes available line/function/region/branch totals to the GitHub Actions step summary,
+and uploads a 14-day artifact containing browsable `html/index.html`, LCOV,
+and LLVM JSON coverage data. There is **no minimum coverage percentage**, and
+the coverage job is best-effort: incomplete coverage does not prevent a PR merge
+or replace the normal strict Rust tests.
+
+~~~yaml
+jobs:
+  coverage:
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-coverage.yml@<full-sha> # main
+    with:
+      working-directory: .
+      cargo-args: --workspace --locked
+~~~
+
+The Rust toolchain is resolved from the caller's pinned manifest, like the
+normal shared Rust workflow; `rust-toolchain` can override that pin. Private
+repositories run on the managed `local-ci` Linux runner pool and public
+repositories on `ubuntu-24.04` by default. The coverage workflow reuses the
+normal compiler cache setup/finalization (including Garage on private runners)
+and selects `--no-rustc-wrapper` to preserve the already configured sccache
+wrapper. Its instrumentation uses `llvm-tools-preview` from the matching Rust
+toolchain and pinned `cargo-llvm-cov@0.9.2`. The normal code-quality and test
+jobs are unchanged and remain mandatory.
+
+`cargo-args` is a space-separated list of Cargo test-selection flags (for
+example `--workspace --locked --all-features`); shell quoting within that
+string is not supported. Set `working-directory` for nested workspaces. The
+report does not instrument doctests by default. Prefer one dedicated coverage
+job per workspace rather than adding coverage to every build/Clippy matrix.
+The provider's `rust-coverage-smoke.yml` exercises the reusable workflow
+against `smoke-cache` on relevant changes.
 
 ## Enforced PR workflow supersession policy
 
@@ -21,8 +144,11 @@ non-Rust tasks, and rejects missing/disabled cancellation, PR-key collisions,
 invalid PR-target group identity and unsafe mixed-event groups. Pure
 PR-close cleanup, workflow_call-only, release-only and non-PR workflows
 do not require PR supersession. Test fixtures and the provider's own hosted
-check are in .github/scripts/test-workflow-concurrency.py and
-.github/workflows/workflow-concurrency-policy.yml.
+check are the frozen, independently derived 56-case WASI fixtures in
+[policy-wasm/concurrency.test.mjs](policy-wasm/concurrency.test.mjs) and
+[policy-wasm/fixtures/concurrency.json](policy-wasm/fixtures/concurrency.json),
+with a standalone gate at .github/workflows/provider-checks.yml.
+No Python runtime is required for workflow cancellation tests.
 
 A workflow whose every invocation recomputes a *global snapshot* (for
 example, all open pull-request conflict labels) deliberately uses one
@@ -53,10 +179,9 @@ for public callers. Static-only private repositories without registered
 to lint workflow YAML. This is enforcement of native GitHub Actions
 cancellation, not a custom polling daemon.
 
-The concurrency checker uses the provider's committed `.github/uv.lock`,
-including when its reusable workflow checks out only the required action
-and lock files. Consumers do not duplicate Python package versions for this
-check.
+The concurrency checker executes the provider's digest-verified Rust/WASI
+module with a thin Node host adapter, including sparse consumer checkouts.
+It requires neither a Python runtime nor a Python package lockfile.
 
 Example validated workflow group (this declaration is necessarily local,
 because GitHub requires concurrency at the *caller* workflow level):
@@ -105,6 +230,16 @@ The fleet allows at most one newly created Renovate PR and one automated Renovat
 Central changes do **not** override project-specific `packageRules` applied later. Remove old local `automerge: false` GitHub Actions and first-party trust-root copies when migrating. Changes to the shared CI's callable workflow inputs may break consumers; those PR checks must be repaired, not bypassed. Do not manually merge ordinary green PRs seconds after they appear: Renovate merges on later runs and insists that the head be up-to-date.
 
 These rules standardize execution by repository visibility, not by a host's name or incompatible repository-specific runner labels. They do not force a common compiler/target choice or release artifact across project boundaries. The reusable `rust-sccache.yml` and shared setup/finalize actions implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
+
+
+Routine Linux Rust jobs now run advisory test-impact checks automatically when the
+workspace has a `Cargo.toml`. The original `command` still runs unchanged;
+main-branch pushes collect per-test coverage, and PRs run full Nextest plus an
+impact-selection comparison. Failed analysis cannot mask or replace the original
+validation gate. Set `test-impact-mode: none` when the job cannot support
+Nextest; set `test-impact-working-directory` for nested workspaces. Dedicated
+`collect` and `shadow` modes are still available for jobs that intentionally
+replace the normal command. The comparison is not yet a test-skipping gate.
 
 The Cargo release-age quarantine's `runner` input defaults to `auto`:
 public repositories use `ubuntu-24.04`, private repositories use the same
@@ -159,6 +294,14 @@ A runner registration remains **repository-scoped** in our current deployment. T
 Private builds use the existing managed sccache backend (Garage) and never create their own sccache daemon or an Actions-backed compiler-cache snapshot. When `/usr/local/libexec/sccache-client` exists, the workflow calls that canonical host wrapper **without overriding its managed UDS/TCP selection**. It is already configured for the correct daemon on Acer and Asus. For containerized runners with a mounted `/run/host-sccache/sccache.sock` and matching `/usr/local/bin/sccache` client, the workflow uses the mounted socket instead. The client must be compatible with the host daemon; otherwise the job fails rather than silently falling back or spawning a second cache. Both use `SCCACHE_START_SERVER=0` and `SCCACHE_NO_AUTO_START_SERVER=1`, and the finalizer requires backend error counters not to increase.
 
 The caller still controls toolchain, components, targets, `RUSTFLAGS`, timeout, command, and validation tier. Public callers may choose the GitHub-hosted runner label and Actions cache size. Private executor selection and compiler-cache backend are centralized. Existing direct-workflow jobs that hardcode `asus` must migrate to these shared workflows or update their own `runs-on` labels; a shared workflow cannot rewrite a separate caller's direct jobs.
+
+### Independent reference tools
+
+A caller that needs Python-based reference tooling may set `uv-version` to an
+exact version (for example, `"0.13.9"`). The workflow uses the shared pinned
+setup-uv action with package caching disabled; the caller owns interpreter and
+package provisioning in its explicit asset tree. No venv/pip bootstrap is
+needed. Leaving the input empty skips uv installation entirely.
 
 ### Test suites that manage sccache daemons
 
@@ -313,6 +456,13 @@ distinguishes missing registrations, offline pools, busy pools, available capaci
 non-self-hosted jobs and unresolved selectors. API failures are reported as errors,
 not empty inventories. Explicitly pass repository names to limit the audit.
 
+The generic admission decisions run in the single shared Rust/WASI policy
+module, using a batched native GitHub transport bridge. Hosted-runner labels
+are recognized by the guest, so the audit only accesses private runner
+registrations for custom selectors. See
+[portable runner policy](policy-wasm/RUNNER_ADMISSION.md) for the JSON contract,
+semantics and parity tests.
+
 Contribution-only forks (Anubis, Hayro, OXC) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.
 
 ## Upstream-tracking forks
@@ -404,3 +554,7 @@ strict lint and any relevant package or cross-target checks must run on
 compiler-pin-only PRs. No special scheduler, credentials or cohort registry
 are required. Stable or independently pinned release compatibility jobs stay
 separate and review-only.
+
+### Provider CI scheduling
+
+Provider policy tests share the portable-policy workflow and a single Linux build. Its WASI fixture suite runs against both the freshly built and checked-in bundle; Windows and macOS test the checked-in bundle. The same Linux job also exercises real quarantine transport and composite-action behavior. Provider workflow validation and toolchain/cache policy checks run together in provider-checks. Clone, language and Rust integration canaries use targeted inputs rather than triggering on unrelated policy fixtures or README edits. Reusable consumer workflows are unchanged.

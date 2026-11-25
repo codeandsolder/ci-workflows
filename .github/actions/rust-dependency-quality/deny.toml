@@ -1,0 +1,6 @@
+# Fleet default for advisory-only vulnerability reporting. Additional bans,
+# license policy, and source allowlists require explicit fleet decisions.
+[advisories]
+yanked = "warn"
+unmaintained = "workspace"
+unsound = "workspace"

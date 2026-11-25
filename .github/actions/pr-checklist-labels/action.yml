@@ -1,0 +1,32 @@
+name: Verify PR checklist-to-label mapping
+description: Check exact checklist/label parity using the shared Rust/WASI CI policy
+inputs:
+  template:
+    description: Checkout-relative Markdown PR template
+    required: false
+    default: .github/PULL_REQUEST_TEMPLATE.md
+  workflow:
+    description: Checkout-relative GitHub Actions labeler workflow
+    required: true
+  section:
+    description: PR template checklist section heading
+    required: true
+  mapping-variable:
+    description: JSON label-map constant declared in the workflow script
+    required: false
+    default: TYPE_LABELS
+runs:
+  using: composite
+  steps:
+    - name: Verify PR checklist mapping
+      shell: bash
+      env:
+        TEMPLATE: ${{ inputs.template }}
+        WORKFLOW: ${{ inputs.workflow }}
+        SECTION: ${{ inputs.section }}
+        MAPPING_VARIABLE: ${{ inputs.mapping-variable }}
+      run: |
+        node "$GITHUB_ACTION_PATH/../../../policy-wasm/run.mjs" \
+          "$GITHUB_ACTION_PATH/../../../policy-wasm/module.json" \
+          checklist-labels "$GITHUB_WORKSPACE" \
+          "$TEMPLATE" "$WORKFLOW" "$SECTION" "$MAPPING_VARIABLE"

@@ -1,0 +1,80 @@
+name: Shared source quality modules
+
+on:
+  workflow_call:
+    inputs:
+      shell:
+        type: boolean
+        default: true
+      shell-format:
+        description: Also enforce shfmt formatting (syntax validation is always on for shell)
+        type: boolean
+        default: false
+      javascript:
+        type: boolean
+        default: true
+      wgsl:
+        type: boolean
+        default: true
+      python-quality:
+        description: Run strict Ruff and ty in Python-first projects; Rust strict CI already runs these
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  source-quality:
+    name: Auto-detected source quality
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout caller source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout shared language modules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-language-quality
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/detect-languages
+            .github/actions/shell-quality
+            .github/actions/javascript-quality
+            .github/actions/wgsl-quality
+            languages/detect.mjs
+            languages/run.mjs
+            languages/tools
+            languages/wgsl
+          sparse-checkout-cone-mode: false
+      - name: Detect tracked source languages
+        id: detect
+        uses: ./.shared-language-quality/.github/actions/detect-languages
+        with:
+          source-root: ${{ github.workspace }}
+          manifest: ${{ runner.temp }}/shared-quality-languages.json
+      - name: Check tracked shell sources
+        if: inputs.shell && steps.detect.outputs.has-shell == 'true'
+        uses: ./.shared-language-quality/.github/actions/shell-quality
+        with:
+          manifest: ${{ runner.temp }}/shared-quality-languages.json
+          shell-format: ${{ inputs.shell-format }}
+      - name: Check tracked JavaScript and TypeScript
+        if: inputs.javascript && steps.detect.outputs.has-javascript == 'true'
+        uses: ./.shared-language-quality/.github/actions/javascript-quality
+        with:
+          manifest: ${{ runner.temp }}/shared-quality-languages.json
+      - name: Check tracked WGSL with Naga
+        if: inputs.wgsl && steps.detect.outputs.has-wgsl == 'true'
+        uses: ./.shared-language-quality/.github/actions/wgsl-quality
+        with:
+          manifest: ${{ runner.temp }}/shared-quality-languages.json
+      - name: Strict Ruff and ty for standalone Python projects
+        if: inputs.python-quality && steps.detect.outputs.has-python == 'true'
+        uses: codeandsolder/rust-skills2/.github/actions/python-strict@aca7fd6b3cee50e3c1ccdd46ddd0bc0ec431ccff # main
+        with:
+          ban-python-outside-ci: "false"

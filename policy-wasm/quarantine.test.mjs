@@ -135,3 +135,74 @@ test('publication timestamps, lookup caching, and missing metadata fail closed',
     throw new Error('unchanged packages must not reach network');
   }, now), {issues: [], count: 0});
 });
+
+
+test('fully deleted workspace and repositories without lockfiles require no quarantine', async (t) => {
+  const f = fixture(t);
+  f.write('package/Cargo.toml', '[workspace]\n');
+  f.write('package/Cargo.lock', lock(['serde', '1.0.0']));
+  const base = f.baseline();
+  f.remove('package/Cargo.toml');
+  f.remove('package/Cargo.lock');
+  f.git('add', '-A');
+  assert.deepEqual(f.diff(base), []);
+
+  const empty = fixture(t);
+  empty.write('README.md', 'No Cargo workspaces.');
+  const initial = empty.baseline();
+  assert.deepEqual(empty.diff(initial), []);
+  const result = await quarantine(module, empty.root, initial, 'auto', 72, async () => {
+    throw Error('unchanged empty repository must not query crates.io');
+  });
+  assert.deepEqual(result, {issues: [], count: 0});
+});
+
+test('untracked lockfile cannot silently replace a tracked workspace member lock', (t) => {
+  const f = fixture(t);
+  f.write('package/Cargo.toml',
+    "[package]\nname='example'\nversion='0.1.0'\nedition='2024'\n");
+  f.write('package/src/lib.rs', '');
+  f.write('package/Cargo.lock', lock(['serde', '1.0.0']));
+  const base = f.baseline();
+  f.remove('package/Cargo.lock');
+  f.write('Cargo.toml', "[workspace]\nmembers=['package']\nresolver='3'\n");
+  f.git('add', '-A');
+  f.write('Cargo.lock', lock(['serde', '1.0.0']));
+  assert.throws(() => f.diff(base), /still exists/);
+  f.remove('Cargo.lock');
+  f.write('other/Cargo.lock', lock(['serde', '1.0.0']));
+  f.git('add', '-A');
+  try {
+    symlinkSync('other/Cargo.lock', path.join(f.root, 'Cargo.lock'));
+    assert.throws(() => f.diff(base), /still exists/);
+  } catch (error) {
+    if (error.code !== 'EPERM' && error.code !== 'EACCES') throw error;
+    t.diagnostic('host cannot create symlinks; untracked replacement already rejected');
+  }
+});
+
+test('first-party Git-only revisions never require crates.io, new external versions do', async (t) => {
+  const f = fixture(t);
+  const own = revision => 'git+https://github.com/codeandsolder/own#' + revision;
+  f.write('Cargo.lock', lock(['own', '0.1.0', own('a'.repeat(40))], ['serde', '1.0.0']));
+  const base = f.baseline();
+  f.write('Cargo.lock', lock(['own', '0.1.0', own('b'.repeat(40))], ['serde', '1.0.0']));
+  assert.deepEqual(await quarantine(module, f.root, base, 'auto', 72, async () => {
+    throw Error('first-party Git-only update incorrectly performed a crates.io lookup');
+  }), {issues: [], count: 0});
+
+  f.write('Cargo.lock', lock(['own', '0.1.0', own('b'.repeat(40))], ['serde', '1.0.1']));
+  const now = Date.parse('2026-11-23T00:00:00Z');
+  let requests = 0;
+  const result = await quarantine(module, f.root, base, 'auto', 72, async url => {
+    requests++;
+    assert.equal(url, 'https://crates.io/api/v1/crates/serde');
+    return {ok: true, json: async () => ({versions: [
+      {num:'1.0.1', created_at:'2026-11-22T00:00:00Z'},
+    ]})};
+  }, now);
+  assert.equal(requests, 1);
+  assert.equal(result.count, 1);
+  assert.equal(result.issues.length, 1);
+  assert.match(result.issues[0], /serde 1.0.1.*younger than 72h/);
+});

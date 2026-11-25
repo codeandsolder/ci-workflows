@@ -5,35 +5,18 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { isContributionOnly, isMaintainedRepo } from './fleet-scope.mjs';
+import { decide } from '../policy-wasm/bridge.mjs';
 
 const exec = promisify(execFile);
 const active = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending']);
-const norm = values => new Set(values.map(value => value.toLowerCase()));
-// Personal repositories have ordinary GitHub-hosted and repo-registered
-// runners, not organization-specific larger-runner groups. Custom labels
-// need a matching registration even without an explicit self-hosted label.
-const standardHosted = labels => labels.length === 1 &&
-  /^(?:ubuntu-(?:latest|slim|[0-9]+[.][0-9]+)(?:-arm)?|windows-(?:latest|[0-9]+)(?:-arm)?|macos-(?:latest|[0-9]+)(?:-large|-xlarge|-intel)?|ubuntu-latest-m|macos-latest-xlarge)$/i.test(labels[0]);
-
-export function classifyRunnerAvailability(labels, runners) {
-  if (!Array.isArray(labels) || !labels.length ||
-      labels.some(label => typeof label !== 'string' || !label.trim())) {
-    throw new Error('Expected nonempty resolved labels');
+// GitHub transport stays native. Policy runs once for the entire job batch,
+// including hosted runner recognition and real registration/idle decisions.
+export function classifyRunnerAvailability(requests, runners, mode = 'require', module) {
+  const result = decide('runner-admission', {mode, requests, runners}, module);
+  if (!Array.isArray(result) || result.length !== requests.length) {
+    throw new Error('invalid shared WASM runner-admission response');
   }
-  const required = norm(labels);
-  const matches = runners.filter(runner => {
-    const actual = norm(runner.labels.map(label => label.name));
-    return [...required].every(label => actual.has(label));
-  });
-  const online = matches.filter(runner => runner.status === 'online');
-  const idle = online.filter(runner => runner.busy === false);
-  return {
-    status: !matches.length ? 'unregistered' : !online.length ? 'offline' :
-      !idle.length ? 'busy' : 'available',
-    matching: matches.map(runner => runner.name),
-    online: online.map(runner => runner.name),
-    idle: idle.map(runner => runner.name),
-  };
+  return result;
 }
 
 async function api(endpoint) {
@@ -83,18 +66,18 @@ export async function auditRepository(repo, get = api) {
     .filter(job => ['queued', 'waiting', 'pending', 'requested'].includes(job.status))
     .map(job => ({ run: run.id, branch: run.head_branch, job: job.id, name: job.name,
       createdAt: job.created_at, labels: job.labels, status: job.status })));
-  const runners = waiting.some(job => job.labels?.length && !standardHosted(job.labels))
-    ? await pages(endpoint + 'runners', 'runners', get) : [];
+  const requests = waiting.map(job => job.labels ?? []);
+  // First classify against no private runner registrations. Only a custom
+  // label needs an authenticated API request; hosted jobs use no runner API.
+  const preliminary = classifyRunnerAvailability(requests, [], 'audit');
+  const registrationsRequired = preliminary.some(result => result.status === 'unregistered');
+  const decisions = registrationsRequired
+    ? classifyRunnerAvailability(requests, await pages(endpoint + 'runners', 'runners', get), 'audit')
+    : preliminary;
   return {
     repo, workflowRuns: runs.size,
     noJobs: expanded.filter(({jobs}) => !jobs.length).map(({run}) => run.id),
-    waiting: waiting.map(job => ({
-      ...job,
-      availability: !job.labels?.length ? { status: 'unresolved' } :
-        standardHosted(job.labels)
-          ? { status: 'not-self-hosted' }
-          : classifyRunnerAvailability(job.labels, runners),
-    })),
+    waiting: waiting.map((job, index) => ({...job, availability: decisions[index]})),
   };
 }
 
@@ -111,7 +94,7 @@ async function main(args) {
     const [repo, ...labels] = rest;
     repoName(repo);
     const runners = await pages('/repos/' + repo + '/actions/runners', 'runners');
-    const result = classifyRunnerAvailability(labels, runners);
+    const [result] = classifyRunnerAvailability([labels], runners);
     console.log(JSON.stringify({ repo, labels, ...result }));
     // Busy means eligible capacity exists; an offline-only pool does not.
     return ['available', 'busy'].includes(result.status) ? 0 : 1;
