@@ -43,6 +43,27 @@ assert.equal(Object.hasOwn(externalCrates,'matchPackageNames'),false);
 for (const rule of [...fleet.packageRules.slice(0,-3),...trust.packageRules]) {
  assert.equal(Object.hasOwn(rule,'minimumReleaseAge'),false, 'age policy belongs in final source-based rules');
 }
+// Same-source Git updates are grouped without weakening registry age policy.
+const gitGroups = {
+ 'btls-fast':'btls-git-family',
+ 'wreq-exp':'wreq-git-family',
+ 'quiescence':'quiescence-git-family',
+ 'quiche-fast':'quiche-git-family',
+};
+for (const [repo, slug] of Object.entries(gitGroups)) {
+ const rule=fleet.packageRules.find(r=>r.groupSlug===slug);
+ assert(rule,slug);
+ assert.deepEqual(rule.matchManagers,['cargo']);
+ assert.deepEqual(rule.matchDatasources,['git-refs']);
+ assert.deepEqual(rule.matchUpdateTypes,['digest']);
+ assert.equal(rule.automerge,undefined);
+ assert.equal(rule.enabled,undefined);
+ assert(fleet.packageRules.indexOf(rule)<fleet.packageRules.indexOf(noAge));
+ const pattern=new RegExp(rule.matchPackageNames[0].slice(1,-1));
+ for (const suffix of ['', '.git']) assert(pattern.test('https://github.com/codeandsolder/'+repo+suffix));
+ assert(!pattern.test('https://github.com/another-owner/'+repo+'.git'));
+ for (const other of Object.keys(gitGroups).filter(r=>r!==repo)) assert(!pattern.test('https://github.com/codeandsolder/'+other+'.git'));
+}
 const quarantine=fs.readFileSync('.github/workflows/cargo-release-quarantine.yml','utf8');
 assert(!quarantine.includes('github.repository_owner'),'do not exempt all dependencies by caller ownership');
 const stable=fleet.packageRules.find(r=>r.matchCurrentVersion==='!/^0\\./');
@@ -92,3 +113,15 @@ assert(fleet.packageRules.indexOf(nightlyGroup)>fleet.packageRules.indexOf(toolc
 assert(fleet.packageRules.indexOf(nightlyGroup)>fleet.packageRules.indexOf(noAge));
 assert.equal(fleet.lockFileMaintenance.automerge,true);
 console.log('Shared fleet Renovate configuration and trust-root precedence invariants: PASS');
+
+const upstreamFork=JSON.parse(fs.readFileSync('renovate-upstream-fork.json','utf8'));
+assert.deepEqual(upstreamFork.extends,[firstParty]);
+assert.equal(upstreamFork.forkProcessing,'enabled');
+assert.deepEqual(upstreamFork.enabledManagers,['github-actions']);
+assert.equal(upstreamFork.lockFileMaintenance,undefined);
+assert.equal(upstreamFork.rebaseWhen,'auto');
+assert.equal(upstreamFork.prConcurrentLimit,1);
+const [exclusion]=upstreamFork.packageRules;
+assert.deepEqual(exclusion.matchPackageNames,firstRule.matchPackageNames.map(pattern=>'!'+pattern));
+assert.equal(exclusion.enabled,false);
+console.log('Upstream patch-fork Renovate scope: PASS');

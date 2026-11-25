@@ -47,11 +47,12 @@ test('uses GitHub-resolved labels and inspects jobs in running workflow', async 
 
 test('contribution-only forks are excluded from maintained fleet scope', async () => {
   const { isContributionOnly, isMaintainedRepo } = await import('./fleet-scope.mjs');
-  for (const name of ['Anubis', 'hayro', 'oxc']) {
+  for (const name of ['Anubis', 'hayro']) {
     assert.equal(isContributionOnly('codeandsolder/' + name), true);
     assert.equal(isMaintainedRepo({full_name:'codeandsolder/' + name}), false);
   }
   assert.equal(isMaintainedRepo({full_name:'codeandsolder/ngspice', fork:true}), true);
+  assert.equal(isMaintainedRepo({full_name:'codeandsolder/oxc', fork:true}), true);
   assert.equal(isMaintainedRepo({full_name:'codeandsolder/archived', archived:true}), false);
   assert.equal(isMaintainedRepo({full_name:'elsewhere/example'}), false);
 });
