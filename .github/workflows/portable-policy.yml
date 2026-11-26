@@ -67,7 +67,7 @@ jobs:
           components: clippy,rustfmt
           select: "true"
       - name: Setup mandatory sccache
-        uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@c5aa78816e51ac25ea6eff7cbdb5fb26a59d7798 # main
+        uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
         with:
           rust-toolchain: ${{ steps.compiler.outputs.channel }}
           rustflags: ""
@@ -229,7 +229,7 @@ jobs:
 
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@c5aa78816e51ac25ea6eff7cbdb5fb26a59d7798 # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
 
   portable-runtime:
     name: Portable CI policy (${{ matrix.os }})
