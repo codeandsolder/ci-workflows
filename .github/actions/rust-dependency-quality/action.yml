@@ -1,10 +1,9 @@
 name: Rust dependency quality (informational)
 description: RustSec advisories, unused direct dependencies, and consolidation advice without a compilation pass.
 inputs:
-  working-directory:
-    description: Cargo workspace relative to caller repository checkout
-    default: "."
-    required: false
+  working-directories:
+    description: JSON array of Cargo workspace paths relative to caller checkout
+    required: true
 outputs:
   artifact-id:
     description: ID of the uploaded public report, empty for private repositories
@@ -12,6 +11,12 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Validate dependency workspace selection
+      shell: bash
+      env:
+        DEPENDENCY_DIRECTORIES: ${{ inputs.working-directories }}
+      run: node "$GITHUB_ACTION_PATH/run.mjs" validate
+
     - name: Install pinned Rust dependency scanners
       id: tools
       uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
@@ -30,7 +35,7 @@ runs:
       shell: bash
       continue-on-error: true
       env:
-        DEPENDENCY_WORKDIR: ${{ inputs.working-directory }}
+        DEPENDENCY_DIRECTORIES: ${{ inputs.working-directories }}
         DEPENDENCY_SCANNERS_INSTALLED: ${{ steps.tools.outcome }}
         DEPENDENCY_ANOINT_BINARY: ${{ steps.anoint.outputs.binary }}
       run: node "$GITHUB_ACTION_PATH/run.mjs"
@@ -40,8 +45,9 @@ runs:
       shell: bash
       continue-on-error: true
       run: |
-        if [[ -f "$RUNNER_TEMP/rust-dependency-quality/results.json" ]]; then
-          cat "$RUNNER_TEMP/rust-dependency-quality/results.json"
+        report="$RUNNER_TEMP/rust-dependency-quality"
+        if [[ -d "$report" ]]; then
+          find "$report" -name results.json -type f -print -exec cat {} \;
         fi
 
     - name: Upload dependency findings

@@ -67,6 +67,31 @@ on:
         required: false
         default: 6144
         type: number
+      strict-suites:
+        description: JSON array of named strict Rust scopes; one shared policy preflight and compiler lifecycle
+        required: false
+        default: ""
+        type: string
+      ban-python-outside-ci:
+        description: Strict Rust policy rejects tracked non-CI Python by default
+        required: false
+        default: true
+        type: boolean
+      python-ci-paths:
+        description: Additional CI-only Python path prefixes, one per line
+        required: false
+        default: ""
+        type: string
+      checkout-submodules:
+        description: Submodule checkout mode (false, true, or recursive)
+        required: false
+        default: "false"
+        type: string
+      apt-packages:
+        description: Space-separated Ubuntu build dependencies
+        required: false
+        default: ""
+        type: string
       test-suites:
         description: JSON array of named authoritative unified Nextest scopes (empty runs only command)
         required: false
@@ -105,17 +130,24 @@ jobs:
         shell: bash
         env:
           VALIDATION_TIER: ${{ inputs.validation-tier }}
+          HAS_STRICT_SUITES: ${{ inputs.strict-suites != '' }}
+          CACHE_EXECUTION: ${{ inputs.cache-execution }}
         run: |
           case "$VALIDATION_TIER" in
             routine|release) ;;
             *) echo "Unknown validation-tier: $VALIDATION_TIER" >&2; exit 2 ;;
           esac
+          if [[ "$HAS_STRICT_SUITES" == true && ( "$VALIDATION_TIER" != routine || "$RUNNER_OS" != Linux || "$RUNNER_ARCH" != X64 || "$CACHE_EXECUTION" != native ) ]]; then
+            echo "Strict suites require routine native Linux X64 CI" >&2
+            exit 2
+          fi
 
       - name: Checkout caller repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The Git baseline SHA may be outside a PR's default shallow clone.
-          fetch-depth: ${{ inputs.test-suites != '' && '0' || '1' }}
+          fetch-depth: ${{ inputs.test-suites != '' && '0' || (inputs.strict-suites != '' && '2' || '1') }}
+          submodules: ${{ inputs.checkout-submodules }}
 
       - name: Checkout shared CI implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,10 +158,35 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             .github/actions/rust-test-impact
+            .github/actions/rust-strict-suites
+            .github/actions/rust-dependency-quality
+            .github/actions/workflow-concurrency-policy
+            .github/actions/rust-ci-sccache-policy
+            .github/actions/cargo-release-quarantine
+            policy-wasm
             .github/actions/setup-sccache
             .github/actions/finalize-sccache
             .github/actions/resolve-rust-toolchain
           sparse-checkout-cone-mode: true
+
+      - name: Checkout pinned strict Rust policy
+        if: inputs.strict-suites != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: codeandsolder/rust-skills2
+          ref: 7cd4c792bd6aba2807b4accc42dfb3e9db238634 # main
+          path: .rust-skills2-gate
+          persist-credentials: false
+          sparse-checkout: |
+            /.github/actions/
+            /scripts/
+            /rust-toolchain.toml
+            /policy-wasm/check.mjs
+            /policy-wasm/run.mjs
+            /policy-wasm/module.mjs
+            /policy-wasm/module.json
+            /policy-wasm/module.wasm.gz
+          sparse-checkout-cone-mode: false
 
       - name: Exclude injected CI checkout from caller Git packaging
         shell: bash
@@ -139,11 +196,58 @@ jobs:
           # Without a local exclude, cargo package --locked rejects otherwise
           # clean repositories due to the injected untracked .ci-workflows/.
           # .git/info/exclude is local to this CI clone and never committed.
-          printf '\n/.ci-workflows/\n' >> "$GITHUB_WORKSPACE/.git/info/exclude"
-          if [[ -n "$(git -C "$GITHUB_WORKSPACE" ls-files --others --exclude-standard -- .ci-workflows)" ]]; then
+          printf '\n/.ci-workflows/\n/.rust-skills2-gate/\n' >> "$GITHUB_WORKSPACE/.git/info/exclude"
+          if [[ -n "$(git -C "$GITHUB_WORKSPACE" ls-files --others --exclude-standard -- .ci-workflows .rust-skills2-gate)" ]]; then
             echo "Injected CI checkout is still visible as untracked source" >&2
             exit 1
           fi
+
+      - name: Prepare strict Rust scopes
+        if: inputs.strict-suites != ''
+        id: strict-plan
+        shell: bash
+        env:
+          STRICT_SUITES: ${{ inputs.strict-suites }}
+        run: |
+          set -euo pipefail
+          node .ci-workflows/.github/actions/rust-strict-suites/run.mjs prepare
+          printf 'strict-ref=%s\n' "$(git -C .rust-skills2-gate rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce tracked Python policy once
+        if: inputs.strict-suites != ''
+        uses: ./.rust-skills2-gate/.github/actions/python-strict
+        with:
+          ban-python-outside-ci: ${{ inputs.ban-python-outside-ci }}
+          python-ci-paths: ${{ inputs.python-ci-paths }}
+
+      - name: Enforce caller workflow cancellation once
+        if: inputs.strict-suites != ''
+        uses: ./.ci-workflows/.github/actions/workflow-concurrency-policy
+
+      - name: Enforce canonical Rust cache lifecycle once
+        if: inputs.strict-suites != ''
+        uses: ./.ci-workflows/.github/actions/rust-ci-sccache-policy
+        with:
+          strict-ref: ${{ steps.strict-plan.outputs.strict-ref }}
+
+      - name: Quarantine new external crates once across all workspaces
+        if: inputs.strict-suites != '' && github.event_name == 'pull_request'
+        uses: ./.ci-workflows/.github/actions/cargo-release-quarantine
+        with:
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          lockfile: auto
+          hours: "72"
+
+      - name: Install native build dependencies
+        if: inputs.apt-packages != ''
+        shell: bash
+        env:
+          PACKAGES: ${{ inputs.apt-packages }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          read -r -a packages <<< "$PACKAGES"
+          sudo apt-get install -y -- "${packages[@]}"
 
       - name: Resolve one quarantined compiler
         id: compiler
@@ -241,7 +345,7 @@ jobs:
           rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
           execution: ${{ inputs.cache-execution }}
-          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}:{2}', inputs.command, inputs.rust-targets, inputs.test-suites) }}
+          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}:{2}{3}', inputs.command, inputs.rust-targets, inputs.test-suites, inputs.strict-suites != '' && format(':{0}', inputs.strict-suites) || '') }}
 
       - name: Configure runner-local Cargo target
         shell: bash
@@ -266,13 +370,29 @@ jobs:
           package-manager-cache: false
 
       - name: Run caller command
+        id: caller
         shell: bash
         run: |
           set -euo pipefail
           ${{ inputs.command }}
 
+      - name: Enforce all strict Rust lint scopes
+        if: inputs.strict-suites != ''
+        id: strict
+        shell: bash
+        env:
+          STRICT_SUITES: ${{ inputs.strict-suites }}
+          STRICT_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
+        run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs execute
+
+      - name: Audit distinct strict workspaces with one scanner installation
+        if: inputs.strict-suites != '' && steps.strict-plan.outputs.dependency-directories != '[]'
+        uses: ./.ci-workflows/.github/actions/rust-dependency-quality
+        with:
+          working-directories: ${{ steps.strict-plan.outputs.dependency-directories }}
+
       - name: Run unified authoritative Rust test suite
-        if: ${{ inputs.test-suites != '' }}
+        if: ${{ !cancelled() && steps.caller.outcome == 'success' && inputs.test-suites != '' }}
         uses: ./.ci-workflows/.github/actions/rust-test-impact
         with:
           test-suites: ${{ inputs.test-suites }}

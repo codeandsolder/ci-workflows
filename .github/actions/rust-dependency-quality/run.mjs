@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, realpathSync } from 'node:fs';
+import { resolve, dirname, isAbsolute, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseAnointOutput, summarizeAnoint } from './anoint.mjs';
 
@@ -109,9 +109,26 @@ function run(bin, args, options = {}) {
   };
 }
 
-function main() {
-  const workdir = resolve(process.env.GITHUB_WORKSPACE ?? process.cwd(), process.env.DEPENDENCY_WORKDIR ?? '.');
-  const reportDir = resolve(process.env.RUNNER_TEMP ?? process.cwd(), 'rust-dependency-quality');
+export function workspaceDirectories(source, root) {
+  const directories = JSON.parse(source);
+  if (!Array.isArray(directories) || !directories.length) throw new Error('working-directories must be a nonempty JSON array');
+  const canonicalRoot = realpathSync(root);
+  return [...new Set(directories.map(directory => {
+    if (typeof directory !== 'string' || !directory || isAbsolute(directory) ||
+        /[\r\n\0\\]/.test(directory) || directory.split('/').includes('..')) {
+      throw new Error('Dependency scan directory must be repository-relative');
+    }
+    const cwd = realpathSync(resolve(canonicalRoot, directory));
+    const rel = relative(canonicalRoot, cwd);
+    if (isAbsolute(rel) || rel === '..' || rel.startsWith('..' + sep)) {
+      throw new Error('Dependency scan escapes the caller checkout');
+    }
+    return rel || '.';
+  }))];
+}
+
+function scanWorkspace(root, directory, reportDir) {
+  const workdir = resolve(root, directory);
   mkdirSync(reportDir, { recursive: true });
   const config = resolve(dirname(fileURLToPath(import.meta.url)), 'deny.toml');
   const installed = process.env.DEPENDENCY_SCANNERS_INSTALLED === 'success';
@@ -147,7 +164,7 @@ function main() {
   writeFileSync(resolve(reportDir, 'unused.json'), macheteRun?.stdout ?? '{}');
   writeFileSync(resolve(reportDir, 'anoint.json'), anointRun?.stdout ?? '{}');
   writeFileSync(resolve(reportDir, 'results.json'), JSON.stringify({
-    audit, unused, anoint, installed, present,
+    directory, audit, unused, anoint, installed, present,
     anointInstalled: Boolean(anointBinary),
     anointExitCode: anointRun?.status ?? null,
     anointError: anointRun?.error ?? null,
@@ -159,11 +176,27 @@ function main() {
     unusedStderr: macheteRun?.stderr ?? null,
   }, null, 2) + '\n');
 
-  const text = !present
+  const text = 'Workspace: `' + directory.replaceAll('`', '&#96;') + '`\n\n' + (!present
     ? '## Rust dependency health\n\nSkipped: selected directory does not contain Cargo.toml.\n'
-    : summarize(audit, unused, anoint);
+    : summarize(audit, unused, anoint));
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
   else process.stdout.write(text);
+}
+
+function main() {
+  const root = realpathSync(process.env.GITHUB_WORKSPACE ?? process.cwd());
+  const directories = workspaceDirectories(process.env.DEPENDENCY_DIRECTORIES, root);
+  if (process.argv[2] === 'validate') return;
+  const reportRoot = resolve(process.env.RUNNER_TEMP ?? process.cwd(), 'rust-dependency-quality');
+  mkdirSync(reportRoot, {recursive:true});
+  const entries = directories.map((directory, index) => ({directory, report: 'workspace-' + index}));
+  writeFileSync(resolve(reportRoot, 'index.json'), JSON.stringify(entries, null, 2) + '\n');
+  const failures = [];
+  for (const {directory, report} of entries) {
+    try { scanWorkspace(root, directory, resolve(reportRoot, report)); }
+    catch (error) { failures.push(directory + ': ' + error.message); }
+  }
+  if (failures.length) throw new Error('Dependency scan unavailable: ' + failures.join('; '));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
