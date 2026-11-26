@@ -201,6 +201,61 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ~~~
 
+## Required merge-gate contract (pilot)
+
+For first-party workflows with conditional job graphs, use one terminal gate
+per workflow instead of requiring each conditional job independently. The
+shared reusable workflow compares the caller's native dependency results to
+an exact declared expectation for every direct prerequisite. Missing jobs,
+unexpected jobs, failures, cancellation, malformed evidence and unexpected
+skips all fail closed. At least one prerequisite must succeed. No polling,
+check API credentials, cross-run result selection or additional builds are
+needed; the dependency results belong to the same Actions execution.
+
+~~~yaml
+  merge-gate:
+    name: CI merge gate
+    if: ${{ always() }}
+    needs: [scope, strict-rust, tests]
+    uses: codeandsolder/ci-workflows/.github/workflows/merge-gate.yml@PINNED_PROVIDER_SHA
+    with:
+      needs-json: ${{ toJSON(needs) }}
+      expected-results: |
+        [
+          ["scope", "success"],
+          ["strict-rust", "${{ needs.scope.outputs.rust == 'true' && 'success' || 'skipped' }}"],
+          ["tests", "${{ needs.scope.outputs.rust == 'true' && 'success' || 'skipped' }}"]
+        ]
+~~~
+
+The terminal job must depend directly on **all** relevant jobs; use the same
+reviewed scope decision for both the conditional job and its expected result,
+not the observed result to decide whether the job was required. GitHub treats
+skipped checks as successful for required-check purposes, so never put a
+conditional job directly in a required rule if skipping it is not always
+acceptable. Required jobs must not use continue-on-error to hide failures;
+advisory coverage or shadow jobs are not mandatory validation. The gate reads
+only dependency results; job outputs are not logged by the evaluator and must
+not contain secrets. The reusable workflow checks out only its pinned provider
+implementation, not candidate source.
+
+For a required context, ensure the caller is triggered on every pull request
+and merge_group, without workflow-level path filters; move path decisions to
+an always-running scope job. Use distinct gate names for different workflows,
+and require every relevant workflow's stable terminal context in the ruleset.
+This avoids one global gate polling other runs or accidentally selecting a
+stale SHA. A completely cancelled or missing workflow is not a successful
+required gate. Review workflow/expectation changes like other CI trust roots;
+the runtime contract does not by itself prevent a caller author from removing
+its dependencies or weakening expectations.
+
+The provider's path-scoped merge-gate-contract smoke exercises the actual
+reusable workflow with a successful scope job and an intentionally skipped
+job; it is not a required context. Enable rulesets only after exact context
+names and PR/merge-queue behavior are verified in public pilots. Private
+callers use registered local-ci runners. Do not apply rules that the private
+repository's GitHub plan cannot enforce.
+
 ## Renovate: one fleet policy, small consumer exceptions
 
 Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate.json`. Keep only project-specific constraints there (e.g. pinned ABI/toolchain floors, incompatible dependency pairs, genuinely exceptional grouping). The shared preset includes `config:recommended`, pinned GitHub Actions, the [first-party CI trust-root preset](renovate-ci-trust-root.json), and the common update lifecycle.
