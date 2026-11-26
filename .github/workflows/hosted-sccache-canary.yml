@@ -1,0 +1,15 @@
+name: Hosted sccache fleet canary
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  hosted-canary:
+    if: github.repository == 'codeandsolder/ci-workflows' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      command: ""
+      hosted-fleet-canary: true
+    secrets:
+      SCCACHE_HOSTED_CANARY_IDENTITY: ${{ secrets.SCCACHE_HOSTED_CANARY_IDENTITY }}
