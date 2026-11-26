@@ -33,7 +33,7 @@ jobs:
         id: scan
         uses: ./.github/actions/rust-dependency-quality
         with:
-          working-directory: .github/actions/rust-dependency-quality/fixtures/example
+          working-directories: '[".github/actions/rust-dependency-quality/fixtures/example","smoke-cache",".github/actions/rust-dependency-quality/fixtures/example"]'
       - name: Assert real scanner execution and successful artifact upload
         shell: bash
         env:
@@ -41,11 +41,18 @@ jobs:
         run: |
           # The scanner and assertion share a runner. Read the exact local
           # report rather than racing the artifact service's list operation.
-          node - "$RUNNER_TEMP/rust-dependency-quality/results.json" <<'JS'
+          node - "$RUNNER_TEMP/rust-dependency-quality" <<'JS'
           const fs = require('node:fs');
           const assert = require('node:assert/strict');
           assert.match(process.env.REPORT_ARTIFACT_ID ?? '', /^[1-9][0-9]*$/, 'Public report upload did not return an artifact ID');
-          const result = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const root = process.argv[2];
+          const index = JSON.parse(fs.readFileSync(root + '/index.json', 'utf8'));
+          assert.deepEqual(index.map(entry => entry.directory), ['.github/actions/rust-dependency-quality/fixtures/example', 'smoke-cache']);
+          const result = JSON.parse(fs.readFileSync(root + '/' + index[0].report + '/results.json', 'utf8'));
+          const second = JSON.parse(fs.readFileSync(root + '/' + index[1].report + '/results.json', 'utf8'));
+          assert.equal(second.directory, 'smoke-cache');
+          assert(second.installed && second.anointInstalled && second.present, 'Second workspace was not scanned');
+          assert(!second.audit.failed && !second.unused.failed && !second.anoint.failed, 'Second workspace scanner unavailable');
           assert(result.installed && result.anointInstalled && result.present, 'Scanners were not installed or fixture missing');
           assert(!result.audit.failed && !result.unused.failed && !result.anoint.failed, 'Scanner unavailable');
           assert.equal(result.auditExitCode, 0);

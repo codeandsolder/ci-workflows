@@ -1,6 +1,9 @@
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAdvisoryOutput, parseMacheteOutput, summarize } from './run.mjs';
+import { parseAdvisoryOutput, parseMacheteOutput, summarize, workspaceDirectories } from './run.mjs';
 const cleanAnoint = { findings: [], packages: 1, version: '0.4.1', failed: false };
 
 test('RustSec JSON diagnostics and warnings are counted', () => {
@@ -32,4 +35,18 @@ test('cargo machete empty results and invalid diagnostics', () => {
   assert.deepEqual(parseMacheteOutput('{}', 0), { findings: [], failed: false });
   assert.equal(parseMacheteOutput('{}', 1).failed, true);
   assert.equal(parseMacheteOutput('broken', 2).failed, true);
+});
+
+test('workspace batch is canonical, ordered, and deduplicated', t => {
+  const root = mkdtempSync(join(tmpdir(), 'dependency-workspaces-'));
+  t.after(() => rmSync(root, {recursive:true,force:true}));
+  mkdirSync(join(root,'a'));
+  mkdirSync(join(root,'b'));
+  symlinkSync(join(root,'a'), join(root,'alias'));
+  assert.deepEqual(workspaceDirectories('["a","b","a","alias","."]',root), ['a','b','.']);
+  symlinkSync(tmpdir(), join(root,'escape'));
+  assert.throws(() => workspaceDirectories('["escape"]',root), /escapes/);
+  for (const input of ['[]','["../outside"]','[1]','["/"]','null']) {
+    assert.throws(() => workspaceDirectories(input,root));
+  }
 });

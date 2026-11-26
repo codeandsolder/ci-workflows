@@ -69,6 +69,37 @@ The default `rustflags: auto` sets `-C target-cpu=x86-64-v2` only on X64 runners
 
 Additional MSRV, older/newer toolchain, alternative OS/architecture, sanitizer and compatibility lanes are optional **release-tier** jobs. Call the same reusable workflow with `validation-tier: release`. These jobs are skipped unless the caller is running on a release tag (`refs/tags/*`). For example, the caller may define separate jobs invoking this workflow with distinct `rust-toolchain`, `runner` and `rust-targets` inputs. A release tag must be included in the caller's `on.push.tags` trigger (and not excluded by other conditions); `workflow_dispatch` is not a release trigger.
 
+## Integrated strict Rust scopes
+
+Configure strict-suites in the same shared Rust job as test-suites.
+One pinned rust-skills2 policy checkout, Python/location gate, workflow
+cancellation and cache checks, external-release quarantine, nightly
+installation and managed sccache lifecycle cover all strict selectors.
+
+~~~yaml
+jobs:
+  rust:
+    uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> # main
+    with:
+      command: ":"
+      strict-suites: |
+        [{"name":"native","cargo":["--workspace","--locked","--all-targets","--all-features"]}]
+      test-suites: |
+        [{"name":"native","cargo":["--workspace","--locked","--all-features"]}]
+~~~
+
+Each strict scope has a unique name, optional repository-relative directory
+(default "."), Cargo selector array (default --locked --workspace --all-targets),
+optional allow-test-panics (default false) and dependency-quality (default true).
+Selectors are passed to the exact pinned rust-skills2 strict policy, not a
+weaker substitute. All scopes execute; any failing scope blocks CI. Dependency
+scanner installation is shared and identical workspace directories are scanned
+once. Distinct targets/features remain explicit; list required cross-targets in
+rust-targets and select appropriate rustflags. Strict suites require routine
+native Linux X64. Use checkout-submodules, apt-packages, and the strict Python
+location inputs only where needed. Ordinary Rust jobs without strict scopes
+retain the existing setup.
+
 ## Informational Rust dependency quality
 
 The shared [`.github/actions/rust-dependency-quality`](.github/actions/rust-dependency-quality/action.yml)
@@ -93,7 +124,7 @@ independent.
 
 Call the composite **after** an existing successful strict Rust gate in the
 same job, using the same checkout and toolchain. No extra runner or source
-build is necessary. Use `working-directory` for nested workspaces, and avoid
+build is necessary. Use the JSON array `working-directories` for all distinct workspaces, and avoid
 running the scanner again for each feature/target configuration. The provider's
 `rust-dependency-quality-smoke.yml` validates all three scanners against an
 intentionally unused path dependency and overlapping HTTP provider fixtures.
