@@ -5,6 +5,7 @@ on:
       - renovate.json
       - renovate-ci-trust-root.json
       - renovate-fleet.json
+      - renovate-upstream-fork.json
       - scripts/check-renovate-policy.cjs
       - .github/workflows/renovate-policy-check.yml
       - .github/workflows/renovate-config.yml
@@ -14,6 +15,7 @@ on:
       - renovate.json
       - renovate-ci-trust-root.json
       - renovate-fleet.json
+      - renovate-upstream-fork.json
       - scripts/check-renovate-policy.cjs
       - .github/workflows/renovate-policy-check.yml
       - .github/workflows/renovate-config.yml

@@ -28,13 +28,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate report generator
-        run: node --test .github/actions/rust-dependency-quality/run.test.mjs
+        run: node --test .github/actions/rust-dependency-quality/*.test.mjs
       - name: Scan fixture with intentionally unused path dependency
         uses: ./.github/actions/rust-dependency-quality
         with:
           working-directory: .github/actions/rust-dependency-quality/fixtures/example
       - name: Verify produced report and detected candidate
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: rust-dependency-health-*
           path: ${{ runner.temp }}/dependency-report
@@ -46,9 +46,11 @@ jobs:
           const fs = require('node:fs');
           const assert = require('node:assert/strict');
           const result = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          assert(result.installed && result.present, 'Scanners were not installed or fixture missing');
-          assert(!result.audit.failed && !result.unused.failed, 'Scanner unavailable');
+          assert(result.installed && result.anointInstalled && result.present, 'Scanners were not installed or fixture missing');
+          assert(!result.audit.failed && !result.unused.failed && !result.anoint.failed, 'Scanner unavailable');
           assert.equal(result.auditExitCode, 0);
           assert.equal(result.unusedExitCode, 1);
           assert.deepEqual(result.unused.findings.map(f => f.dependency), ['local_helper']);
+          assert.equal(result.anointExitCode, 0);
+          assert(result.anoint.findings.some(f => f.kind === 'CapabilityOverlap' && f.current === 'wreq+reqwest'), 'Expected HTTP provider overlap');
           JS

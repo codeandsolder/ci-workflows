@@ -56,8 +56,17 @@ runs:
         path: ${{ steps.suite.outputs.baseline-dir }}
         key: ${{ steps.suite.outputs.prefix }}${{ github.sha }}
 
+    - name: Log private test-impact comparison
+      if: ${{ !cancelled() && steps.suite.outcome == 'success' && github.event.repository.private }}
+      shell: bash
+      continue-on-error: true
+      env:
+        IMPACT_DIR: ${{ steps.suite.outputs.impact-dir }}
+      run: |
+        find "$IMPACT_DIR" -name comparison.json -type f -print -exec cat {} \;
+
     - name: Publish test-impact diagnostics
-      if: ${{ !cancelled() && steps.suite.outcome == 'success' }}
+      if: ${{ !cancelled() && steps.suite.outcome == 'success' && !github.event.repository.private }}
       continue-on-error: true
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       with:
@@ -74,7 +83,7 @@ runs:
       with:
         name: rust-coverage-${{ github.job }}-${{ github.run_attempt }}-${{ steps.suite.outputs.artifact-suffix }}
         path: ${{ steps.suite.outputs.coverage-dir }}
-        retention-days: 14
+        retention-days: ${{ github.event.repository.private && 1 || 14 }}
         if-no-files-found: warn
 
     - name: Write per-scope coverage summaries

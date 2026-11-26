@@ -1,1 +1,1 @@
-pub fn sample() -> u8 { 2 }
+pub fn sample() -> u8 { reqwest::probe() + wreq::probe() }

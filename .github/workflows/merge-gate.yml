@@ -1,0 +1,36 @@
+name: Verify required workflow dependencies
+
+on:
+  workflow_call:
+    inputs:
+      needs-json:
+        description: Native toJSON(needs) from the caller terminal job; never use a check API snapshot.
+        type: string
+        required: true
+      expected-results:
+        description: JSON array of unique [job ID, success or skipped] pairs, including every direct dependency.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Verify expected job results
+    if: ${{ always() }}
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    steps:
+      - name: Checkout pinned merge gate only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: .github/actions/merge-gate
+      - name: Verify native dependency outcomes
+        env:
+          NEEDS_JSON: ${{ inputs.needs-json }}
+          EXPECTED_RESULTS: ${{ inputs.expected-results }}
+        run: node .github/actions/merge-gate/run.mjs

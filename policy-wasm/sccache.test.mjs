@@ -1,11 +1,11 @@
 // Frozen independent CPython/PyYAML/shell oracle acceptance of the real Rust/WASI policy.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
+import {workspace, write} from './test-workspace.mjs';
 
 const provider = fileURLToPath(new URL('.', import.meta.url));
 const module = path.resolve(process.argv[2] ??
@@ -17,16 +17,6 @@ assert.equal(golden.cases.length, 48);
 assert.equal(golden.cases.filter(item => !item.expected.length).length, 13);
 assert.equal(golden.cases.filter(item => item.expected.length).length, 35);
 
-function workspace(t) {
-  const temporary = mkdtempSync(path.join(tmpdir(), 'ci-policy-sccache-'));
-  t.after(() => rmSync(temporary, {recursive: true, force: true}));
-  return realpathSync(temporary);
-}
-function write(root, relative, contents) {
-  const full = path.join(root, relative);
-  mkdirSync(path.dirname(full), {recursive: true});
-  writeFileSync(full, contents, 'utf8');
-}
 function run(root, strictRef) {
   const args = [path.join(provider, 'run.mjs'), module, 'sccache', root];
   if (strictRef !== null) args.push(strictRef);
@@ -39,7 +29,7 @@ function run(root, strictRef) {
 }
 for (const entry of golden.cases) {
   test('frozen sccache policy: ' + entry.id, t => {
-    const root = workspace(t);
+    const root = workspace(t, 'ci-policy-sccache-');
     write(root, '.github/workflows/ci.yml', entry.workflow);
     for (const [file, source] of Object.entries(entry.files)) write(root, file, source);
     const result = run(root, entry.strict_ref);

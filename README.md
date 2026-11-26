@@ -74,13 +74,19 @@ The shared [`.github/actions/rust-dependency-quality`](.github/actions/rust-depe
 composite scans a selected Cargo workspace **without compiling it**. The pinned
 `cargo-deny@0.20.2` checks RustSec advisories (including relevant unsound and
 unmaintained records) plus yanked dependencies, and `cargo-machete@0.10.1`
-reports potentially unused direct dependencies. It uses Cargo metadata for
-renamed dependencies but never calls `cargo check` or `cargo test`.
+reports potentially unused direct dependencies. A commit-addressed, SHA-256
+verified prebuilt Linux x86_64 cargo-anoint scanner reports potentially
+overlapping providers, duplicate versions, obsolete dependencies and preferred
+organization forks. It scans all features and dependency roles across the
+platform union once per workspace; verify mutually exclusive configurations
+before consolidating. No scanner builds the caller project.
 
 Results are advisory while the fleet's existing debt and scanner false
-positives are reviewed: neither scanner's findings are a merge gate. The
+positives are reviewed: scanner findings are not a merge gate. The
 GitHub job summary distinguishes findings from unavailable/incomplete scans;
-raw diagnostics and structured results are available in a 14-day artifact.
+raw diagnostics and structured results are available in a 14-day public artifact
+or the private job log. An unavailable or malformed cargo-anoint scan is
+reported independently of cargo-deny and cargo-machete.
 The existing 72-hour external registry quarantine stays mandatory and
 independent.
 
@@ -88,8 +94,11 @@ Call the composite **after** an existing successful strict Rust gate in the
 same job, using the same checkout and toolchain. No extra runner or source
 build is necessary. Use `working-directory` for nested workspaces, and avoid
 running the scanner again for each feature/target configuration. The provider's
-`rust-dependency-quality-smoke.yml` validates both tools against an intentionally
-unused path dependency. To suppress known `cargo-machete` false positives,
+`rust-dependency-quality-smoke.yml` validates all three scanners against an
+intentionally unused path dependency and overlapping HTTP provider fixtures.
+To update cargo-anoint, run its scanner-release workflow on main, then update
+`anoint-release.json` in the action with the source commit and verified binary
+SHA-256; the smoke test verifies the actual release download and report. To suppress known `cargo-machete` false positives,
 use reasoned `[package.metadata.cargo-machete]` or
 `[workspace.metadata.cargo-machete]` `ignored = ["dep"]` entries in the
 caller manifest; do not suppress a vulnerability in this shared config.
@@ -192,9 +201,71 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ~~~
 
+## Required merge-gate contract (pilot)
+
+For first-party workflows with conditional job graphs, use one terminal gate
+per workflow instead of requiring each conditional job independently. The
+shared reusable workflow compares the caller's native dependency results to
+an exact declared expectation for every direct prerequisite. Missing jobs,
+unexpected jobs, failures, cancellation, malformed evidence and unexpected
+skips all fail closed. At least one prerequisite must succeed. No polling,
+check API credentials, cross-run result selection or additional builds are
+needed; the dependency results belong to the same Actions execution.
+
+~~~yaml
+  merge-gate:
+    name: CI merge gate
+    if: ${{ always() }}
+    needs: [scope, strict-rust, tests]
+    uses: codeandsolder/ci-workflows/.github/workflows/merge-gate.yml@PINNED_PROVIDER_SHA
+    with:
+      needs-json: ${{ toJSON(needs) }}
+      expected-results: |
+        [
+          ["scope", "success"],
+          ["strict-rust", "${{ needs.scope.outputs.rust == 'true' && 'success' || 'skipped' }}"],
+          ["tests", "${{ needs.scope.outputs.rust == 'true' && 'success' || 'skipped' }}"]
+        ]
+~~~
+
+The terminal job must depend directly on **all** relevant jobs; use the same
+reviewed scope decision for both the conditional job and its expected result,
+not the observed result to decide whether the job was required. GitHub treats
+skipped checks as successful for required-check purposes, so never put a
+conditional job directly in a required rule if skipping it is not always
+acceptable. Required jobs must not use continue-on-error to hide failures;
+advisory coverage or shadow jobs are not mandatory validation. The gate reads
+only dependency results; job outputs are not logged by the evaluator and must
+not contain secrets. The reusable workflow checks out only its pinned provider
+implementation, not candidate source.
+
+For a required context, ensure the caller is triggered on every pull request
+and merge_group, without workflow-level path filters; move path decisions to
+an always-running scope job. Use distinct gate names for different workflows,
+and require every relevant workflow's stable terminal context in the ruleset.
+This avoids one global gate polling other runs or accidentally selecting a
+stale SHA. A completely cancelled or missing workflow is not a successful
+required gate. Review workflow/expectation changes like other CI trust roots;
+the runtime contract does not by itself prevent a caller author from removing
+its dependencies or weakening expectations.
+
+The provider's path-scoped merge-gate-contract smoke exercises the actual
+reusable workflow with a successful scope job and an intentionally skipped
+job; it is not a required context. Enable rulesets only after exact context
+names and PR/merge-queue behavior are verified in public pilots. Private
+callers use registered local-ci runners. Do not apply rules that the private
+repository's GitHub plan cannot enforce.
+
 ## Renovate: one fleet policy, small consumer exceptions
 
 Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate.json`. Keep only project-specific constraints there (e.g. pinned ABI/toolchain floors, incompatible dependency pairs, genuinely exceptional grouping). The shared preset includes `config:recommended`, pinned GitHub Actions, the [first-party CI trust-root preset](renovate-ci-trust-root.json), and the common update lifecycle.
+
+For small-patch upstream-tracking forks that leave dependency ownership with
+upstream, extend `github>codeandsolder/ci-workflows:renovate-upstream-fork`
+instead. This explicitly enables fork processing and limits Renovate to shared
+first-party workflow/action pins, using the same CI-gated automerge policy.
+All other dependency upgrades come through the reviewed upstream tracker.
+
 
 ```json
 {
@@ -222,6 +293,8 @@ uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> #
 ```
 
 `platformAutomerge: false` and `ignoreTests: false` deliberately require Renovate itself to observe passing branch checks; this matters for repositories without GitHub required-check protection. A repository without checks **does not automatically merge**. The final source-based Renovate rule requires a 72-hour release age for Cargo registry crate releases. First-party Git dependencies and pinned shared CI SHAs do not incur a release-age delay. The independent Cargo lockfile gate checks newly introduced registry versions, including transitive dependencies, in every consuming repository regardless of its owner. A registry crate is not first-party merely because its metadata claims a codeandsolder repository; registry exceptions would require independently verified ownership. Other dependency ecosystems retain their existing no-age defaults. Ordinary failed, pending, or unknown CI checks still block automerge.
+
+The Cargo manager enables Renovate's package-manager release-age synchronization with a three-day resolver floor. Cargo 1.100 or newer filters newly selected registry releases during ordinary lockfile updates and lockfile maintenance, including transitive registry dependencies of first-party Git updates. The floor applies only to Cargo; first-party Git revisions themselves are not aged. The independent lockfile quarantine remains mandatory, including for security updates (which Renovate deliberately does not apply its resolver floor to), old Cargo versions, and local registry overrides. The resolver reduces failed CI attempts; it is not a substitute for the gate.
 
 ### Keep routine dependency maintenance from flooding CI
 
@@ -302,6 +375,14 @@ exact version (for example, `"0.13.9"`). The workflow uses the shared pinned
 setup-uv action with package caching disabled; the caller owns interpreter and
 package provisioning in its explicit asset tree. No venv/pip bootstrap is
 needed. Leaving the input empty skips uv installation entirely.
+
+A caller that runs JavaScript reference/runtime tests may set `node-version`
+to the required Node.js version (for example, `"26.13.1"`). The reusable workflow
+uses the pinned setup-node action with automatic package-manager caching
+disabled. The selected Node executable is available to the caller and all its
+test subprocesses; leaving the input empty skips provisioning. Tests for
+ECMAScript explicit resource management must not depend on the hosted image's
+default Node release.
 
 ### Test suites that manage sccache daemons
 
@@ -463,7 +544,7 @@ registrations for custom selectors. See
 [portable runner policy](policy-wasm/RUNNER_ADMISSION.md) for the JSON contract,
 semantics and parity tests.
 
-Contribution-only forks (Anubis, Hayro, OXC) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.
+Contribution-only forks (Anubis, Hayro) are excluded from automatic fleet maintenance and runner admission through `scripts/fleet-scope.mjs`. Do not onboard or update their CI except for upstream-directed contribution work.
 
 ## Upstream-tracking forks
 
@@ -481,29 +562,43 @@ adopted; continuously moving upstreams continue to advance on mature
 snapshots. Force-pushed-away observations are discarded. The UTC-day attempt
 is recorded before fetching and is not reset on failure.
 
-Callers retain their explicit strategy (`merge`, `rebase`, `squash-rebase`, or
-`source-merge` for a separately reviewed source checkpoint) and reviewed
-validation script. Preparation creates an exact Git bundle; validation and
-publication use that same immutable candidate and distinct read/write jobs.
-Rust candidates also run the existing 72-hour external crates.io release gate
-and mandatory sccache setup. Workflow edits require explicit review; the
-Cargo patch stack can retain its reviewed workflow subtree and file a separate
-workflow-drift issue. Publication uses fast-forward or an explicit expected
-base lease; the PR mode waits for the declared normal CI checks, never merging
-when checks are missing or failing. PR mode accepts a narrowly scoped
-`upstream-pr-token` secret if the default workflow token cannot create PRs or
-trigger their CI.
+The tracker rebases the fork-only commits onto the mature upstream revision,
+retaining their authors and messages and dropping already-absorbed and empty
+patches. Upstream owns dependency upgrades; do not independently duplicate
+them in a lightweight fork. Existing merge-based histories are normalized
+against their existing upstream anchor before advancing; any historical
+merge-resolution edits are retained explicitly, with an exact-tree check.
+Legacy reviewed-source checkpoints are migrated into real upstream ancestry
+on the next successful rebase. A new source conflict blocks publication.
 
-For reproducible generated files, set the merge strategy, `generated-files`
+The reviewed fork-specific validator is the source-quality and behavioral
+gate for automatic integration. Do not impose first-party strict Rust/Python
+or clone-regression policies on inherited upstream source. Ordinary
+first-party CI remains unchanged. Preparation creates an exact Git bundle;
+validation and publication use the same immutable candidate in distinct
+read/write jobs. Rust candidates retain the 72-hour external crates.io release
+gate and mandatory sccache. Workflow edits require review; preserve mode
+keeps the exact reviewed workflow tree and reports upstream drift separately.
+
+Publication verifies that the mature upstream revision is an ancestor of the
+validated candidate. It atomically archives the previous fork HEAD at
+`refs/tags/fork-history/<old fork SHA>/<accepted upstream SHA>` and updates the target branch with an exact
+expected-base lease. Old Git dependency pins therefore remain reachable. The accepted upstream
+identity also prevents an upstream history rewrite from turning discarded
+upstream commits into downstream patches.
+A competing target update or inconsistent archive blocks both changes.
+Existing released version tags are never moved.
+
+For reproducible generated files, configure `generated-files`
 (whitespace-separated exact tracked regular file paths), `generation-script`
 (a script reviewed on the fork base), and `generation-container` (a digest-pinned
-image). Preparation preserves those files from the reviewed fork even when
-upstream changed the same generated artifacts. The read-only regeneration job
-runs the external crate age gate and mandatory sccache where applicable, rebuilds
-the files, and exports an immutable Git bundle containing at most one generated
-commit. Validation consumes that bundle in a fresh checkout, and publication
-independently checks the exact parent and file allowlist before updating the fork
-with its existing base lease. Any non-generated conflict still requires review.
+image). Historic generated-file edits are omitted from the rebased patches;
+the new upstream artifact, or a reviewed fork-only seed, is regenerated in a
+read-only job. That job retains external crate age checks and mandatory
+sccache where applicable, exporting at most one generated commit. Validation
+consumes that bundle in a fresh checkout, and publication independently
+checks its exact parent and file allowlist. Non-generated source conflicts
+still require review.
 
 For release-driven forks, set `upstream-release-prefix` (for example
 `crate-v`). The observer chooses the highest published stable semantic version

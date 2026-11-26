@@ -12,14 +12,11 @@ on:
       target-branch:
         required: true
         type: string
-      strategy:
-        type: string
-        default: merge
       workflow-policy:
         type: string
         default: reject
       generated-files:
-        description: Whitespace-separated exact tracked files to regenerate after merging upstream.
+        description: Whitespace-separated exact tracked files to regenerate after rebasing onto upstream.
         type: string
         default: ""
       generation-script:
@@ -107,7 +104,6 @@ jobs:
         env:
           UPSTREAM_REPOSITORY: ${{ inputs.upstream-repository }}
           UPSTREAM_BRANCH: ${{ inputs.upstream-branch }}
-          STRATEGY: ${{ inputs.strategy }}
           VALIDATION: ${{ inputs.validation-script }}
           GENERATED_FILES: ${{ inputs.generated-files }}
           GENERATOR: ${{ inputs.generation-script }}
@@ -117,16 +113,14 @@ jobs:
           WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
         run: |
           set -euo pipefail
-          case "$STRATEGY" in merge|rebase|squash-rebase|source-merge) ;; *) exit 2;; esac
           case "$WORKFLOW_POLICY" in reject|preserve) ;; *) exit 2;; esac
           test -n "$VALIDATION"
           if [[ -n "$GENERATOR$GENERATED_FILES$GENERATION_CONTAINER" ]]; then
             test -n "$GENERATOR"
             test -n "$GENERATED_FILES"
-            test "$STRATEGY" = merge
             [[ "$GENERATION_CONTAINER" =~ @sha256:[0-9a-f]{64}$ ]]
           fi
-          node .ci-upstream/.github/actions/upstream-tracking/observe.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$STRATEGY" "$RELEASE_PREFIX"
+          node .ci-upstream/.github/actions/upstream-tracking/observe.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$RELEASE_PREFIX"
 
   prepare:
     needs: observe
@@ -158,12 +152,11 @@ jobs:
           UPSTREAM_BRANCH: ${{ inputs.upstream-branch }}
           UPSTREAM: ${{ needs.observe.outputs.upstream }}
           BASE: ${{ needs.observe.outputs.base }}
-          STRATEGY: ${{ inputs.strategy }}
           WORKFLOW_POLICY: ${{ inputs.workflow-policy }}
           GENERATED_FILES: ${{ inputs.generated-files }}
         run: |
-          node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$STRATEGY" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle" "$GENERATED_FILES"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+          node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle" "$GENERATED_FILES"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: steps.prepare.outputs.changed == 'true'
         with:
           name: upstream-candidate
@@ -200,7 +193,7 @@ jobs:
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git show "HEAD:$GENERATOR" > "$RUNNER_TEMP/generate-upstream.sh"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: upstream-candidate
           path: ${{ runner.temp }}
@@ -224,7 +217,7 @@ jobs:
             rust-toolchain.toml
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
       - name: Detect tracked Rust source in the exact prepared candidate
         id: rust-source
         run: node .ci-upstream/.github/actions/upstream-tracking/detect-cargo.mjs "$GITHUB_WORKSPACE" "$GITHUB_OUTPUT"
@@ -254,7 +247,7 @@ jobs:
         with:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
           components: rustfmt, clippy
-      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@f79aef2a560a2c1c0f06f3c657f690f778040156 # main
         if: (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
@@ -270,7 +263,7 @@ jobs:
           set -euo pipefail
           bash "$RUNNER_TEMP/generate-upstream.sh" "$UPSTREAM" "$BASE"
           node .ci-upstream/.github/actions/upstream-tracking/generated.mjs commit "$SOURCE" "$BASE" "$GENERATED" "$RUNNER_TEMP/generated.bundle"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: steps.commit.outputs.head != ''
         with:
           name: upstream-generated-candidate
@@ -279,7 +272,7 @@ jobs:
           if-no-files-found: error
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@f79aef2a560a2c1c0f06f3c657f690f778040156 # main
 
   validate:
     needs: [observe, prepare, generate]
@@ -337,7 +330,7 @@ jobs:
         run: |
           set -euo pipefail
           git show "HEAD:$VALIDATOR" > "$RUNNER_TEMP/validate-upstream.sh"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.prepare.outputs.changed == 'true'
         with:
           name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
@@ -351,8 +344,7 @@ jobs:
           git fetch "$RUNNER_TEMP/$BUNDLE_NAME" HEAD
           test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED"
           git checkout --detach "$EXPECTED"
-      # The provider checkout is excluded by the canonical clone scanner.
-      # It is required even by non-Rust upstream trackers.
+      # Detect Rust automatically, including when no toolchain input is supplied.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: steps.check.outputs.checked == 'true'
         with:
@@ -362,8 +354,6 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             .github/actions
-            .github/scripts/run-clone-regression.sh
-            .github/workflows/rust-skills2-strict.yml
             policy-wasm
             rust-toolchain.toml
           sparse-checkout-cone-mode: false
@@ -401,7 +391,7 @@ jobs:
         with:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
           components: rustfmt, clippy
-      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@f79aef2a560a2c1c0f06f3c657f690f778040156 # main
         if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
@@ -411,7 +401,7 @@ jobs:
           go-version: ${{ inputs.go-version-file == '' && 'stable' || '' }}
           go-version-file: ${{ inputs.go-version-file }}
           cache: ${{ inputs.go-version-file != '' }}
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         if: steps.check.outputs.checked == 'true' && inputs.java-version != ''
         with:
           distribution: temurin
@@ -434,82 +424,16 @@ jobs:
           if [[ -n "$RELEASE_TAG" ]]; then args+=("$RELEASE_TAG"); fi
           bash "$RUNNER_TEMP/validate-upstream.sh" "${args[@]}"
           git diff --exit-code HEAD --
-      # A fork's own validator may pass while new source duplicates existing code.
-      # Check the detached exact candidate against the observed target base.
-      - name: Enforce reviewed clone-regression gate
-        if: steps.check.outputs.checked == 'true' && ((steps.rust-source.outputs.rust != 'true' && inputs.rust-toolchain == '') || steps.quarantine.outputs.eligible == 'true')
-        uses: ./.ci-workflows/.github/actions/clone-regression
-        with:
-          base-sha: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
-          pr-head-sha: ""
-
-      # Read strict-gate options from the reviewed target-branch tree, never
-      # the upstream candidate. Saphyr parsing and plan generation run in
-      # the same signed/pinned shared policy WASM used by ordinary PR gates.
-      - name: Resolve reviewed strict-gate plan
-        id: reviewed-strict
-        if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
-        shell: bash
-        env:
-          BASE: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/reviewed-workflows"
-          git archive "$BASE" .github/workflows | tar -x -C "$RUNNER_TEMP/reviewed-workflows"
-          # Canonical defaults come from the pinned provider, never candidate.
-          cp .ci-workflows/.github/workflows/rust-skills2-strict.yml "$RUNNER_TEMP/reviewed-workflows/.ci-provider-strict.yml"
-          cp .ci-workflows/rust-toolchain.toml "$RUNNER_TEMP/reviewed-workflows/.ci-provider-toolchain.toml"
-          node .ci-workflows/policy-wasm/run.mjs .ci-workflows/policy-wasm/module.json strict-plan "$RUNNER_TEMP/reviewed-workflows" > "$RUNNER_TEMP/reviewed-strict-plan.json"
-          ref=$(jq -er '.refSha' "$RUNNER_TEMP/reviewed-strict-plan.json")
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-
-      - name: Check out reviewed strict Rust implementation
-        if: steps.reviewed-strict.outputs.ref != ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: codeandsolder/rust-skills2
-          ref: ${{ steps.reviewed-strict.outputs.ref }}
-          path: .rust-skills2-gate
-          persist-credentials: false
-          sparse-checkout: |
-            .github/actions
-            scripts
-            policy-wasm
-            rust-toolchain.toml
-
-      - name: Enforce reviewed workflow cancellation policy
-        if: steps.reviewed-strict.outputs.ref != ''
-        uses: ./.ci-workflows/.github/actions/workflow-concurrency-policy
-
-      - name: Enforce canonical Rust sccache policy
-        if: steps.reviewed-strict.outputs.ref != ''
-        uses: ./.ci-workflows/.github/actions/rust-ci-sccache-policy
-        with:
-          strict-ref: ${{ steps.reviewed-strict.outputs.ref }}
-
-      - name: Install uv for reviewed strict Python checks
-        if: steps.reviewed-strict.outputs.ref != ''
-        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
-        with:
-          version: latest-known
-          enable-cache: false
-
-      - name: Enforce reviewed strict Rust and Python gates
-        if: steps.reviewed-strict.outputs.ref != ''
-        shell: bash
-        env:
-          STRICT_COMPILER: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
-        run: |
-          set -euo pipefail
-          node .ci-workflows/.github/actions/upstream-tracking/run-strict.mjs "$RUNNER_TEMP/reviewed-strict-plan.json" "$STRICT_COMPILER" "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/.rust-skills2-gate"
-
+      # A maintained fork carries a small patch stack over upstream-owned source.
+      # The reviewed fork validator is authoritative; first-party source-policy
+      # gates belong to ordinary first-party CI, not imported upstream code.
       - name: Record exactly validated revision
         id: validated
         if: steps.check.outputs.checked == 'true' && ((steps.rust-source.outputs.rust != 'true' && inputs.rust-toolchain == '') || steps.quarantine.outputs.eligible == 'true')
         run: echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Upload validated Cargo binary
         if: inputs.cargo-artifact && steps.check.outputs.checked == 'true' && steps.quarantine.outputs.eligible == 'true'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: cargo-ephemeral-linux-x86_64
           path: |
@@ -519,7 +443,7 @@ jobs:
           if-no-files-found: error
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@21aa933d276f9193e50d4047ea25da6b467337dc # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@f79aef2a560a2c1c0f06f3c657f690f778040156 # main
 
   publish:
     needs: [observe, prepare, generate, validate]
@@ -541,7 +465,7 @@ jobs:
           path: .ci-upstream
           persist-credentials: false
           sparse-checkout: .github/actions/upstream-tracking
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
           path: ${{ runner.temp }}
@@ -552,16 +476,16 @@ jobs:
           HEAD: ${{ needs.validate.outputs.head }}
           SOURCE: ${{ needs.prepare.outputs.head }}
           GENERATED_HEAD: ${{ needs.generate.outputs.head }}
+          UPSTREAM: ${{ needs.observe.outputs.upstream }}
           GENERATED_FILES: ${{ inputs.generated-files }}
-          STRATEGY: ${{ inputs.strategy }}
         run: |
           set -euo pipefail
           if [[ -n "$GENERATED_HEAD" ]]; then
             test "$HEAD" = "$GENERATED_HEAD"
-            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/generated.bundle" "$SOURCE" "$GENERATED_FILES"
+            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$UPSTREAM" "$RUNNER_TEMP/generated.bundle" "$SOURCE" "$GENERATED_FILES"
           else
             test "$HEAD" = "$SOURCE"
-            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$STRATEGY" "$RUNNER_TEMP/candidate.bundle"
+            node .ci-upstream/.github/actions/upstream-tracking/publish.mjs "$TARGET" "$BASE" "$HEAD" "$UPSTREAM" "$RUNNER_TEMP/candidate.bundle"
           fi
 
   release:

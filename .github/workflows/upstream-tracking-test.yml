@@ -26,9 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Test exact-candidate strict runner
-        run: node --test .github/actions/upstream-tracking/run-strict.test.mjs
-      - name: Test 72-hour observation gate
+      - name: Test tracker contract and observation gate
         run: node --test .github/actions/upstream-tracking/*.test.mjs
       - name: Test persistent observation state
         run: bash .github/actions/upstream-tracking/observe.integration.test.sh

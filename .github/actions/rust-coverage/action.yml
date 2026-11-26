@@ -49,7 +49,7 @@ runs:
       with:
         name: rust-coverage-${{ github.job }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/rust-coverage/
-        retention-days: 14
+        retention-days: ${{ github.event.repository.private && 1 || 14 }}
         if-no-files-found: warn
 
     - name: Write coverage summary
