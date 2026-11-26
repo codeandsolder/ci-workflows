@@ -156,7 +156,7 @@ jobs:
           GENERATED_FILES: ${{ inputs.generated-files }}
         run: |
           node .ci-upstream/.github/actions/upstream-tracking/prepare.mjs "$UPSTREAM_REPOSITORY" "$UPSTREAM_BRANCH" "$UPSTREAM" "$BASE" "$WORKFLOW_POLICY" "$RUNNER_TEMP/candidate.bundle" "$GENERATED_FILES"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: steps.prepare.outputs.changed == 'true'
         with:
           name: upstream-candidate
@@ -193,7 +193,7 @@ jobs:
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git show "HEAD:$GENERATOR" > "$RUNNER_TEMP/generate-upstream.sh"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: upstream-candidate
           path: ${{ runner.temp }}
@@ -263,7 +263,7 @@ jobs:
           set -euo pipefail
           bash "$RUNNER_TEMP/generate-upstream.sh" "$UPSTREAM" "$BASE"
           node .ci-upstream/.github/actions/upstream-tracking/generated.mjs commit "$SOURCE" "$BASE" "$GENERATED" "$RUNNER_TEMP/generated.bundle"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: steps.commit.outputs.head != ''
         with:
           name: upstream-generated-candidate
@@ -330,7 +330,7 @@ jobs:
         run: |
           set -euo pipefail
           git show "HEAD:$VALIDATOR" > "$RUNNER_TEMP/validate-upstream.sh"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: needs.prepare.outputs.changed == 'true'
         with:
           name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
@@ -433,7 +433,7 @@ jobs:
         run: echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Upload validated Cargo binary
         if: inputs.cargo-artifact && steps.check.outputs.checked == 'true' && steps.quarantine.outputs.eligible == 'true'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: cargo-ephemeral-linux-x86_64
           path: |
@@ -465,7 +465,7 @@ jobs:
           path: .ci-upstream
           persist-credentials: false
           sparse-checkout: .github/actions/upstream-tracking
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ inputs.generation-script != '' && 'upstream-generated-candidate' || 'upstream-candidate' }}
           path: ${{ runner.temp }}
