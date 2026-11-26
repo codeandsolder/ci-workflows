@@ -6,3 +6,5 @@ publish = false
 
 [dependencies]
 local_helper = { path = "../local-helper" }
+reqwest = { path = "../reqwest" }
+wreq = { path = "../wreq" }

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseAnointOutput, summarizeAnoint } from './anoint.mjs';
 
 export function parseAdvisoryOutput(raw, status) {
   const diagnostics = [];
@@ -54,7 +55,8 @@ export function parseMacheteOutput(raw, status) {
   }
 }
 
-export function summarize(audit, unused, flags = {}) {
+export function summarize(audit, unused, anoint) {
+  const anointSummary = summarizeAnoint(anoint);
   const lines = [
     '## Rust dependency health (informational)',
     '',
@@ -62,8 +64,9 @@ export function summarize(audit, unused, flags = {}) {
     '',
     '| Check | Findings | Status |',
     '| --- | ---: | --- |',
-    `| RustSec / cargo-deny | ${audit.findings.length} | ${audit.failed || flags.auditUnavailable ? 'Unavailable' : audit.findings.length ? 'Review advisories' : 'No findings'} |`,
-    `| Unused direct dependencies / cargo-machete | ${unused.findings.length} | ${unused.failed || flags.unusedUnavailable ? 'Unavailable' : unused.findings.length ? 'Review candidates' : 'No candidates'} |`,
+    `| RustSec / cargo-deny | ${audit.findings.length} | ${audit.failed ? 'Unavailable' : audit.findings.length ? 'Review advisories' : 'No findings'} |`,
+    `| Unused direct dependencies / cargo-machete | ${unused.findings.length} | ${unused.failed ? 'Unavailable' : unused.findings.length ? 'Review candidates' : 'No candidates'} |`,
+    anointSummary.row,
     '',
   ];
   if (audit.findings.length) {
@@ -82,8 +85,9 @@ export function summarize(audit, unused, flags = {}) {
     if (unused.findings.length > 40) lines.push(`- …and ${unused.findings.length - 40} more in the artifact`);
     lines.push('');
   }
-  if (audit.failed || unused.failed || flags.auditUnavailable || flags.unusedUnavailable) {
-    lines.push('One or more scanners did not complete. Inspect the attached raw diagnostics; an unavailable scan is not a clean audit.', '');
+  lines.push(...anointSummary.lines);
+  if (audit.failed || unused.failed || anoint.failed) {
+    lines.push('One or more scanners did not complete. Inspect the raw diagnostics (public artifact or private job log); an unavailable scan is not a clean audit.', '');
   }
   lines.push('Advisory reporting is not a vulnerability acceptance or release-age policy. The existing 72-hour crates.io gate remains independent.', '');
   return lines.join('\n') + '\n';
@@ -123,6 +127,12 @@ function main() {
     ? run('cargo-machete', macheteArgs, { cwd: workdir, timeout: 120_000 })
     : null;
 
+  const anointBinary = process.env.DEPENDENCY_ANOINT_BINARY;
+  const anointRun = anointBinary && present
+    ? run(anointBinary, ['anoint', '--workspace', '--offline', '--json', '--all-features', '--all-targets'], { cwd: workdir, timeout: 180_000 })
+    : null;
+  const anoint = parseAnointOutput(anointRun?.stdout ?? '', anointRun?.status ?? null, anointRun?.stderr);
+
   const audit = auditRun
     ? parseAdvisoryOutput(auditRun.output, auditRun.status)
     : { diagnostics: [], errors: [], findings: [], failed: true };
@@ -132,10 +142,16 @@ function main() {
 
   if (auditRun?.error) audit.errors.push(auditRun.error);
   if (macheteRun?.error) unused.failed = true;
+  if (anointRun?.error) anoint.failed = true;
   writeFileSync(resolve(reportDir, 'audit.jsonl'), auditRun?.output ?? 'Scanner unavailable\n');
   writeFileSync(resolve(reportDir, 'unused.json'), macheteRun?.stdout ?? '{}');
+  writeFileSync(resolve(reportDir, 'anoint.json'), anointRun?.stdout ?? '{}');
   writeFileSync(resolve(reportDir, 'results.json'), JSON.stringify({
-    audit, unused, installed, present,
+    audit, unused, anoint, installed, present,
+    anointInstalled: Boolean(anointBinary),
+    anointExitCode: anointRun?.status ?? null,
+    anointError: anointRun?.error ?? null,
+    anointStderr: anointRun?.stderr ?? null,
     auditExitCode: auditRun?.status ?? null,
     unusedExitCode: macheteRun?.status ?? null,
     auditError: auditRun?.error ?? null,
@@ -145,7 +161,7 @@ function main() {
 
   const text = !present
     ? '## Rust dependency health\n\nSkipped: selected directory does not contain Cargo.toml.\n'
-    : summarize(audit, unused, { auditUnavailable: !installed, unusedUnavailable: !installed });
+    : summarize(audit, unused, anoint);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
   else process.stdout.write(text);
 }

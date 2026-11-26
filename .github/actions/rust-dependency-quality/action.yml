@@ -1,5 +1,5 @@
 name: Rust dependency quality (informational)
-description: RustSec advisories and unused direct dependencies without a compilation pass.
+description: RustSec advisories, unused direct dependencies, and consolidation advice without a compilation pass.
 inputs:
   working-directory:
     description: Cargo workspace relative to caller repository checkout
@@ -15,13 +15,20 @@ runs:
       with:
         tool: cargo-deny@0.20.2,cargo-machete@0.10.1
 
-    - name: Audit advisories and unused direct dependencies
+    - name: Install checksum-pinned cargo-anoint
+      id: anoint
+      shell: bash
+      continue-on-error: true
+      run: node "$GITHUB_ACTION_PATH/install-anoint.mjs"
+
+    - name: Audit dependency health and consolidation
       if: always()
       shell: bash
       continue-on-error: true
       env:
         DEPENDENCY_WORKDIR: ${{ inputs.working-directory }}
         DEPENDENCY_SCANNERS_INSTALLED: ${{ steps.tools.outcome }}
+        DEPENDENCY_ANOINT_BINARY: ${{ steps.anoint.outputs.binary }}
       run: node "$GITHUB_ACTION_PATH/run.mjs"
 
     - name: Log dependency findings in private repositories
