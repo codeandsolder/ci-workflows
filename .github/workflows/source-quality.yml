@@ -119,7 +119,7 @@ jobs:
         if: ${{ !cancelled() && steps.jdk.outcome == 'success' }}
         uses: gradle/actions/setup-gradle@417ae3ccd767c252f5661f1ace9f835f9654f2b5 # v3.1.0
         with:
-          gradle-version: '9.3.1'
+          gradle-version: '9.9.2'
           cache-disabled: ${{ github.event.repository.private }}
       - name: Enforce shared PMD rules
         id: pmd
