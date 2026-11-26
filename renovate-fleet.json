@@ -8,6 +8,10 @@
   ],
   "dependencyDashboard": true,
   "minimumReleaseAge": null,
+  "cargo": {
+    "minimumReleaseAgePackageManagerSync": true,
+    "minimumReleaseAgePackageManager": "3 days"
+  },
   "internalChecksFilter": "strict",
   "prConcurrentLimit": 6,
   "prHourlyLimit": 1,

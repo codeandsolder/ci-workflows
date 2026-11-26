@@ -13,6 +13,9 @@ assert.equal(fleet.ignoreTests,false);
 assert.equal(trust.platformAutomerge,false);
 assert.equal(trust.ignoreTests,false);
 assert.equal(fleet.minimumReleaseAge,null, 'age scope is determined by dependency source, not consuming repository');
+assert.deepEqual(fleet.cargo,{minimumReleaseAgePackageManagerSync:true,minimumReleaseAgePackageManager:"3 days"});
+assert.equal(fleet.minimumReleaseAgePackageManagerSync,undefined,"scope resolver age sync to Cargo");
+assert.equal(fleet.minimumReleaseAgePackageManager,undefined,"do not impose release age on other package managers");
 assert.equal(Object.hasOwn(fleet,'minimumReleaseAgeBehaviour'),false);
 assert.equal(fleet.internalChecksFilter,'strict');
 // Limit CI-producing commits, not just PR creation. Preserve CI-gated,

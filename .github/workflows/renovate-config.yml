@@ -30,4 +30,4 @@ jobs:
               configs+=("$preset")
             fi
           done
-          npx --yes --package=renovate@44.222.5 renovate-config-validator "${configs[@]}"
+          npx --yes --package=renovate@44.262.1 renovate-config-validator "${configs[@]}"
