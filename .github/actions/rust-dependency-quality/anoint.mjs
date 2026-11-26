@@ -33,7 +33,7 @@ export function parseAnointOutput(raw, status, stderr = '') {
 
 function escapeMarkdown(value) {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-    .replace(/[\r\n]/g, ' ').replace(/[\\`*_{}\[\]()#+\-.!|]/g, '\\$&');
+    .replace(/[\r\n]/g, ' ').replace(/[\\`*_{}[\]()#+\-.!|]/g, '\\$&');
 }
 
 export function summarizeAnoint(report) {
