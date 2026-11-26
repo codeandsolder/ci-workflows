@@ -249,7 +249,7 @@ jobs:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
           components: rustfmt, clippy
           select: "true"
-      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@c5aa78816e51ac25ea6eff7cbdb5fb26a59d7798 # main
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
         if: (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
@@ -274,7 +274,7 @@ jobs:
           if-no-files-found: error
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@c5aa78816e51ac25ea6eff7cbdb5fb26a59d7798 # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
 
   validate:
     needs: [observe, prepare, generate]
@@ -396,7 +396,7 @@ jobs:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
           components: rustfmt, clippy
           select: "true"
-      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@c5aa78816e51ac25ea6eff7cbdb5fb26a59d7798 # main
+      - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
         if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
           rust-toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
@@ -448,7 +448,7 @@ jobs:
           if-no-files-found: error
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@c5aa78816e51ac25ea6eff7cbdb5fb26a59d7798 # main
+        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
 
   publish:
     needs: [observe, prepare, generate, validate]

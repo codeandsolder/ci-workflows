@@ -81,7 +81,7 @@ jobs:
           manifest: ${{ runner.temp }}/shared-quality-languages.json
       - name: Strict Ruff and ty for standalone Python projects
         if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.python-quality && steps.detect.outputs.has-python == 'true' }}
-        uses: codeandsolder/rust-skills2/.github/actions/python-strict@7cd4c792bd6aba2807b4accc42dfb3e9db238634 # main
+        uses: codeandsolder/rust-skills2/.github/actions/python-strict@a28c8107bd1984d4db0f71d7ad34fedf014d7f96 # main
         with:
           ban-python-outside-ci: "false"
       - name: Install Java for PMD
