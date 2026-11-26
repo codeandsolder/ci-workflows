@@ -60,11 +60,12 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/resolve-rust-toolchain
         id: compiler
-      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+      - uses: ./.github/actions/install-rust-toolchain
         with:
           toolchain: ${{ steps.compiler.outputs.channel }}
           targets: wasm32-wasip1
           components: clippy,rustfmt
+          select: "true"
       - name: Setup mandatory sccache
         uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@945fa80aba9612faf36918d309369316db9b13e7 # main
         with:
