@@ -11,8 +11,9 @@ runs:
     - name: Validate Rust CI cache contracts
       shell: bash
       env:
+        POLICY_REPOSITORY: ${{ github.repository }}
         EXPECTED_STRICT_REF: ${{ inputs.strict-ref }}
       run: >-
         node "$GITHUB_ACTION_PATH/../../../policy-wasm/run.mjs"
         "$GITHUB_ACTION_PATH/../../../policy-wasm/module.json"
-        sccache "$GITHUB_WORKSPACE" "$EXPECTED_STRICT_REF"
+        sccache "$GITHUB_WORKSPACE" "$EXPECTED_STRICT_REF" "$POLICY_REPOSITORY"

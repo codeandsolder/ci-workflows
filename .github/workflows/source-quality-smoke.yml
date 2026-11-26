@@ -18,7 +18,8 @@ on:
       - .github/actions/detect-languages/**
       - .github/actions/shell-quality/**
       - .github/actions/javascript-quality/**
-      - .github/actions/wgsl-quality/**
+      - .github/actions/setup-sccache/**
+      - .github/actions/finalize-sccache/**
       - .github/workflows/source-quality*.yml
   push:
     branches: [main]
@@ -38,7 +39,8 @@ on:
       - .github/actions/detect-languages/**
       - .github/actions/shell-quality/**
       - .github/actions/javascript-quality/**
-      - .github/actions/wgsl-quality/**
+      - .github/actions/setup-sccache/**
+      - .github/actions/finalize-sccache/**
       - .github/workflows/source-quality*.yml
   workflow_dispatch:
 

@@ -12,6 +12,51 @@ const WORKFLOW: &str = "codeandsolder/ci-workflows/.github/workflows/rust-sccach
 const STRICT: &str = "codeandsolder/rust-skills2/.github/workflows/strict-rust.yml@";
 const SETUP: &str = "codeandsolder/ci-workflows/.github/actions/setup-sccache@";
 const FINALIZE: &str = "codeandsolder/ci-workflows/.github/actions/finalize-sccache@";
+const PROVIDER: &str = "codeandsolder/ci-workflows";
+
+#[derive(Default)]
+struct ProviderCheckouts {
+    paths: BTreeSet<String>,
+}
+
+impl ProviderCheckouts {
+    fn observe(&mut self, step: &Node<'_>) {
+        let Some(uses) = field(step, "uses") else {
+            return;
+        };
+        if !uses.starts_with("actions/checkout@") {
+            return;
+        }
+        let options = get(step, "with");
+        let path = options.and_then(|opts| field(opts, "path")).unwrap_or(".");
+        let path = if path == "." {
+            "./".to_owned()
+        } else {
+            format!("./{path}/")
+        };
+        self.paths.remove(&path);
+        if !pinned(uses, "actions/checkout@") {
+            return;
+        }
+        let repo = options.and_then(|opts| field(opts, "repository"));
+        let reference = options.and_then(|opts| field(opts, "ref"));
+        let trusted = if path == "./" {
+            repo.is_none() && reference.is_none()
+        } else {
+            repo == Some("${{ job.workflow_repository }}")
+                && reference == Some("${{ job.workflow_sha }}")
+        };
+        if trusted {
+            self.paths.insert(path);
+        }
+    }
+
+    fn contains_action(&self, uses: &str, action: &str) -> bool {
+        self.paths
+            .iter()
+            .any(|path| uses == format!("{path}.github/actions/{action}"))
+    }
+}
 
 fn external_ref<'a>(uses: &'a str, prefix: &str) -> Option<&'a str> {
     let rest = uses.strip_prefix(prefix)?;
@@ -125,6 +170,7 @@ impl Lifecycle {
         step: &Node<'_>,
         compiles: bool,
         unknown: BTreeSet<String>,
+        provider_checkouts: &ProviderCheckouts,
     ) {
         if compiles || !unknown.is_empty() {
             self.first_rust.get_or_insert(index);
@@ -134,10 +180,12 @@ impl Lifecycle {
             self.unresolved.insert(index, unknown);
         }
         if let Some(uses) = field(step, "uses") {
-            if pinned(uses, SETUP) {
+            if pinned(uses, SETUP) || provider_checkouts.contains_action(uses, "setup-sccache") {
                 self.first_setup.get_or_insert(index);
             }
-            if pinned(uses, FINALIZE) {
+            if pinned(uses, FINALIZE)
+                || provider_checkouts.contains_action(uses, "finalize-sccache")
+            {
                 self.finalizers.push((
                     index,
                     field(step, "if").is_some_and(|value| value.trim() == "always()"),
@@ -201,6 +249,7 @@ fn inspect_job(
     label: &str,
     job: &Node<'_>,
     strict_ref: Option<&str>,
+    provider: bool,
     out: &mut Vec<String>,
 ) {
     if let Some(uses) = field(job, "uses") {
@@ -213,10 +262,14 @@ fn inspect_job(
         return;
     };
     let mut lifecycle = Lifecycle::default();
+    let mut provider_checkouts = ProviderCheckouts::default();
     for (index, step) in steps.iter().enumerate() {
         if step.as_mapping().is_some() {
             let (compiles, unknown) = inspect_step(scanner, root, job, step);
-            lifecycle.record_step(index, step, compiles, unknown);
+            if provider {
+                provider_checkouts.observe(step);
+            }
+            lifecycle.record_step(index, step, compiles, unknown, &provider_checkouts);
         }
     }
     lifecycle.violations(label, out);
@@ -225,6 +278,7 @@ fn inspect_job(
 pub fn inspect(
     root: &Path,
     strict_ref: Option<&str>,
+    repository: &str,
     paths: Vec<PathBuf>,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let scanner = Scanner::new()?;
@@ -252,6 +306,7 @@ pub fn inspect(
                     &format!("{relative}:{name}"),
                     job,
                     strict_ref,
+                    repository == PROVIDER,
                     &mut violations,
                 );
             }

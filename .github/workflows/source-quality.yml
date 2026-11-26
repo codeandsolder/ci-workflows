@@ -49,7 +49,8 @@ jobs:
             .github/actions/detect-languages
             .github/actions/shell-quality
             .github/actions/javascript-quality
-            .github/actions/wgsl-quality
+            .github/actions/setup-sccache
+            .github/actions/finalize-sccache
             .github/actions/install-rust-toolchain
             languages/detect.mjs
             languages/run.mjs
@@ -74,11 +75,33 @@ jobs:
         uses: ./.shared-language-quality/.github/actions/javascript-quality
         with:
           manifest: ${{ runner.temp }}/shared-quality-languages.json
-      - name: Check tracked WGSL with Naga
+      - name: Install stable Rust for WGSL
+        id: wgsl-rust
         if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.wgsl && steps.detect.outputs.has-wgsl == 'true' }}
-        uses: ./.shared-language-quality/.github/actions/wgsl-quality
+        uses: ./.shared-language-quality/.github/actions/install-rust-toolchain
         with:
-          manifest: ${{ runner.temp }}/shared-quality-languages.json
+          toolchain: stable
+      - name: Configure managed sccache for WGSL
+        id: wgsl-cache
+        if: ${{ !cancelled() && steps.wgsl-rust.outcome == 'success' }}
+        uses: ./.shared-language-quality/.github/actions/setup-sccache
+        with:
+          rust-toolchain: stable
+          rustflags: ""
+          repository-path: .shared-language-quality
+          cache-scope: shared-wgsl-quality
+      - name: Check tracked WGSL with Naga
+        if: ${{ !cancelled() && steps.wgsl-cache.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +stable run --locked \
+            --manifest-path .shared-language-quality/languages/wgsl/Cargo.toml \
+            --target-dir "$RUNNER_TEMP/wgsl-quality-target" -- \
+            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/shared-quality-languages.json"
+      - name: Finalize managed sccache for WGSL
+        if: always()
+        uses: ./.shared-language-quality/.github/actions/finalize-sccache
       - name: Strict Ruff and ty for standalone Python projects
         if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.python-quality && steps.detect.outputs.has-python == 'true' }}
         uses: codeandsolder/rust-skills2/.github/actions/python-strict@8e82916a91d94d82b6bb31bcdfc59af06953b839 # main
