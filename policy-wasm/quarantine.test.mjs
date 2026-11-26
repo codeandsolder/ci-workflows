@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, unlinkSync, rmSync, symlinkSync 
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gather, guest, quarantine } from './quarantine.mjs';
+import { gather, guest, quarantine, lookupPublications } from './quarantine.mjs';
 
 const module = path.resolve(process.argv[2] ?? fileURLToPath(new URL('./module.json', import.meta.url)));
 const source = 'registry+https://github.com/rust-lang/crates.io-index';
@@ -122,9 +122,11 @@ test('publication timestamps, lookup caching, and missing metadata fail closed',
   assert.equal(requests, 1);
   assert.equal(result.count, 3);
   assert.equal(result.issues.length, 2);
+  assert.equal(result.metadataUnavailable, true);
   assert.match(result.issues[0], /1.0.2.*younger than 72h/);
   assert.match(result.issues[1], /1.0.3.*missing authoritative/);
-  const failed = await quarantine(module, f.root, base, 'auto', 72, async () => { throw new Error('offline'); }, now);
+  const failed = await quarantine(module, f.root, base, 'auto', 72, async () => { throw new Error('offline'); }, now, fakeTransport().transport);
+  assert.equal(failed.metadataUnavailable, true);
   assert.equal(failed.issues.length, 3);
   assert.ok(failed.issues.every((issue) => issue.includes('crates.io lookup failed')));
   const malformed = await quarantine(module, f.root, base, 'auto', 72,
@@ -133,7 +135,7 @@ test('publication timestamps, lookup caching, and missing metadata fail closed',
   f.write('Cargo.lock', lock(['serde', '1.0.0']));
   assert.deepEqual(await quarantine(module, f.root, base, 'auto', 72, async () => {
     throw new Error('unchanged packages must not reach network');
-  }, now), {issues: [], count: 0});
+  }, now), {issues: [], count: 0, metadataUnavailable: false});
 });
 
 
@@ -154,7 +156,7 @@ test('fully deleted workspace and repositories without lockfiles require no quar
   const result = await quarantine(module, empty.root, initial, 'auto', 72, async () => {
     throw Error('unchanged empty repository must not query crates.io');
   });
-  assert.deepEqual(result, {issues: [], count: 0});
+  assert.deepEqual(result, {issues: [], count: 0, metadataUnavailable: false});
 });
 
 test('untracked lockfile cannot silently replace a tracked workspace member lock', (t) => {
@@ -189,7 +191,7 @@ test('first-party Git-only revisions never require crates.io, new external versi
   f.write('Cargo.lock', lock(['own', '0.1.0', own('b'.repeat(40))], ['serde', '1.0.0']));
   assert.deepEqual(await quarantine(module, f.root, base, 'auto', 72, async () => {
     throw Error('first-party Git-only update incorrectly performed a crates.io lookup');
-  }), {issues: [], count: 0});
+  }), {issues: [], count: 0, metadataUnavailable: false});
 
   f.write('Cargo.lock', lock(['own', '0.1.0', own('b'.repeat(40))], ['serde', '1.0.1']));
   const now = Date.parse('2026-11-23T00:00:00Z');
@@ -205,4 +207,63 @@ test('first-party Git-only revisions never require crates.io, new external versi
   assert.equal(result.count, 1);
   assert.equal(result.issues.length, 1);
   assert.match(result.issues[0], /serde 1.0.1.*younger than 72h/);
+});
+
+function fakeTransport(budgetMs = 480_000) {
+  let time = Date.parse('2026-11-26T00:00:00Z');
+  const waits = [];
+  return {
+    waits,
+    transport: {clock: () => time, sleep: async ms => { waits.push(ms); time += ms; },
+      spacingMs: 1_000, budgetMs},
+  };
+}
+
+test('one authoritative request per crate and pacing across a large lockfile', async () => {
+  const {transport, waits} = fakeTransport();
+  const packages = Array.from({length: 150}, (_, i) => ({name: 'crate-' + i, version: '1.0.0'}));
+  packages.push(...packages.map(pkg => ({...pkg, version:'1.0.1'})));
+  let calls = 0;
+  const result = await lookupPublications(packages, async () => {
+    calls++;
+    return {ok:true, json: async () => ({versions: [
+      {num:'1.0.0', created_at:'2026-01-01T00:00:00Z'},
+      {num:'1.0.1', created_at:'2026-01-02T00:00:00Z'},
+    ]})};
+  }, transport);
+  assert.equal(calls, 150);
+  assert.equal(waits.length, 149);
+  assert.ok(waits.every(ms => ms === 1_000));
+  assert.equal(result['crate-149']['1.0.1'].kind, 'found');
+});
+
+test('429 Retry-After seconds and HTTP date control shared cooldown', async () => {
+  const {transport, waits} = fakeTransport();
+  const packages = [{name:'a', version:'1'}, {name:'b', version:'1'}];
+  const rateLimited = retry => ({ok:false,status:429,headers:new Headers({'Retry-After':retry})});
+  const responses = [
+    rateLimited('3'),
+    rateLimited(new Date(transport.clock()+8_000).toUTCString()),
+    {ok:true,json:async()=>({versions:[{num:'1',created_at:'2026-01-01T00:00:00Z'}]})},
+    {ok:false,status:404},
+  ];
+  const result = await lookupPublications(packages, async () => responses.shift(), transport);
+  assert.deepEqual(waits,[3_000,5_000,1_000]);
+  assert.equal(result.a['1'].kind,'found');
+  assert.match(result.b['1'].message,/404/);
+  assert.equal(responses.length,0);
+});
+
+test('exhausted server cooldown fails closed without hammering other crates', async () => {
+  const {transport, waits} = fakeTransport(10_000);
+  let calls = 0;
+  const result = await lookupPublications([{name:'a',version:'1'},{name:'b',version:'1'}],
+    async () => {
+      calls++;
+      return {ok:false,status:429,headers:new Headers({'Retry-After':'120'})};
+    }, transport);
+  assert.equal(calls,1);
+  assert.deepEqual(waits,[]);
+  assert.match(result.a['1'].message,/budget exhausted/);
+  assert.match(result.b['1'].message,/budget exhausted/);
 });
