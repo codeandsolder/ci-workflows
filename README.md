@@ -256,6 +256,44 @@ names and PR/merge-queue behavior are verified in public pilots. Private
 callers use registered local-ci runners. Do not apply rules that the private
 repository's GitHub plan cannot enforce.
 
+### Enroll verified repositories in native GitHub automerge
+
+Use the shared `renovate-native-automerge` preset as a final extension after
+the existing shared fleet preset, only after installing the required CI rules.
+It changes the merge transport, not dependency eligibility or release age.
+Do not apply it to repositories whose GitHub plan cannot enforce rulesets,
+or to upstream-tracking forks until their direct publication path is compatible.
+
+For each repository, review every mandatory PR workflow, including native
+tests, quarantine and strict source validation. Establish an unconditional
+terminal merge gate for every such workflow, with distinct names, and verify
+real PR and default-branch runs before enrollment. Verify merge-group behavior
+if a merge queue is used. Do not infer the required gate set from whichever
+checks happened to report. Use the full reviewed set of exact context names.
+
+```bash
+node scripts/native-renovate-automerge.mjs plan codeandsolder/REPO MERGED_PR \\
+  'CI merge gate / Verify expected job results'
+node scripts/native-renovate-automerge.mjs apply codeandsolder/REPO MERGED_PR \\
+  'CI merge gate / Verify expected job results'
+```
+
+The controller verifies successful, unambiguous GitHub Actions results on the
+merged validation PR head and the current default-branch SHA. It installs a
+dedicated active ruleset, with exact Actions-attributed contexts, strict
+up-to-date checks and no bypass actors, without replacing existing rules.
+Only after reading back the effective rule does it enable GitHub auto-merge.
+Administrative API permission is required. Existing differing rulesets are
+rejected rather than overwritten. The default branch must remain unchanged
+during planning and application.
+
+After successful enrollment, submit a consumer config PR adding the native
+preset as the final extension, and validate that the real Renovate PR remains
+open on failed or pending CI and merges on green CI. Keep private Free-plan
+repositories and other unenforceable repositories on Renovate-side automerge.
+If removing required rules, remove the opt-in and disable native automerge
+first; never leave native Renovate automerge without enforced checks.
+
 ## Renovate: one fleet policy, small consumer exceptions
 
 Consumers extend `github>codeandsolder/ci-workflows:renovate-fleet` in `renovate.json`. Keep only project-specific constraints there (e.g. pinned ABI/toolchain floors, incompatible dependency pairs, genuinely exceptional grouping). The shared preset includes `config:recommended`, pinned GitHub Actions, the [first-party CI trust-root preset](renovate-ci-trust-root.json), and the common update lifecycle.
