@@ -684,6 +684,10 @@ issue labels are not promotion criteria. A compiler regression should acquire
 a regression test rather than an issue filter.
 
 Only the native root dated nightly receives the weekly nightly-specific schedule and age policy.
+Shared runners must never run `rustup default` in a workflow. Install explicitly
+with `.github/actions/install-rust-toolchain`; when a job must select an
+explicit compiler, use its job-local selection option.
+
 Do not duplicate compiler versions in environment variables, workflow inputs,
 or scripts. Every normal check must use the native pin, and required tests,
 strict lint and any relevant package or cross-target checks must run on

@@ -46,6 +46,7 @@ jobs:
             .github/actions/shell-quality
             .github/actions/javascript-quality
             .github/actions/wgsl-quality
+            .github/actions/install-rust-toolchain
             languages/detect.mjs
             languages/run.mjs
             languages/tools

@@ -242,11 +242,12 @@ jobs:
         uses: ./.ci-upstream/.github/actions/resolve-rust-toolchain
         with:
           validation-tier: routine
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: ./.ci-upstream/.github/actions/install-rust-toolchain
         if: (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
           components: rustfmt, clippy
+          select: "true"
       - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@945fa80aba9612faf36918d309369316db9b13e7 # main
         if: (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
@@ -369,10 +370,12 @@ jobs:
           base-ref: ${{ needs.observe.outputs.base || github.event.pull_request.base.sha }}
           hours: "72"
           fail-on-blocked: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
-      - uses: dtolnay/rust-toolchain@6a52aad76a94a5fbc50d567bb5be24419801c1fb # nightly
+      - uses: ./.ci-workflows/.github/actions/install-rust-toolchain
         if: steps.check.outputs.checked == 'true' && inputs.nightly-format && steps.quarantine.outputs.eligible == 'true'
         with:
+          toolchain: nightly
           components: rustfmt
+          select: "true"
       - name: Resolve reviewed provider compiler when Rust input is omitted
         id: provider-compiler
         if: steps.check.outputs.checked == 'true' && steps.rust-source.outputs.rust == 'true' && inputs.rust-toolchain == '' && steps.quarantine.outputs.eligible == 'true'
@@ -386,11 +389,12 @@ jobs:
         uses: ./.ci-workflows/.github/actions/resolve-rust-toolchain
         with:
           validation-tier: routine
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: ./.ci-workflows/.github/actions/install-rust-toolchain
         if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:
           toolchain: ${{ inputs.rust-toolchain == 'repository' && steps.repository-compiler.outputs.channel || (inputs.rust-toolchain != '' && inputs.rust-toolchain || steps.provider-compiler.outputs.channel) }}
           components: rustfmt, clippy
+          select: "true"
       - uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@945fa80aba9612faf36918d309369316db9b13e7 # main
         if: steps.check.outputs.checked == 'true' && (steps.rust-source.outputs.rust == 'true' || inputs.rust-toolchain != '') && steps.quarantine.outputs.eligible == 'true'
         with:

@@ -1,0 +1,25 @@
+name: Install Rust toolchain without changing the global default
+description: Install exact Rustup tools and optionally select them only for this job.
+inputs:
+  toolchain:
+    description: Resolved Rustup channel or exact version
+    required: true
+  components:
+    description: Comma or space separated components
+    default: ""
+  targets:
+    description: Comma or space separated targets
+    default: ""
+  select:
+    description: Select the compiler for subsequent job steps only
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        INSTALL_TOOLCHAIN: ${{ inputs.toolchain }}
+        INSTALL_COMPONENTS: ${{ inputs.components }}
+        INSTALL_TARGETS: ${{ inputs.targets }}
+        INSTALL_SELECT: ${{ inputs.select }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh" "$INSTALL_TOOLCHAIN" "$INSTALL_COMPONENTS" "$INSTALL_TARGETS" "$INSTALL_SELECT"
