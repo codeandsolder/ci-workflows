@@ -1,4 +1,4 @@
-name: Rust test-impact shadow smoke
+name: Unified Rust test suite smoke
 
 on:
   pull_request:
@@ -42,12 +42,17 @@ jobs:
   end-to-end:
     uses: ./.github/workflows/rust-test-impact.yml
     with:
-      working-directory: policy-wasm
+      test-suites: '[{"name":"policy","directory":"policy-wasm"}]'
 
-  automatic-end-to-end:
-    # Exercise the shared Rust job's default mode without explicitly opting in.
+  shared-provider-end-to-end:
+    # Exercise the typed suite through the same provider used by consumers.
+    # The policy crate is binary-only; no duplicate normal unit-test command.
     uses: ./.github/workflows/rust-sccache.yml
     with:
-      command: cargo test --locked --manifest-path policy-wasm/Cargo.toml
-      test-impact-working-directory: policy-wasm
-      sccache-cache-scope: rust-test-impact-auto
+      command: cargo fmt --manifest-path policy-wasm/Cargo.toml --all -- --check
+      test-suites: |
+        [
+          {"name":"cache","directory":"policy-wasm","continuous":true,"nextest":["-E","test(cache::tests::)"]},
+          {"name":"other","directory":"policy-wasm","nextest":["-E","not test(cache::tests::)"]}
+        ]
+      sccache-cache-scope: rust-test-impact-unified

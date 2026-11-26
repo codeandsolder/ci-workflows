@@ -1,4 +1,4 @@
-name: Rust test-impact shadow (opt-in)
+name: Unified Rust test suite
 
 on:
   workflow_call:
@@ -8,14 +8,11 @@ on:
         type: string
         required: false
         default: ""
-      working-directory:
+      test-suites:
+        description: JSON array of named authoritative Nextest scopes
         type: string
         required: false
-        default: "."
-      cargo-args:
-        type: string
-        required: false
-        default: "--workspace --locked"
+        default: '[{"name":"workspace"}]'
       runner:
         type: string
         required: false
@@ -38,6 +35,4 @@ jobs:
       runner: ${{ inputs.runner }}
       timeout-minutes: ${{ inputs.timeout-minutes }}
       sccache-cache-scope: rust-test-impact
-      test-impact-mode: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && 'collect' || 'shadow' }}
-      test-impact-working-directory: ${{ inputs.working-directory }}
-      test-impact-cargo-args: ${{ inputs.cargo-args }}
+      test-suites: ${{ inputs.test-suites }}

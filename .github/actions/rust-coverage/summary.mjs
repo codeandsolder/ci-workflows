@@ -1,6 +1,6 @@
 import { readFileSync, appendFileSync } from 'node:fs';
 
-const { COVERAGE_JSON, COVERAGE_STATUS, COVERAGE_DIRECTORY, COVERAGE_ARTIFACT_URL, GITHUB_STEP_SUMMARY } = process.env;
+const { COVERAGE_JSON, COVERAGE_STATUS, COVERAGE_DIRECTORY, COVERAGE_ARTIFACT_URL, COVERAGE_ARTIFACT_SUBDIR, GITHUB_STEP_SUMMARY } = process.env;
 
 const lines = [
   '## Rust test coverage (informational)',
@@ -43,7 +43,8 @@ try {
 }
 
 if (COVERAGE_ARTIFACT_URL) {
-  lines.push(`[Download the HTML and LCOV report](${COVERAGE_ARTIFACT_URL}) (open \`html/index.html\` inside the artifact).\n`);
+  const reportPath = COVERAGE_ARTIFACT_SUBDIR ? COVERAGE_ARTIFACT_SUBDIR + '/html/index.html' : 'html/index.html';
+  lines.push(`[Download the HTML and LCOV report](${COVERAGE_ARTIFACT_URL}) (open \`${reportPath}\` inside the artifact).\n`);
 }
 
 const markdown = lines.join('\n') + '\n';
