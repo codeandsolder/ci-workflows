@@ -1,0 +1,49 @@
+name: Merge gate contract smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/merge-gate*.yml'
+      - '.github/actions/merge-gate/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/merge-gate*.yml'
+      - '.github/actions/merge-gate/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    outputs:
+      selected: ${{ steps.scope.outputs.selected }}
+    steps:
+      - id: scope
+        run: echo 'selected=false' >> "$GITHUB_OUTPUT"
+  conditional:
+    needs: scope
+    if: needs.scope.outputs.selected == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - run: exit 1
+  merge-gate-smoke:
+    name: Merge gate contract
+    needs: [scope, conditional]
+    if: ${{ always() }}
+    uses: ./.github/workflows/merge-gate.yml
+    with:
+      needs-json: ${{ toJSON(needs) }}
+      expected-results: |
+        [
+          ["scope", "success"],
+          ["conditional", "${{ needs.scope.outputs.selected == 'true' && 'success' || 'skipped' }}"]
+        ]

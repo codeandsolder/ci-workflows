@@ -175,7 +175,7 @@ summarize_groups() {
     echo
   fi
   if (( new > 25 || smaller > 25 || accepted > 25 )); then
-    echo "Showing the first 25 groups per class; see the JSON artifact for all findings."
+    echo "Showing the first 25 groups per class; see the full JSON report in the workflow log or artifact for all findings."
   fi
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 

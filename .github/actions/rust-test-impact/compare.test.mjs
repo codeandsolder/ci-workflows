@@ -88,3 +88,32 @@ test('failed full run without any failed test is inconclusive', () => {
   assert.equal(result.failed, 0);
   assert.match(result.reason, /failed without an individual/);
 });
+
+test('estimates savings from executed test durations, not phantoms or ignored tests', () => {
+  const sample = [
+    {type:'suite',event:'started',nextest:{crate:'example',test_binary:'example',kind:'lib'}},
+    {type:'test',event:'ok',name:'example::example$tests::selected',exec_time:4},
+    {type:'test',event:'ok',name:'example::example$tests::passing',exec_time:12},
+    {type:'test',event:'ignored',name:'example::example$tests::ignored'},
+  ].map(JSON.stringify).join('\n');
+  const report = structuredClone(selection);
+  report.selection.selected_tests.push({binary_id:'example',test_name:'phantom'});
+  const result = compareImpact(report, sample, true);
+  assert.equal(result.total, 2);
+  assert.equal(result.selected, 2);
+  assert.equal(result.selectedExecuted, 1);
+  assert.equal(result.executionSeconds, 16);
+  assert.equal(result.selectedExecutionSeconds, 4);
+  assert.equal(result.skippedExecutionSeconds, 12);
+  assert.match(renderSummary(result), /12.00 s \(75.0%\)/);
+  const miss = compareImpact({...report,cache:{status:'miss-no-coverage'}},sample,true);
+  assert.equal(miss.executionSeconds,16);
+  assert.equal(miss.skippedExecutionSeconds,null);
+});
+
+test('missing durations do not imply zero elapsed time', () => {
+  const result = compareImpact(selection, events, false);
+  assert.equal(result.timedTests, 0);
+  assert.equal(result.executionSeconds, null);
+  assert.equal(result.skippedExecutionSeconds, null);
+});

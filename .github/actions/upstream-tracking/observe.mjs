@@ -69,11 +69,10 @@ function saveState(state, parent) {
   return commit;
 }
 
-function main([repository, branch, strategy, releasePrefix = ""]) {
+function main([repository, branch, releasePrefix = ""]) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? "") || !branch) throw new Error("Expected upstream repository and branch");
   git(["check-ref-format", "refs/heads/" + branch]);
   const source = repository + ":" + branch + (releasePrefix ? ":releases:" + releasePrefix : "");
-  if (releasePrefix && strategy !== "merge") throw new Error("Release tracking requires merge strategy");
   const { previous, parent } = loadState();
   const now = Date.now();
   const output = (key, value) => appendFileSync(process.env.GITHUB_OUTPUT, key + "=" + value + "\n");
@@ -122,8 +121,7 @@ function main([repository, branch, strategy, releasePrefix = ""]) {
   const result = planObservation(previous, source, tip, observedAt, reachable, releaseTag, tagValid);
   saveState(result.state, attempt);
   let reviewed = null;
-  if (strategy === "source-merge" &&
-      git(["ls-tree", "-r", "--name-only", base, ".github/upstream-reconciliation/reviewed-source-sha"])) {
+  if (git(["ls-tree", "-r", "--name-only", base, ".github/upstream-reconciliation/reviewed-source-sha"])) {
     reviewed = git(["show", base + ":.github/upstream-reconciliation/reviewed-source-sha"]);
     if (!SHA.test(reviewed) || !reachable(reviewed, tip)) {
       throw new Error("Reviewed source checkpoint no longer belongs to upstream history");

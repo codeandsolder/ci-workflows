@@ -38,14 +38,28 @@ export function compareImpact(selection, nextestLines, fullRunSucceeded) {
     if (!id) throw new Error('Test ' + event.name + ' lacks a matching Nextest suite');
     const name = event.name.slice(sep + 1);
     if (!name) throw new Error('Missing test name in ' + event.name);
-    if (event.event !== 'started') outcomes.set(testKey(id, name), { binaryId: id, testName: name, event: event.event });
+    if (event.event !== 'started') outcomes.set(testKey(id, name), {
+      binaryId: id, testName: name, event: event.event,
+      seconds: typeof event.exec_time === 'number' && Number.isFinite(event.exec_time) && event.exec_time >= 0
+        ? event.exec_time : null,
+    });
   }
-  const failures = [...outcomes.entries()].filter(([, outcome]) => !['ok', 'ignored', 'filtered'].includes(outcome.event));
-  if (!outcomes.size || (!fullRunSucceeded && failures.length === 0)) {
-    const reason = outcomes.size
+  const executed = [...outcomes.entries()].filter(([, outcome]) => !['ignored', 'filtered'].includes(outcome.event));
+  const failures = executed.filter(([, outcome]) => outcome.event !== 'ok');
+  const measured = executed.filter(([, outcome]) => outcome.seconds !== null);
+  const sumSeconds = rows => rows.reduce((sum, [, outcome]) => sum + outcome.seconds, 0);
+  const timing = {
+    timedTests: measured.length,
+    executionSeconds: measured.length === executed.length && executed.length ? sumSeconds(measured) : null,
+    selectedExecuted: null,
+    selectedExecutionSeconds: null,
+    skippedExecutionSeconds: null,
+  };
+  if (!executed.length || (!fullRunSucceeded && failures.length === 0)) {
+    const reason = executed.length
       ? 'Full Nextest failed without an individual failing-test outcome'
       : 'Full Nextest run produced no test outcomes';
-    return { evaluable: false, reason, total: outcomes.size, failed: failures.length, misses: [] };
+    return { evaluable: false, reason, total: executed.length, failed: failures.length, ...timing, misses: [] };
   }
   const cache = selection?.cache?.status;
   const summary = selection?.selection?.summary;
@@ -62,14 +76,23 @@ export function compareImpact(selection, nextestLines, fullRunSucceeded) {
     }
   }
   const misses = evaluable
-    ? failures.filter(([key]) => !selected.has(key)).map(([, outcome]) => outcome)
+    ? failures.filter(([key]) => !selected.has(key)).map(([, { binaryId, testName, event }]) => ({ binaryId, testName, event }))
     : [];
+  if (evaluable) {
+    const selectedOutcomes = executed.filter(([key]) => selected.has(key));
+    timing.selectedExecuted = selectedOutcomes.length;
+    if (timing.executionSeconds !== null) {
+      timing.selectedExecutionSeconds = sumSeconds(selectedOutcomes);
+      timing.skippedExecutionSeconds = sumSeconds(executed.filter(([key]) => !selected.has(key)));
+    }
+  }
   return {
     evaluable,
     reason: evaluable ? null : 'Selection unavailable or incompatible (cache=' + (cache ?? 'none')
       + ', mode=' + (summary?.mode ?? 'none') + ')',
     cacheStatus: cache ?? null,
-    total: outcomes.size,
+    total: executed.length,
+    ...timing,
     failed: failures.length,
     selected: evaluable ? selected.size : null,
     misses,
@@ -85,10 +108,21 @@ export function renderSummary(assessment) {
     '',
     'Full Nextest: ' + assessment.total + ' completed tests, ' + assessment.failed + ' failures.',
   ];
+  if (assessment.executionSeconds !== null && assessment.executionSeconds !== undefined) {
+    lines.push('Observed terminal-attempt test time (summed, not job wall time): ' + assessment.executionSeconds.toFixed(2) + ' s.');
+  }
   if (!assessment.evaluable) {
     lines.push('Test-impact selection not evaluable: ' + assessment.reason + '.');
   } else {
     lines.push('Selected by cargo-affected: ' + assessment.selected + ' tests; potential missed regressions: ' + assessment.misses.length + '.');
+    if (assessment.selectedExecuted !== null && assessment.selectedExecuted !== undefined) {
+      lines.push('Among the executed tests, ' + assessment.selectedExecuted + '/' + assessment.total + ' would be selected.');
+    }
+    if (assessment.skippedExecutionSeconds !== null && assessment.skippedExecutionSeconds !== undefined) {
+      const saved = assessment.executionSeconds > 0 ? 100 * assessment.skippedExecutionSeconds / assessment.executionSeconds : 0;
+      lines.push('Estimated avoidable summed test time: ' + assessment.skippedExecutionSeconds.toFixed(2)
+        + ' s (' + saved.toFixed(1) + '%). This is not a measured CI speedup.');
+    }
     for (const miss of assessment.misses.slice(0, 30)) {
       lines.push('- Potential false negative: ' + tick + miss.binaryId + '::' + miss.testName + tick + ' (' + miss.event + ').');
     }

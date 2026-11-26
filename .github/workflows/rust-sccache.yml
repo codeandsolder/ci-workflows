@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       command:
-        description: Rust/Cargo command to run in the caller repository
+        description: Rust/Cargo validation command; when test-suites is set, only non-overlapping setup/lint/build checks
         required: true
         type: string
       rust-toolchain:
@@ -19,6 +19,11 @@ on:
         type: string
       uv-version:
         description: Exact uv version to provision for callers using independent Python reference tools; empty skips installation
+        required: false
+        default: ""
+        type: string
+      node-version:
+        description: Explicit Node.js version for callers with JavaScript runtime tests; empty skips provisioning
         required: false
         default: ""
         type: string
@@ -77,21 +82,11 @@ on:
         required: false
         default: "."
         type: string
-      test-impact-mode:
-        description: "auto (advisory after routine Rust CI, default), none (disable), collect (dedicated baseline), or shadow (dedicated comparison)"
-        type: string
+      test-suites:
+        description: JSON array of named authoritative unified Nextest scopes (empty runs only command)
         required: false
-        default: "auto"
-      test-impact-working-directory:
-        description: Cargo workspace directory for test-impact runs
+        default: ""
         type: string
-        required: false
-        default: "."
-      test-impact-cargo-args:
-        description: Whitespace-separated Cargo build/test flags passed to Nextest
-        type: string
-        required: false
-        default: "--workspace --locked"
       isolate-public-sccache-server:
         description: Give the public CI compiler cache an isolated Unix socket so test suites managing their own sccache daemon cannot stop it.
         required: false
@@ -109,7 +104,7 @@ env:
 
 jobs:
   rust:
-    continue-on-error: ${{ inputs.coverage-report || inputs.test-impact-mode == 'collect' }}
+    continue-on-error: ${{ inputs.coverage-report && inputs.test-suites == '' }}
     # Unknown values run into the validation step instead of silently skipping CI.
     if: ${{ inputs.validation-tier != 'release' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || inputs.runner }}
@@ -126,17 +121,15 @@ jobs:
         shell: bash
         env:
           VALIDATION_TIER: ${{ inputs.validation-tier }}
+          COVERAGE_REPORT: ${{ inputs.coverage-report }}
+          HAS_TEST_SUITES: ${{ inputs.test-suites != '' }}
         run: |
           case "$VALIDATION_TIER" in
             routine|release) ;;
             *) echo "Unknown validation-tier: $VALIDATION_TIER" >&2; exit 2 ;;
           esac
-          case "${{ inputs.test-impact-mode }}" in
-            auto|none|collect|shadow) ;;
-            *) echo "Unknown test-impact-mode" >&2; exit 2 ;;
-          esac
-          if [[ "${{ inputs.coverage-report }}" == true && "${{ inputs.test-impact-mode }}" != none && "${{ inputs.test-impact-mode }}" != auto ]]; then
-            echo "Coverage report and test-impact mode cannot both own a single test job" >&2
+          if [[ "$COVERAGE_REPORT" == true && "$HAS_TEST_SUITES" == true ]]; then
+            echo "Standalone coverage and the unified test suite cannot both own one job" >&2
             exit 2
           fi
 
@@ -144,7 +137,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The Git baseline SHA may be outside a PR's default shallow clone.
-          fetch-depth: ${{ (inputs.test-impact-mode == 'shadow' || (inputs.test-impact-mode == 'auto' && !inputs.coverage-report && github.event_name == 'pull_request')) && '0' || '1' }}
+          fetch-depth: ${{ inputs.test-suites != '' && '0' || '1' }}
 
       - name: Checkout shared CI implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -203,7 +196,7 @@ jobs:
           RUST_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
           VALIDATION_TIER: ${{ inputs.validation-tier }}
           COVERAGE_REPORT: ${{ inputs.coverage-report }}
-          TEST_IMPACT_MODE: ${{ inputs.test-impact-mode }}
+          HAS_TEST_SUITES: ${{ inputs.test-suites != '' }}
         run: |
           set -euo pipefail
           if ! rustup run "$RUST_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
@@ -212,12 +205,12 @@ jobs:
             echo "Rust toolchain $RUST_TOOLCHAIN is already installed on the runner."
           fi
 
-          if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" || "$COVERAGE_REPORT" == true || "$TEST_IMPACT_MODE" == collect ]]; then
+          if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" || "$COVERAGE_REPORT" == true || "$HAS_TEST_SUITES" == true ]]; then
             read -r -a components <<< "$RUST_COMPONENTS"
             if [[ "$VALIDATION_TIER" == routine ]]; then
               components+=(clippy rustfmt)
             fi
-            if [[ "$COVERAGE_REPORT" == true || "$TEST_IMPACT_MODE" == collect || ( "$TEST_IMPACT_MODE" == auto && "${{ github.event_name }}" == push && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" ) ]]; then
+            if [[ "$COVERAGE_REPORT" == true || "$HAS_TEST_SUITES" == true ]]; then
               components+=(llvm-tools-preview)
             fi
             # Rustup may schedule concurrent downloads for repeated components.
@@ -272,7 +265,7 @@ jobs:
           rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
           execution: ${{ inputs.cache-execution }}
-          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}', inputs.command, inputs.rust-targets) }}
+          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}:{2}', inputs.command, inputs.rust-targets, inputs.test-suites) }}
 
       - name: Configure runner-local Cargo target
         shell: bash
@@ -289,78 +282,32 @@ jobs:
           version: ${{ inputs.uv-version }}
           enable-cache: false
 
+      - name: Provision explicitly requested Node.js
+        if: ${{ inputs.node-version != '' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager-cache: false
+
       - name: Run caller command
-        id: caller-command
-        if: ${{ !inputs.coverage-report && (inputs.test-impact-mode == 'none' || inputs.test-impact-mode == 'auto') }}
-        # An automatic advisory check must still run when the original test
-        # command fails. Defer the original failure until after the comparison.
-        continue-on-error: ${{ inputs.test-impact-mode == 'auto' }}
+        if: ${{ !inputs.coverage-report }}
         shell: bash
         run: |
           set -euo pipefail
           ${{ inputs.command }}
 
-      - name: Collect Rust source coverage (informational)
+      - name: Collect Rust source coverage (standalone informational scope)
         if: inputs.coverage-report
         uses: ./.ci-workflows/.github/actions/rust-coverage
         with:
           cargo-args: ${{ inputs.coverage-cargo-args }}
           working-directory: ${{ inputs.coverage-working-directory }}
 
-      - name: Execute and compare test impact (explicit collect/shadow)
-        # Auto has its own path below. Sending mode=auto to the composite
-        # would install Nextest and cargo-affected twice per normal job.
-        if: ${{ inputs.test-impact-mode == 'collect' || inputs.test-impact-mode == 'shadow' }}
+      - name: Run unified authoritative Rust test suite
+        if: ${{ inputs.test-suites != '' }}
         uses: ./.ci-workflows/.github/actions/rust-test-impact
         with:
-          mode: ${{ inputs.test-impact-mode }}
-          working-directory: ${{ inputs.test-impact-working-directory }}
-          cargo-args: ${{ inputs.test-impact-cargo-args }}
-
-      - name: Select automatic Rust test-impact analysis
-        id: auto-impact
-        continue-on-error: true
-        # Compare even when the caller fails: failed tests are the evidence
-        # needed to detect under-selection. The caller remains authoritative.
-        if: ${{ !cancelled() && inputs.test-impact-mode == 'auto' && !inputs.coverage-report && runner.os == 'Linux' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)) }}
-        shell: bash
-        env:
-          IMPACT_WORKING_DIRECTORY: ${{ inputs.test-impact-working-directory }}
-        run: |
-          set -euo pipefail
-          if [[ ! -f "$GITHUB_WORKSPACE/$IMPACT_WORKING_DIRECTORY/Cargo.toml" ]]; then
-            echo "Automatic test-impact analysis skipped: no Cargo.toml in $IMPACT_WORKING_DIRECTORY"
-            exit 0
-          fi
-          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
-            echo 'mode=collect' >> "$GITHUB_OUTPUT"
-          else
-            echo 'mode=shadow' >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Analyze Rust test impact automatically (informational)
-        if: ${{ !cancelled() && steps.auto-impact.outputs.mode != '' }}
-        id: auto-impact-run
-        continue-on-error: true
-        uses: ./.ci-workflows/.github/actions/rust-test-impact
-        with:
-          mode: ${{ steps.auto-impact.outputs.mode }}
-          working-directory: ${{ inputs.test-impact-working-directory }}
-          cargo-args: ${{ inputs.test-impact-cargo-args }}
-
-      - name: Note automatic impact-analysis failure
-        if: ${{ !cancelled() && steps.auto-impact-run.outcome == 'failure' }}
-        continue-on-error: true
-        shell: bash
-        run: |
-          echo "Automatic test-impact analysis failed; the original Rust CI command remains authoritative." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Enforce original Rust validation result
-        if: ${{ !cancelled() && inputs.test-impact-mode == 'auto' && steps.caller-command.outcome == 'failure' }}
-        shell: bash
-        run: |
-          echo "The original Rust CI command failed; its result is authoritative." >&2
-          exit 1
+          test-suites: ${{ inputs.test-suites }}
 
       - name: Finalize mandatory sccache
         if: always()

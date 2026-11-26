@@ -2,11 +2,11 @@
 // Each case invokes the real compiled Rust/WASI policy, including host FS checks.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync, rmSync, symlinkSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {mkdirSync, readFileSync, symlinkSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
+import {workspace, write} from './test-workspace.mjs';
 
 const provider = fileURLToPath(new URL('.', import.meta.url));
 const repository = path.resolve(provider, '..');
@@ -17,18 +17,6 @@ const golden = JSON.parse(readFileSync(
 assert.equal(golden.schema, 1);
 assert.equal(golden.cases.length, 23);
 
-function workspace(t) {
-  const temporary = mkdtempSync(path.join(tmpdir(), 'ci-policy-clones-'));
-  t.after(() => rmSync(temporary, {recursive: true, force: true}));
-  // macOS presents /var as a symlink to /private/var. Match the host bridge's
-  // canonical root before passing an absolute scan-root path into WASI.
-  return realpathSync(temporary);
-}
-function write(root, file, content) {
-  const target = path.join(root, file);
-  mkdirSync(path.dirname(target), {recursive: true});
-  writeFileSync(target, content, 'utf8');
-}
 function classify(root, raw, {scanRoot = '.', production = 100, testing = 140} = {}) {
   const result = spawnSync(process.execPath, [
     path.join(provider, 'run.mjs'), module, 'clones', root,
@@ -51,7 +39,7 @@ function report(...groups) {
 
 for (const entry of golden.cases) {
   test('frozen clone policy: ' + entry.name, t => {
-    const root = workspace(t);
+    const root = workspace(t, 'ci-policy-clones-');
     for (const [file, contents] of Object.entries(entry.files)) write(root, file, contents);
     if (entry.config !== null) write(root, '.doppelscan.toml', entry.config);
     mkdirSync(path.join(root, entry.scan_root), {recursive: true});
@@ -88,8 +76,8 @@ test('mandatory clone gate cannot weaken the centrally fixed scanner or WASI pol
 });
 
 test('host rejects symlinked test source escaping checkout and scan-root boundaries', t => {
-  const root = workspace(t);
-  const outside = workspace(t);
+  const root = workspace(t, 'ci-policy-clones-');
+  const outside = workspace(t, 'ci-policy-clones-');
   write(outside, 'test.rs', 'fn t() {}\n');
   write(root, 'src/prod.rs', 'fn production() {}\n');
   mkdirSync(path.join(root, 'tests'), {recursive: true});
@@ -116,7 +104,7 @@ test('host rejects symlinked test source escaping checkout and scan-root boundar
 });
 
 test('consumer receives a complete structured JSON classification without Python', t => {
-  const root = workspace(t);
+  const root = workspace(t, 'ci-policy-clones-');
   write(root, 'src/a.rs', 'fn a() {}\n');
   const source = report(group(150, 'abcdef123456', [['src/a.rs',1,1]]));
   const result = classify(root, source);
