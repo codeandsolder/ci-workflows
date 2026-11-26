@@ -13,6 +13,7 @@ on:
         required: true
         type: string
       workflow-policy:
+        description: Reject or preserve incoming CI configuration changes; never auto-publish them.
         type: string
         default: reject
       generated-files:
@@ -130,7 +131,7 @@ jobs:
     outputs:
       head: ${{ steps.prepare.outputs.head }}
       changed: ${{ steps.prepare.outputs.changed }}
-      drift: ${{ steps.prepare.outputs.workflow_drift }}
+      drift: ${{ steps.prepare.outputs.ci_drift }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -532,7 +533,7 @@ jobs:
       contents: read
       issues: write
     steps:
-      - name: Maintain tracking and workflow-drift issues
+      - name: Maintain tracking and CI-review issues
         env:
           GH_TOKEN: ${{ github.token }}
           OBSERVE: ${{ needs.observe.result }}
@@ -574,7 +575,7 @@ jobs:
             if [[ "$result" == failure || "$result" == cancelled ]]; then failed=true; fi
           done
           if [[ "$DRIFT" == true ]]; then
-            maintain "Upstream workflow changes require manual reconciliation" "Incoming workflow changes need a reviewed PR. Fork base: $BASE; upstream: $UPSTREAM. Run: $url"
+            maintain "Upstream CI changes require manual reconciliation" "Incoming CI configuration, actions, scripts or toolchain changes need a reviewed PR. Fork base: $BASE; upstream: $UPSTREAM. Run: $url"
           fi
           if [[ "$failed" == true ]]; then
             maintain "Upstream tracking failed" "$(printf 'Upstream tracking failed.\n\nObservation: %s\nPreparation: %s\nGeneration: %s\nValidation: %s\nPublication: %s\nRelease: %s\nFork base: %s\nEligible upstream: %s\nObserved tip: %s\n\nRun: %s\n' "$OBSERVE" "$PREPARE" "$GENERATE" "$VALIDATE" "$PUBLISH" "$RELEASE" "$BASE" "$UPSTREAM" "$TIP" "$url")"

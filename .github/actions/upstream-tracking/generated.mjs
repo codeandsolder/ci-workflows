@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { isCiPath, CHECKPOINT } from "./ci-paths.mjs";
 
 const sha = /^[0-9a-f]{40}$/;
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
@@ -12,7 +13,7 @@ export function generatedPaths(input = "", base = "HEAD") {
   for (const path of paths) {
     if (!/^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/.test(path) ||
         path.split("/").some(part => [".", "..", ".git"].includes(part.toLowerCase())) ||
-        path === ".github/workflows" || path.startsWith(".github/workflows/")) {
+        isCiPath(path) || path === CHECKPOINT) {
       throw new Error("Invalid generated path: " + path);
     }
     const object = git("ls-tree", base, "--", path);

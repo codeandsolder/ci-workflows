@@ -1,14 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { generatedPaths } from "./generated.mjs";
+import { changedCiPaths, isCiPath, CHECKPOINT } from "./ci-paths.mjs";
 import { ancestor, priorAnchor } from "./history.mjs";
 import { appendFileSync } from "node:fs";
 
 const SHA = /^[0-9a-f]{40}$/;
-const WORKFLOWS = ".github/workflows";
-const CHECKPOINT = ".github/upstream-reconciliation/reviewed-source-sha";
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 const names = (...args) => execFileSync("git", args, { encoding: "utf8" }).split("\0").filter(Boolean);
-const workflowPath = path => path === WORKFLOWS || path.startsWith(WORKFLOWS + "/");
 const tree = ref => git("rev-parse", ref + "^{tree}");
 const commitList = (base, head) => git("rev-list", "--reverse", "--topo-order", "--no-merges", head, "^" + base).split("\n").filter(Boolean);
 
@@ -64,18 +62,22 @@ if (checkpoint !== null) {
   git("merge-base", "--is-ancestor", checkpoint, upstream);
 }
 const anchor = checkpoint ?? divergence;
-const drift = !unchanged(anchor, upstream, "--", WORKFLOWS);
-output("workflow_drift", drift);
+if (git("ls-tree", upstream, "--", CHECKPOINT)) {
+  throw new Error("Upstream cannot provide the fork-owned reviewed-source checkpoint");
+}
+const driftPaths = changedCiPaths(anchor, upstream);
+const drift = driftPaths.length !== 0;
+output("ci_drift", drift);
 if (workflowPolicy === "reject" && drift) {
-  console.error(git("diff", "--name-status", anchor, upstream, "--", WORKFLOWS));
-  throw new Error("Upstream workflow changes require manual reconciliation");
+  console.error(driftPaths.join("\n"));
+  throw new Error("Upstream CI changes require manual reconciliation");
 }
 
 // A cherry-pick is a three-way rebase of one patch. Keep each original
 // author/message; drop both already-absorbed and originally empty patches.
 // Generated artifacts are rebuilt from the new source, not replayed from
-// historic commits. Workflow-only conflicts may be discarded under preserve;
-// the exact reviewed workflow tree is restored at the end, never imported.
+// historic commits. Protected CI conflicts may be discarded under preserve;
+// the exact reviewed CI tree is restored at the end, never imported.
 function replay(commits, destination, { historical = false } = {}) {
   git("checkout", "--detach", destination);
   for (const commit of commits) {
@@ -87,7 +89,7 @@ function replay(commits, destination, { historical = false } = {}) {
     }
     const conflicts = names("diff", "--no-renames", "--name-only", "--diff-filter=U", "-z");
     const permitted = path => historical || generated.has(path) ||
-      (workflowPolicy === "preserve" && workflowPath(path)) ||
+      (workflowPolicy === "preserve" && isCiPath(path)) ||
       (checkpoint !== null && path === CHECKPOINT);
     if (failure && (!conflicts.length || conflicts.some(path => !permitted(path)))) {
       console.error("Cannot replay fork commit " + commit + ": " + conflicts.join(", "));
@@ -129,11 +131,12 @@ if (checkpoint !== null || git("rev-list", "--merges", base, "^" + divergence)) 
 const absorbed = new Set(git("cherry", upstream, patchHead, anchor).split("\n")
   .filter(line => line.startsWith("- ")).map(line => line.slice(2)));
 replay(patches.filter(commit => !absorbed.has(commit)), upstream);
-if (!unchanged(base, "HEAD", "--", WORKFLOWS)) {
-  if (workflowPolicy !== "preserve") throw new Error("Candidate changes reviewed workflow files");
+const ciChanges = changedCiPaths(base, "HEAD");
+if (ciChanges.length) {
+  if (workflowPolicy !== "preserve") throw new Error("Candidate changes reviewed CI files");
   // Restore only paths that actually differ, including upstream additions.
-  restore(base, names("diff", "--no-renames", "--name-only", "-z", base, "HEAD", "--", WORKFLOWS));
-  commitIfChanged("-m", "Retain reviewed downstream workflows");
+  restore(base, ciChanges);
+  commitIfChanged("-m", "Retain reviewed downstream CI");
 }
 // A declared fork-only artifact may not exist upstream. Seed it from the
 // reviewed base when absent, then the separate generation job replaces it.
@@ -141,7 +144,7 @@ const missing = [...generated].filter(path => !git("--literal-pathspecs", "ls-tr
 restore(base, missing);
 commitIfChanged("-m", "Seed fork-specific generated artifacts");
 generatedPaths(generatedInput, "HEAD");
-if (!unchanged(base, "HEAD", "--", WORKFLOWS)) throw new Error("Candidate changes reviewed workflow files");
+if (changedCiPaths(base, "HEAD").length) throw new Error("Candidate changes reviewed CI files");
 git("merge-base", "--is-ancestor", upstream, "HEAD");
 git("diff", "--check", upstream, "HEAD");
 const head = git("rev-parse", "HEAD");
