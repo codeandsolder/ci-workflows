@@ -4,8 +4,8 @@ import { appendFileSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtemp
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-// Temporary integration pin for the upstream contribution. This draft must
-// switch to the reviewed upstream revision before production promotion.
+// Immutable reviewed contribution pin. Migrate to upstream only after the
+// unified collector is merged and its exact revision passes quarantine.
 export const nextestVersion = "0.9.152";
 
 export const collector = {

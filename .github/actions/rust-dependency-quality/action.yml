@@ -5,6 +5,10 @@ inputs:
     description: Cargo workspace relative to caller repository checkout
     default: "."
     required: false
+outputs:
+  artifact-id:
+    description: ID of the uploaded public report, empty for private repositories
+    value: ${{ steps.upload.outputs.artifact-id }}
 runs:
   using: composite
   steps:
@@ -41,6 +45,7 @@ runs:
         fi
 
     - name: Upload dependency findings
+      id: upload
       if: always() && !github.event.repository.private
       continue-on-error: true
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
