@@ -217,7 +217,7 @@ jobs:
             rust-toolchain.toml
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
       - name: Detect tracked Rust source in the exact prepared candidate
         id: rust-source
         run: node .ci-upstream/.github/actions/upstream-tracking/detect-cargo.mjs "$GITHUB_WORKSPACE" "$GITHUB_OUTPUT"
