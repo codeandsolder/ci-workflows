@@ -1,0 +1,33 @@
+name: Hosted sccache fleet canary
+on:
+  push:
+    branches: [ci/hosted-sccache-canary-20261126]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hosted-canary:
+    if: github.repository == 'codeandsolder/ci-workflows' && github.ref == 'refs/heads/ci/hosted-sccache-canary-20261126'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Join existing CI tailnet federation
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd
+        with:
+          oauth-client-id: TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL
+          audience: api.tailscale.com/TUBzGLiWBZ11CNTRL-kRiRQY5Gto11CNTRL
+          tags: tag:sccache-worker
+          timeout: 20s
+          retry: 2
+      - name: Verify scheduler and native CAS transport
+        run: scripts/hosted-sccache/run-canary.sh probe
+      - name: Verify remote compilation and cross-daemon cache reuse
+        env:
+          CANARY_IDENTITY: ${{ secrets.SCCACHE_HOSTED_CANARY_IDENTITY }}
+        run: scripts/hosted-sccache/run-canary.sh compile
