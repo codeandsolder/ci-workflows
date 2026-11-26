@@ -61,6 +61,7 @@ const gitGroups = {
  'wreq-exp':'wreq-git-family',
  'quiescence':'quiescence-git-family',
  'quiche-fast':'quiche-git-family',
+ 'hayro':'hayro-git-family',
 };
 for (const [repo, slug] of Object.entries(gitGroups)) {
  const rule=fleet.packageRules.find(r=>r.groupSlug===slug);

@@ -108,6 +108,23 @@
       "groupSlug": "quiche-git-family"
     },
     {
+      "description": "Group Cargo Git digest updates from the same first-party source to preserve shared type and native-link identity",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
+      "matchPackageNames": [
+        "/^https:\\/\\/github\\.com\\/codeandsolder\\/hayro(?:\\.git)?$/"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "groupName": "Hayro git family",
+      "groupSlug": "hayro-git-family"
+    },
+    {
       "description": "Enable CI-gated PR automerge for every dependency update and clear inherited generic age delays; the following rule enforces the external registry crate quarantine.",
       "matchPackageNames": [
         "/.*/"
