@@ -75,7 +75,7 @@ jobs:
   observe:
     # Calling workflows may only run on the reviewed target branch, never a PR.
     if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', inputs.target-branch) }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: write
@@ -125,7 +125,7 @@ jobs:
   prepare:
     needs: observe
     if: needs.observe.outputs.status == 'ready'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     outputs:
       head: ${{ steps.prepare.outputs.head }}
@@ -167,7 +167,7 @@ jobs:
   generate:
     needs: [observe, prepare]
     if: needs.prepare.outputs.changed == 'true' && inputs.generation-script != ''
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container:
       image: ${{ inputs.generation-container || 'ubuntu:24.04' }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
@@ -277,7 +277,7 @@ jobs:
   validate:
     needs: [observe, prepare, generate]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || (needs.observe.result == 'success' && ((needs.observe.outputs.status == 'ready' && needs.prepare.result == 'success' && (inputs.generation-script == '' || (needs.generate.result == 'success' && needs.generate.outputs.head != ''))) || needs.observe.outputs.status == 'current'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -448,7 +448,7 @@ jobs:
   publish:
     needs: [observe, prepare, generate, validate]
     if: ${{ !cancelled() && needs.prepare.outputs.changed == 'true' && needs.validate.result == 'success' && needs.validate.outputs.head != '' && ((inputs.rust-toolchain == '' && needs.validate.outputs.rust != 'true') || needs.validate.outputs.eligible == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write
@@ -491,7 +491,7 @@ jobs:
   release:
     needs: [observe, prepare, generate, validate, publish]
     if: ${{ !cancelled() && needs.observe.outputs.release_tag != '' && needs.validate.result == 'success' && needs.validate.outputs.release_needed == 'true' && needs.validate.outputs.head != '' && (needs.publish.result == 'success' || needs.observe.outputs.status == 'current') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write
@@ -523,7 +523,7 @@ jobs:
   report:
     needs: [observe, prepare, generate, validate, publish, release]
     if: ${{ always() && !cancelled() && needs.observe.result != 'skipped' && needs.observe.outputs.status != 'already-run' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       issues: write
