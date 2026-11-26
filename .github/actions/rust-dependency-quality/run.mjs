@@ -176,7 +176,7 @@ function scanWorkspace(root, directory, reportDir) {
     unusedStderr: macheteRun?.stderr ?? null,
   }, null, 2) + '\n');
 
-  const text = 'Workspace: `' + directory.replaceAll('`', '\`') + '`\n\n' + (!present
+  const text = 'Workspace: `' + directory.replaceAll('`', '&#96;') + '`\n\n' + (!present
     ? '## Rust dependency health\n\nSkipped: selected directory does not contain Cargo.toml.\n'
     : summarize(audit, unused, anoint));
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
