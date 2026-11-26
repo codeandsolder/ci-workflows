@@ -3,6 +3,10 @@ name: Shared source quality modules
 on:
   workflow_call:
     inputs:
+      java:
+        description: Enforce shared PMD rules when Java is tracked
+        type: boolean
+        default: true
       shell:
         type: boolean
         default: true
@@ -28,7 +32,7 @@ jobs:
   source-quality:
     name: Auto-detected source quality
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04' }}
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Checkout caller source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,6 +55,7 @@ jobs:
             languages/run.mjs
             languages/tools
             languages/wgsl
+            languages/java
           sparse-checkout-cone-mode: false
       - name: Detect tracked source languages
         id: detect
@@ -59,23 +64,61 @@ jobs:
           source-root: ${{ github.workspace }}
           manifest: ${{ runner.temp }}/shared-quality-languages.json
       - name: Check tracked shell sources
-        if: inputs.shell && steps.detect.outputs.has-shell == 'true'
+        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.shell && steps.detect.outputs.has-shell == 'true' }}
         uses: ./.shared-language-quality/.github/actions/shell-quality
         with:
           manifest: ${{ runner.temp }}/shared-quality-languages.json
           shell-format: ${{ inputs.shell-format }}
       - name: Check tracked JavaScript and TypeScript
-        if: inputs.javascript && steps.detect.outputs.has-javascript == 'true'
+        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.javascript && steps.detect.outputs.has-javascript == 'true' }}
         uses: ./.shared-language-quality/.github/actions/javascript-quality
         with:
           manifest: ${{ runner.temp }}/shared-quality-languages.json
       - name: Check tracked WGSL with Naga
-        if: inputs.wgsl && steps.detect.outputs.has-wgsl == 'true'
+        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.wgsl && steps.detect.outputs.has-wgsl == 'true' }}
         uses: ./.shared-language-quality/.github/actions/wgsl-quality
         with:
           manifest: ${{ runner.temp }}/shared-quality-languages.json
       - name: Strict Ruff and ty for standalone Python projects
-        if: inputs.python-quality && steps.detect.outputs.has-python == 'true'
+        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.python-quality && steps.detect.outputs.has-python == 'true' }}
         uses: codeandsolder/rust-skills2/.github/actions/python-strict@7cd4c792bd6aba2807b4accc42dfb3e9db238634 # main
         with:
           ban-python-outside-ci: "false"
+      - name: Install Java for PMD
+        id: jdk
+        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.java && steps.detect.outputs.has-java == 'true' }}
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up Gradle for PMD
+        id: gradle
+        if: ${{ !cancelled() && steps.jdk.outcome == 'success' }}
+        uses: gradle/actions/setup-gradle@417ae3ccd767c252f5661f1ace9f835f9654f2b5 # v3.1.0
+        with:
+          gradle-version: '9.3.1'
+          cache-disabled: ${{ github.event.repository.private }}
+      - name: Enforce shared PMD rules
+        id: pmd
+        if: ${{ !cancelled() && steps.gradle.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon \
+            -p .shared-language-quality/languages/java \
+            analyzeJava \
+            -PsourceRoot="$GITHUB_WORKSPACE" \
+            -PsourceManifest="$RUNNER_TEMP/shared-quality-languages.json"
+      - name: Preserve PMD findings when Java quality fails
+        if: failure() && steps.pmd.outcome == 'failure' && !github.event.repository.private
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: java-pmd-findings
+          path: .shared-language-quality/languages/java/build/reports/pmd/
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Report absent Java sources
+        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.java && steps.detect.outputs.has-java != 'true' }}
+        shell: bash
+        run: |
+          echo "No Git-tracked Java sources: Java PMD module skipped." >> "$GITHUB_STEP_SUMMARY"
