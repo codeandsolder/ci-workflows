@@ -11,6 +11,16 @@ assert.equal(
   selector.trim(),
   `runs-on: ${'\x24'}{{ github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || inputs.runner }}`
 );
+// A skipped job in a reusable workflow still participates in GitHub's
+// permission validation; no provider-only OIDC permission belongs here.
+assert.doesNotMatch(workflow, /id-token:|hosted-fleet-canary|SCCACHE_HOSTED_CANARY_IDENTITY/);
+const canaryCaller = fs.readFileSync('.github/workflows/hosted-sccache-canary.yml', 'utf8');
+const canaryJob = fs.readFileSync('.github/workflows/hosted-sccache-canary-job.yml', 'utf8');
+assert.match(canaryCaller, /uses: \.\/\.github\/workflows\/hosted-sccache-canary-job\.yml/);
+assert.match(canaryJob, /id-token: write/);
+assert.match(canaryJob, /github\.repository == 'codeandsolder\/ci-workflows'/);
+assert.match(canaryJob, /github\.ref == 'refs\/heads\/main'/);
+assert.match(canaryJob, /github\.event_name == 'workflow_dispatch'/);
 assert.match(workflow, /default: "ubuntu-24\.04"/);
 assert.match(setup, /if \[\[ "\$\{\{ github\.event\.repository\.private \}\}" == "true" \]\]/);
 assert.match(setup, /mode=private-local-garage/);

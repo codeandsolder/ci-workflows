@@ -7,9 +7,6 @@ permissions:
 jobs:
   hosted-canary:
     if: github.repository == 'codeandsolder/ci-workflows' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/rust-sccache.yml
-    with:
-      command: ""
-      hosted-fleet-canary: true
+    uses: ./.github/workflows/hosted-sccache-canary-job.yml
     secrets:
       SCCACHE_HOSTED_CANARY_IDENTITY: ${{ secrets.SCCACHE_HOSTED_CANARY_IDENTITY }}
