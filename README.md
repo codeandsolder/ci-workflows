@@ -276,15 +276,13 @@ All other dependency upgrades come through the reviewed upstream tracker.
 
 | Update | Central behavior |
 | --- | --- |
-| Stable 1.x+ minor/patch/pin/digest | PR automerge after green checks, after the applicable release-age check; compatible Cargo minor/patch updates are grouped |
-| Pre-1.0 patch | PR automerge after green checks and applicable release-age check |
-| Rust compiler | Weekly Renovate dated-nightly updates with CI-gated automerge; stable release compatibility pins remain review-only |
-| Pre-1.0 minor, major, replacement | PR for review |
-| Third-party GitHub Actions digest/pinning | PR automerge after green checks |
-| `codeandsolder/ci-workflows` and `rust-skills2` SHA updates | Grouped; PR automerge after consumer CI succeeds |
+| All proposed updates (including major, pre-1.0 minor, replacements and toolchain updates) | PR automerge after green checks and applicable release-age checks |
+| Compatible stable Cargo minor/patch | Grouped into one green-CI merge |
+| Native dated Rust nightly | Weekly, quarantined and CI-gated |
+| Shared CI and strict Rust SHA updates | Grouped; PR automerge after consumer CI succeeds |
 | Lockfile maintenance | Weekly, PR automerge after green checks including newly introduced external crates.io versions |
 
-Direct workflows resolve the native root Rust toolchain manifest with the shared resolve-rust-toolchain action, and pass its channel output to setup-sccache and rustup. Do not maintain multiple version literals or workflow environment pins. The promotion controller owns dated nightly updates.
+Direct workflows resolve the native root Rust toolchain manifest with the shared resolve-rust-toolchain action, and pass its channel output to setup-sccache and rustup. Do not maintain multiple version literals or workflow environment pins. Renovate owns dated nightly updates.
 
 Use immutable SHA references to shared workflows and actions with a tracking `# main` suffix:
 
@@ -292,15 +290,15 @@ Use immutable SHA references to shared workflows and actions with a tracking `# 
 uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> # main
 ```
 
-`platformAutomerge: false` and `ignoreTests: false` deliberately require Renovate itself to observe passing branch checks; this matters for repositories without GitHub required-check protection. A repository without checks **does not automatically merge**. The final source-based Renovate rule requires a 72-hour release age for Cargo registry crate releases. First-party Git dependencies and pinned shared CI SHAs do not incur a release-age delay. The independent Cargo lockfile gate checks newly introduced registry versions, including transitive dependencies, in every consuming repository regardless of its owner. A registry crate is not first-party merely because its metadata claims a codeandsolder repository; registry exceptions would require independently verified ownership. Other dependency ecosystems retain their existing no-age defaults. Ordinary failed, pending, or unknown CI checks still block automerge.
+`platformAutomerge: false` and `ignoreTests: false` deliberately require Renovate itself to observe passing branch checks; this matters for repositories without GitHub required-check protection. A repository without checks **does not automatically merge**. The final source-based Renovate rule requires a 72-hour release age for Cargo registry crate releases. First-party Git dependencies and pinned shared CI SHAs do not incur a release-age delay. The independent Cargo lockfile gate checks newly introduced registry versions, including transitive dependencies, in every consuming repository regardless of its owner. A registry crate is not first-party merely because its metadata claims a codeandsolder repository; registry exceptions would require independently verified ownership. Other dependency ecosystems retain their existing no-age defaults. Ordinary failed, pending, or unknown CI checks still block automerge. Native GitHub automerge is a per-repository opt-in only after verified required terminal CI contexts are enforced by branch rules and native automerge is enabled; do not turn it on fleet-wide before that migration.
 
 The Cargo manager enables Renovate's package-manager release-age synchronization with a three-day resolver floor. Cargo 1.100 or newer filters newly selected registry releases during ordinary lockfile updates and lockfile maintenance, including transitive registry dependencies of first-party Git updates. The floor applies only to Cargo; first-party Git revisions themselves are not aged. The independent lockfile quarantine remains mandatory, including for security updates (which Renovate deliberately does not apply its resolver floor to), old Cargo versions, and local registry overrides. The resolver reduces failed CI attempts; it is not a substitute for the gate.
 
 ### Keep routine dependency maintenance from flooding CI
 
-The fleet allows at most one newly created Renovate PR and one automated Renovate branch commit per repository per hour (`prHourlyLimit: 1`, `commitHourlyLimit: 1`). The commit limit covers creation **and automatic rebases**, which both start CI. The six-open-PR ceiling leaves room for review-only major/toolchain updates; it is not a runner-concurrency limit. Use `rebaseWhen: auto` so automerging and up-to-date-required PRs keep their necessary rebase checks, but review-only PRs otherwise rebase on conflict rather than every main-branch commit. Deliberate manual rebase requests and vulnerability-alert fixes retain Renovate's native priority exceptions. This is ingress throttling, not an Actions job priority or a fleet-global cap. Do not add a release-age delay or skip correctness checks.
+The fleet allows at most one newly created Renovate PR and one automated Renovate branch commit per repository per hour (`prHourlyLimit: 1`, `commitHourlyLimit: 1`). The commit limit covers creation **and automatic rebases**, which both start CI. The six-open-PR ceiling limits outstanding dependency updates; it is not a runner-concurrency limit. Use `rebaseWhen: auto` so automerging and up-to-date-required PRs keep their necessary rebase checks. Deliberate manual rebase requests and vulnerability-alert fixes retain Renovate's native priority exceptions. This is ingress throttling, not an Actions job priority or a fleet-global cap. Do not add a release-age delay or skip correctness checks.
 
-Central changes do **not** override project-specific `packageRules` applied later. Remove old local `automerge: false` GitHub Actions and first-party trust-root copies when migrating. Changes to the shared CI's callable workflow inputs may break consumers; those PR checks must be repaired, not bypassed. Do not manually merge ordinary green PRs seconds after they appear: Renovate merges on later runs and insists that the head be up-to-date.
+Central changes do **not** override project-specific `packageRules` applied later. Remove old local `automerge: false` and approval-only overrides when migrating; keep genuine version constraints, grouping and upstream ownership exclusions. Changes to the shared CI's callable workflow inputs may break consumers; those PR checks must be repaired, not bypassed. Do not manually merge ordinary green PRs seconds after they appear: Renovate merges on later runs and insists that the head be up-to-date.
 
 These rules standardize execution by repository visibility, not by a host's name or incompatible repository-specific runner labels. They do not force a common compiler/target choice or release artifact across project boundaries. The reusable `rust-sccache.yml` and shared setup/finalize actions implement those common mechanisms; callers provide the commands and target matrix needed by their own products.
 
@@ -623,8 +621,8 @@ The fleet shares the same Renovate update policy and initial pin, not a
 global transaction or cross-repository rollback. Local Cargo, tests, Clippy
 and compiler-cache selection all use that repository's native pin. Routine
 shared CI requires it and rejects a mismatching explicit compiler input.
-Stable toolchains remain review-only and are reserved for explicit release
-compatibility contracts.
+Stable toolchains are reserved for explicit release compatibility contracts.
+Any proposed Renovate toolchain update must pass its own CI.
 
 Renovate's built-in rust-toolchain manager proposes a separate compiler PR
 for each repository on Mondays (UTC), with CI-gated PR automerge after
@@ -642,13 +640,12 @@ and Clippy, rustfmt, required targets and components must succeed. Upstream
 issue labels are not promotion criteria. A compiler regression should acquire
 a regression test rather than an issue filter.
 
-Only the native root dated nightly is automatically updated by this policy.
+Only the native root dated nightly receives the weekly nightly-specific schedule and age policy.
 Do not duplicate compiler versions in environment variables, workflow inputs,
 or scripts. Every normal check must use the native pin, and required tests,
 strict lint and any relevant package or cross-target checks must run on
 compiler-pin-only PRs. No special scheduler, credentials or cohort registry
-are required. Stable or independently pinned release compatibility jobs stay
-separate and review-only.
+are required. Stable or independently pinned release compatibility jobs stay separate.
 
 ### Provider CI scheduling
 
