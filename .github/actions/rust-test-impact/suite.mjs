@@ -349,7 +349,7 @@ function summarize(plan) {
     let status = 'skipped';
     try { status = JSON.parse(readFileSync(join(coverageDir, 'status.json'), 'utf8')).status; }
     catch (error) { logWarning(error.message); }
-    runNode('../rust-coverage/summary.mjs', [], {
+    runNode('./coverage-summary.mjs', [], {
       ...process.env,
       COVERAGE_JSON: join(coverageDir, 'coverage.json'),
       COVERAGE_STATUS: status,

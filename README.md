@@ -6,7 +6,7 @@ The shared CI keeps language-neutral orchestration separate from language
 quality checks. [Tracked-source detection](languages/detect.mjs) reads the
 caller's Git index (not the injected CI checkout) and reports which languages
 actually occur. Modules live under `languages/<language>/`; Rust's existing
-`rust-sccache.yml`, `rust-coverage.yml` and strict Rust workflows remain
+`rust-sccache.yml` and strict Rust workflows remain
 independent and retain their established consumer interfaces.
 
 ### Java: automatic PMD gate
@@ -104,42 +104,21 @@ use reasoned `[package.metadata.cargo-machete]` or
 `[workspace.metadata.cargo-machete]` `ignored = ["dep"]` entries in the
 caller manifest; do not suppress a vulnerability in this shared config.
 
-## Informational Rust test coverage
+## Rust tests, coverage and impact analysis
 
-Use [`.github/workflows/rust-coverage.yml`](.github/workflows/rust-coverage.yml)
-as a **separate, advisory** job. It runs `cargo-llvm-cov` with workspace tests,
-publishes available line/function/region/branch totals to the GitHub Actions step summary,
-and uploads a 14-day artifact containing browsable `html/index.html`, LCOV,
-and LLVM JSON coverage data. There is **no minimum coverage percentage**, and
-the coverage job is best-effort: incomplete coverage does not prevent a PR merge
-or replace the normal strict Rust tests.
+Declare named `test-suites` on [the shared Rust workflow](.github/workflows/rust-sccache.yml).
+Each scope runs the authoritative tests once; the same instrumented execution
+produces per-test coverage, shadow affected-test analysis, and optional aggregate
+LLVM HTML, LCOV and JSON coverage. Reporting is advisory, but test failures are
+blocking. No independent coverage test pass or separate test-impact workflow
+exists. Use a distinct scope only for a genuinely distinct test configuration.
+Set `coverage: false` on a scope to omit aggregate reports without skipping tests
+or baseline collection.
 
-~~~yaml
-jobs:
-  coverage:
-    uses: codeandsolder/ci-workflows/.github/workflows/rust-coverage.yml@<full-sha> # main
-    with:
-      working-directory: .
-      cargo-args: --workspace --locked
-~~~
-
-The Rust toolchain is resolved from the caller's pinned manifest, like the
-normal shared Rust workflow; `rust-toolchain` can override that pin. Private
-repositories run on the managed `local-ci` Linux runner pool and public
-repositories on `ubuntu-24.04` by default. The coverage workflow reuses the
-normal compiler cache setup/finalization (including Garage on private runners)
-and selects `--no-rustc-wrapper` to preserve the already configured sccache
-wrapper. Its instrumentation uses `llvm-tools-preview` from the matching Rust
-toolchain and pinned `cargo-llvm-cov@0.9.2`. The normal code-quality and test
-jobs are unchanged and remain mandatory.
-
-`cargo-args` is a space-separated list of Cargo test-selection flags (for
-example `--workspace --locked --all-features`); shell quoting within that
-string is not supported. Set `working-directory` for nested workspaces. The
-report does not instrument doctests by default. Prefer one dedicated coverage
-job per workspace rather than adding coverage to every build/Clippy matrix.
-The provider's `rust-coverage-smoke.yml` exercises the reusable workflow
-against `smoke-cache` on relevant changes.
+The compiler cache remains mandatory. See the
+[unified suite contract](.github/actions/rust-test-impact/README.md) for scope
+selection, doctests and continuous profiling. The provider's unified smoke
+verifies real reports from both nested workspaces.
 
 ## Enforced PR workflow supersession policy
 
