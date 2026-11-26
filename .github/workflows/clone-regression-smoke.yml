@@ -17,6 +17,9 @@ on:
       - policy-wasm/workspace.mjs
       - policy-wasm/module.mjs
       - policy-wasm/Cargo.*
+      - policy-wasm/clones.test.mjs
+      - policy-wasm/sccache.test.mjs
+      - policy-wasm/test-workspace.mjs
       - .github/scripts/test-clone-regression.sh
   push:
     branches: [main]
@@ -35,6 +38,9 @@ on:
       - policy-wasm/workspace.mjs
       - policy-wasm/module.mjs
       - policy-wasm/Cargo.*
+      - policy-wasm/clones.test.mjs
+      - policy-wasm/sccache.test.mjs
+      - policy-wasm/test-workspace.mjs
       - .github/scripts/test-clone-regression.sh
   workflow_dispatch:
 
