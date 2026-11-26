@@ -316,14 +316,15 @@ impl Scanner {
     fn commands(&self, source: &str) -> Vec<Segment> {
         let source = self.continuation.replace_all(source, "");
         let mut commands = Vec::new();
-        let mut terminator: Option<&str> = None;
+        let mut terminator: Option<String> = None;
+        let mut pending = String::new();
         let mut stdin = Vec::new();
         let mut shell_stdin = false;
         let mut array_assignment = false;
         let mut case_depth = 0usize;
         for raw in source.lines() {
             let mut line = raw.trim();
-            if let Some(end) = terminator {
+            if let Some(end) = terminator.as_deref() {
                 if line == end {
                     if shell_stdin {
                         commands.push(Segment::Inline(stdin.join("\n")));
@@ -336,40 +337,54 @@ impl Scanner {
                 }
                 continue;
             }
-            if array_assignment {
-                array_assignment = !line.starts_with(')');
-                continue;
-            }
-            if self.array_start.is_match(line) {
-                array_assignment = true;
-                continue;
-            }
-            if self.case_start.is_match(line) {
-                case_depth += 1;
-                continue;
-            }
-            if case_depth > 0 {
-                if line == "esac" {
-                    case_depth -= 1;
+            // Quoted arguments can span physical lines. Do not classify their
+            // contents as shell commands, case arms, arrays or heredoc bodies.
+            // Once the logical command completes, tokenize its original text.
+            if pending.is_empty() {
+                if array_assignment {
+                    array_assignment = !line.starts_with(')');
                     continue;
                 }
-                if let Some(arm) = self.case_arm.captures(line).and_then(|m| m.get(1)) {
-                    line = arm.as_str().trim();
+                if self.array_start.is_match(line) {
+                    array_assignment = true;
+                    continue;
                 }
-            }
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let Some(tokens) = tokenize(line, true, true) else {
-                if self.malformed_compile.is_match(line) {
-                    commands.push(Segment::MalformedCompiler);
+                if self.case_start.is_match(line) {
+                    case_depth += 1;
+                    continue;
                 }
+                if case_depth > 0 {
+                    if line == "esac" {
+                        case_depth -= 1;
+                        continue;
+                    }
+                    if let Some(arm) = self.case_arm.captures(line).and_then(|m| m.get(1)) {
+                        line = arm.as_str().trim();
+                    }
+                }
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                pending.push_str(line);
+            } else {
+                pending.push('\n');
+                pending.push_str(raw);
+            }
+            let Some(tokens) = tokenize(&pending, true, true) else {
                 continue;
             };
-            if let Some(end) = self.heredoc.captures(line).and_then(|m| m.get(1)) {
-                terminator = Some(end.as_str());
+            // Heredoc recognition uses the command's opening physical line;
+            // data on subsequent quoted lines cannot start a heredoc.
+            if let Some(end) = pending
+                .lines()
+                .next()
+                .and_then(|line| self.heredoc.captures(line))
+                .and_then(|m| m.get(1))
+            {
+                terminator = Some(end.as_str().to_owned());
                 shell_stdin = matches!(tokens.first(), Some(Token::Word(command)) if INTERPRETERS.contains(&command.as_str()));
             }
+            pending.clear();
             let mut segment = Vec::new();
             for token in tokens {
                 match token {
@@ -383,6 +398,9 @@ impl Scanner {
             if !segment.is_empty() {
                 commands.push(Segment::Command(segment));
             }
+        }
+        if !pending.is_empty() && self.malformed_compile.is_match(&pending) {
+            commands.push(Segment::MalformedCompiler);
         }
         commands
     }

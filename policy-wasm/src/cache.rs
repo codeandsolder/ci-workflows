@@ -307,4 +307,28 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn multiline_quoted_arguments_are_not_shell_commands() -> Result<(), regex::Error> {
+        let scanner = Scanner::new()?;
+        let root = Path::new("/workspace");
+        for source in [
+            "awk '\n/^name[[:space:]]*=/ { name = $2 }\n/^version/ { print $2 }\n' Cargo.lock",
+            "printf '\n./missing.sh\ncargo build\n'",
+            "printf \"\n./missing.sh\ncargo build\n\"",
+        ] {
+            let findings = scanner.inspect(source, root, Some(root));
+            assert!(!findings.compiles);
+            assert!(findings.unresolved.is_empty(), "{:?}", findings.unresolved);
+        }
+        for source in [
+            "bash -c 'echo starting\ncargo test --locked\n'",
+            "printf 'data\n'\ncargo build --locked",
+            "printf 'data\n'; cargo build --locked",
+        ] {
+            let findings = scanner.inspect(source, root, Some(root));
+            assert!(findings.compiles, "{source}");
+        }
+        Ok(())
+    }
 }
