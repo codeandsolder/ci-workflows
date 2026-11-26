@@ -1,12 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>codeandsolder/ci-workflows:renovate-fleet"],
-  "packageRules": [
-    {
-      "description": "Provider's own third-party major Action upgrades require ordinary review",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["major"],
-      "automerge": false
-    }
+  "extends": [
+    "github>codeandsolder/ci-workflows:renovate-fleet"
   ]
 }
