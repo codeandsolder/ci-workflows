@@ -11,7 +11,7 @@ independent and retain their established consumer interfaces.
 
 ### Java: automatic PMD gate
 
-The [reusable Java quality workflow](.github/workflows/java-quality.yml)
+The [reusable source quality workflow](.github/workflows/source-quality.yml)
 checks for **any Git-tracked `.java` source anywhere in the caller repo**,
 including scripts and mixed-language repositories. It only installs Java,
 Gradle and runs [PMD 7.29.0](languages/java/quality.xml) when such source
@@ -20,8 +20,8 @@ no Maven/Gradle setup, Java project layout or dependencies in the caller.
 
 ~~~yaml
 jobs:
-  java-quality:
-    uses: codeandsolder/ci-workflows/.github/workflows/java-quality.yml@<full-sha> # main
+  source-quality:
+    uses: codeandsolder/ci-workflows/.github/workflows/source-quality.yml@<full-sha> # main
 ~~~
 
 This is a **strict, blocking, zero-debt** static-analysis gate with **228
@@ -36,10 +36,11 @@ guarding). The rationale and exact exclusions are in
 [the central ruleset](languages/java/quality.xml). All findings are fatal;
 there is no per-repository baseline.
 
-PMD diagnostics appear in the job log; failing jobs also upload the complete
-HTML/XML PMD reports for seven days. The check uses the same reusable workflow
-and job name as before, and only prepares Java tooling when Git-tracked Java
-exists. Project-specific compilation with `javac -Werror`, tests and
+PMD diagnostics appear in the job log; public failing jobs also upload complete
+HTML/XML reports for seven days. Private jobs keep diagnostics in logs and disable
+Gradle Actions caching. Java shares the same checkout, tracked-language manifest
+and runner as the other source-quality modules. Java tooling is installed only
+when Git-tracked Java exists. Project-specific compilation with `javac -Werror`, tests and
 integration/build prerequisites still run in the caller's native workflow:
 arbitrary Java cannot safely be compiled without its real dependencies and
 toolchain. The Gradle-based Java module is used only as an independent PMD
@@ -48,17 +49,17 @@ runner, not to build the caller's Java project.
 Public callers use GitHub-hosted Ubuntu; private callers use the registered
 `local-ci` Linux x64 pool, consistently with the existing Rust workflow.
 The shared source detector has independent Node regression tests, and
-[`java-quality-smoke.yml`](.github/workflows/java-quality-smoke.yml)
+[`source-quality-smoke.yml`](.github/workflows/source-quality-smoke.yml)
 executes the actual reusable analyzer on the provider's clean Java fixture.
 
 For additional languages, add an isolated quality module and corresponding
-reusable workflow alongside Java; do not insert language-specific checks into
+conditional source-quality step alongside Java; do not insert language-specific checks into
 the Rust compiler/cache workflow. Keep required check identities stable even
 on a no-source skip.
 
 ## Conditional shell, JavaScript, WGSL and Actions quality
 
-The source-only reusable workflow (.github/workflows/source-quality.yml) now discovers tracked source and conditionally runs ShellCheck, shfmt syntax checking, Oxlint correctness and headless Naga WGSL validation, all in one Linux runner. Rust-first repositories already using strict Ruff/ty must not duplicate that check; Python-first repositories can opt in to the same pinned action. Shell formatting is opt-in until consumer formatting debt is resolved. The existing reusable workflow-concurrency policy also runs pinned actionlint in its own existing runner. The language modules README has the consumer invocation contract, source-composition rules and version pins.
+The source-only reusable workflow (.github/workflows/source-quality.yml) now discovers tracked source and conditionally runs Java PMD, ShellCheck, shfmt syntax checking, Oxlint correctness and headless Naga WGSL validation, all in one Linux runner. Rust-first repositories already using strict Ruff/ty must not duplicate that check; Python-first repositories can opt in to the same pinned action. Shell formatting is opt-in until consumer formatting debt is resolved. The existing reusable workflow-concurrency policy also runs pinned actionlint in its own existing runner. The language modules README has the consumer invocation contract, source-composition rules and version pins.
 
 ## Two-tier Rust CI and stale-run cancellation
 

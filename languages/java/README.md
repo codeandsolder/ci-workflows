@@ -8,14 +8,14 @@ with category-wide coverage for Best Practices, Error Prone, Performance and
 Security, plus targeted concurrency, design, code style and documentation.
 The few category exceptions are documented inline in quality.xml; they target
 legitimate constructs rather than hiding existing findings. PMD prints
-diagnostics to the build log, and the hosted reusable workflow saves a
-seven-day HTML/XML artifact on failure. There is no accepted-warning baseline.
+diagnostics to the build log, and the public reusable workflow saves a
+seven-day HTML/XML artifact on failure; private runs keep diagnostics in logs. There is no accepted-warning baseline.
 
 The module does not replace a project's actual build, tests or compiler lint;
 those remain the project's own quality checks.
 
-The top-level reusable workflow .github/workflows/java-quality.yml performs
-source detection first. Only repositories with a tracked .java file install a
+The top-level reusable workflow .github/workflows/source-quality.yml performs
+a single shared source detection pass first. Only repositories with a tracked .java file install a
 JDK/Gradle and run PMD.
 
 Run directly with a checked-out caller and a compatible Gradle wrapper or
