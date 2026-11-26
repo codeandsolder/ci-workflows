@@ -25,7 +25,7 @@ jobs:
           configs=(renovate.json)
           # Fleet presets live only in ci-workflows, not in consumer repos.
           # Validate every present config without changing the shared caller contract.
-          for preset in renovate-fleet.json renovate-ci-trust-root.json renovate-upstream-fork.json; do
+          for preset in renovate-fleet.json renovate-ci-trust-root.json renovate-upstream-fork.json renovate-native-automerge.json; do
             if [[ -f "$preset" ]]; then
               configs+=("$preset")
             fi

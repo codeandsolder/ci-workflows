@@ -6,6 +6,8 @@ on:
       - renovate-ci-trust-root.json
       - renovate-fleet.json
       - renovate-upstream-fork.json
+      - renovate-native-automerge.json
+      - scripts/native-renovate-automerge*.mjs
       - scripts/check-renovate-policy.cjs
       - .github/workflows/renovate-policy-check.yml
       - .github/workflows/renovate-config.yml
@@ -16,6 +18,8 @@ on:
       - renovate-ci-trust-root.json
       - renovate-fleet.json
       - renovate-upstream-fork.json
+      - renovate-native-automerge.json
+      - scripts/native-renovate-automerge*.mjs
       - scripts/check-renovate-policy.cjs
       - .github/workflows/renovate-policy-check.yml
       - .github/workflows/renovate-config.yml
@@ -32,6 +36,8 @@ jobs:
       - name: Check out central policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Verify shared Renovate invariants
-        run: node scripts/check-renovate-policy.cjs
+        run: |
+          node scripts/check-renovate-policy.cjs
+          node --test scripts/native-renovate-automerge.test.mjs
   upstream-validator:
     uses: ./.github/workflows/renovate-config.yml

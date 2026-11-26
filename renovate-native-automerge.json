@@ -1,0 +1,7 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Opt in to GitHub native PR automerge only after verified required terminal CI contexts are enforced.",
+  "platformAutomerge": true,
+  "automergeType": "pr",
+  "ignoreTests": false
+}
