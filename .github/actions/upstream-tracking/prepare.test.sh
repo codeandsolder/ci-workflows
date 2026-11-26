@@ -118,7 +118,7 @@ git -C ../upstream commit -qm drift
 selected=$(git -C ../upstream rev-parse HEAD)
 prepare preserve
 test ! -e .github/workflows/extra.yml
-test "$(sed -n 's/^workflow_drift=//p' "$output")" = true
+test "$(sed -n 's/^ci_drift=//p' "$output")" = true
 verify
 
 fixture reject
@@ -277,4 +277,63 @@ prepare preserve artifact.bin
 cmp artifact.bin <(printf 'fork-only artifact\0')
 verify
 
-echo "All fourteen real patch-rebase scenarios passed"
+fixture ci-config
+mkdir -p .github/actions ci scripts
+echo reviewed-action > .github/actions/local.yml
+echo reviewed-compiler > rust-toolchain.toml
+echo reviewed-script > ci/validate.sh
+git add .
+git commit -qm 'downstream CI'
+base=$(git rev-parse HEAD)
+mkdir -p ../upstream/.github/actions ../upstream/ci ../upstream/scripts ../upstream/.circleci
+echo upstream-action > ../upstream/.github/actions/local.yml
+echo new-action > ../upstream/.github/actions/new.yml
+echo upstream-script > ../upstream/ci/validate.sh
+echo new-script > ../upstream/scripts/ci-check.sh
+echo pipeline > ../upstream/.circleci/config.yml
+echo upstream-compiler > ../upstream/rust-toolchain.toml
+echo new-config > ../upstream/.gitlab-ci.yml
+echo new-config > ../upstream/renovate.json
+git -C ../upstream add .
+git -C ../upstream commit -qm 'upstream CI changes'
+selected=$(git -C ../upstream rev-parse HEAD)
+prepare preserve
+test "$(cat .github/actions/local.yml)" = reviewed-action
+test "$(cat rust-toolchain.toml)" = reviewed-compiler
+test "$(cat ci/validate.sh)" = reviewed-script
+test ! -e .github/actions/new.yml
+test ! -e scripts/ci-check.sh
+test ! -e .circleci/config.yml
+test ! -e .gitlab-ci.yml
+test ! -e renovate.json
+test "$(sed -n 's/^ci_drift=//p' "$output")" = true
+verify
+
+fixture ci-reject
+echo upstream-compiler > ../upstream/rust-toolchain.toml
+git -C ../upstream add .
+git -C ../upstream commit -qm 'unreviewed compiler change'
+selected=$(git -C ../upstream rev-parse HEAD)
+if prepare reject; then exit 1; fi
+test "$(git rev-parse HEAD)" = "$base"
+test ! -e "$bundle"
+
+fixture ci-generator
+mkdir -p ci
+echo script > ci/generated.sh
+git add ci/generated.sh
+git commit -qm 'CI script'
+base=$(git rev-parse HEAD)
+if prepare preserve ci/generated.sh; then exit 1; fi
+test ! -e "$bundle"
+
+fixture upstream-checkpoint
+mkdir -p ../upstream/.github/upstream-reconciliation
+printf '%s\n' "$selected" > ../upstream/.github/upstream-reconciliation/reviewed-source-sha
+git -C ../upstream add .
+git -C ../upstream commit -qm 'forge fork checkpoint'
+selected=$(git -C ../upstream rev-parse HEAD)
+if prepare preserve; then exit 1; fi
+test ! -e "$bundle"
+
+echo "All eighteen real patch-rebase scenarios passed"
