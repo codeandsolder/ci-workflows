@@ -106,6 +106,11 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
     } else {
         None
     };
+    let repository = if policy == "sccache" {
+        args.next().unwrap_or_default()
+    } else {
+        String::new()
+    };
     let paths: Vec<PathBuf> = args.map(PathBuf::from).collect();
     let (problems, success, failure) = match policy.as_str() {
         "concurrency" => (
@@ -117,6 +122,7 @@ fn run() -> Result<ExitCode, Box<dyn Error>> {
             cache::inspect(
                 root,
                 strict_ref.as_deref().filter(|value| !value.is_empty()),
+                &repository,
                 paths,
             )?,
             "ci-workflows: every detected Rust CI job uses canonical sccache",

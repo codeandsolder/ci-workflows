@@ -67,7 +67,7 @@ jobs:
           components: clippy,rustfmt
           select: "true"
       - name: Setup mandatory sccache
-        uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@f2b37a67bfe379e8db96731f97ad3c345065b168 # main
+        uses: ./.github/actions/setup-sccache
         with:
           rust-toolchain: ${{ steps.compiler.outputs.channel }}
           rustflags: ""
@@ -86,10 +86,10 @@ jobs:
         run: |
           node --test policy-wasm/workspace.test.mjs
           bash scripts/test-policy-wasm.sh "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm"
-          node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache .
+          node policy-wasm/run.mjs "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" sccache . "" codeandsolder/ci-workflows
           node policy-wasm/package.mjs verify "$RUNNER_TEMP/ci-policy/wasm32-wasip1/release/ci-policy.wasm" "${{ steps.compiler.outputs.channel }}"
           bash scripts/test-policy-wasm.sh policy-wasm/module.json
-          node policy-wasm/run.mjs policy-wasm/module.json sccache .
+          node policy-wasm/run.mjs policy-wasm/module.json sccache . "" codeandsolder/ci-workflows
           node policy-wasm/run.mjs policy-wasm/module.json concurrency .
       - name: Verify the actual sparse caller checkout
         shell: bash
@@ -229,7 +229,7 @@ jobs:
 
       - name: Finalize mandatory sccache
         if: always()
-        uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@f2b37a67bfe379e8db96731f97ad3c345065b168 # main
+        uses: ./.github/actions/finalize-sccache
 
   portable-runtime:
     name: Portable CI policy (${{ matrix.os }})

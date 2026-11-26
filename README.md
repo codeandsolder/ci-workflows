@@ -392,6 +392,14 @@ The provider's own [`sccache-smoke.yml`](.github/workflows/sccache-smoke.yml) ru
 
 ## Rust sccache policy
 
+Provider-owned workflows execute cache actions from their own exact checkout
+instead of pinning their previous commit. The WASI policy permits those local
+actions only for the provider repository, after a SHA-pinned checkout of the
+provider itself or the exact reusable workflow repository/revision. Consumer
+repositories still require SHA-pinned external canonical actions or a shared
+reusable workflow. No consumer-local lookalike action gains trust.
+
+
 `.github/workflows/rust-sccache.yml` chooses the execution/cache path from the caller repository visibility.
 
 ### Public repositories
