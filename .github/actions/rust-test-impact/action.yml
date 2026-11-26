@@ -134,8 +134,17 @@ runs:
           "$FULL_SUCCESS" \
           "$RUNNER_TEMP/rust-test-impact/comparison.json"
 
+    - name: Log private test-impact comparison
+      if: inputs.mode == 'shadow' && github.event.repository.private
+      shell: bash
+      continue-on-error: true
+      run: |
+        if [[ -f "$RUNNER_TEMP/rust-test-impact/comparison.json" ]]; then
+          cat "$RUNNER_TEMP/rust-test-impact/comparison.json"
+        fi
+
     - name: Publish test-impact diagnostics
-      if: inputs.mode == 'shadow'
+      if: inputs.mode == 'shadow' && !github.event.repository.private
       continue-on-error: true
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       with:

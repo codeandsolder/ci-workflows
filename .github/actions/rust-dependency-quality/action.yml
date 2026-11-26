@@ -24,8 +24,17 @@ runs:
         DEPENDENCY_SCANNERS_INSTALLED: ${{ steps.tools.outcome }}
       run: node "$GITHUB_ACTION_PATH/run.mjs"
 
+    - name: Log dependency findings in private repositories
+      if: always() && github.event.repository.private
+      shell: bash
+      continue-on-error: true
+      run: |
+        if [[ -f "$RUNNER_TEMP/rust-dependency-quality/results.json" ]]; then
+          cat "$RUNNER_TEMP/rust-dependency-quality/results.json"
+        fi
+
     - name: Upload dependency findings
-      if: always()
+      if: always() && !github.event.repository.private
       continue-on-error: true
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       with:
