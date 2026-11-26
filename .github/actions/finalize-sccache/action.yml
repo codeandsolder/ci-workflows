@@ -4,7 +4,7 @@ runs:
   using: composite
   steps:
     - name: Verify public sccache and stop daemon
-      if: env.CODEANDSOLDER_SCCACHE_MODE == 'public-actions'
+      if: env.CODEANDSOLDER_SCCACHE_MODE == 'public-actions' && env.CODEANDSOLDER_SCCACHE_EXECUTION != 'cross'
       shell: bash
       run: |
         set -euo pipefail
@@ -31,6 +31,13 @@ runs:
           exit 1
         fi
         echo "CODEANDSOLDER_SCCACHE_REFRESH=$([[ "$misses" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_ENV"
+
+    - name: Verify public cross-container compiler cache
+      if: env.CODEANDSOLDER_SCCACHE_MODE == 'public-actions' && env.CODEANDSOLDER_SCCACHE_EXECUTION == 'cross'
+      shell: bash
+      run: |
+        set -euo pipefail
+        node "$GITHUB_ACTION_PATH/verify-cross-stats.cjs" "$CODEANDSOLDER_CROSS_CACHE_CONTROL"
 
     - name: Verify managed private Garage connection
       if: env.CODEANDSOLDER_SCCACHE_MODE == 'private-local-garage'

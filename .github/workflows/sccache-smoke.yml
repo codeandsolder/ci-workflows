@@ -7,6 +7,7 @@ on:
       - .github/workflows/sccache-smoke.yml
       - .github/scripts/check-runner-routing.cjs
       - .github/scripts/test-public-cache-key.cjs
+      - .github/scripts/test-cross-cache-stats.cjs
       - .github/actions/setup-sccache/**
       - .github/actions/finalize-sccache/**
       - .github/actions/resolve-rust-toolchain/**
@@ -19,6 +20,7 @@ on:
       - .github/workflows/sccache-smoke.yml
       - .github/scripts/check-runner-routing.cjs
       - .github/scripts/test-public-cache-key.cjs
+      - .github/scripts/test-cross-cache-stats.cjs
       - .github/actions/setup-sccache/**
       - .github/actions/finalize-sccache/**
       - .github/actions/resolve-rust-toolchain/**
@@ -75,6 +77,7 @@ jobs:
         run: |
           node .github/scripts/check-runner-routing.cjs
           node .github/scripts/test-public-cache-key.cjs
+          node .github/scripts/test-cross-cache-stats.cjs
 
       - name: Non-release events must not execute compatibility lane
         env:
@@ -113,3 +116,25 @@ jobs:
       sccache-cache-scope: smoke-release
       rustflags: "auto"
       runner: ${{ matrix.runner }}
+
+
+  cross-container:
+    uses: ./.github/workflows/rust-sccache.yml
+    with:
+      rustflags: "-D warnings"
+      cache-execution: cross
+      sccache-cache-scope: smoke-cross-aarch64
+      command: |
+        cross_version=0.2.5
+        archive="$RUNNER_TEMP/cross.tar.gz"
+        curl --fail --silent --show-error --location \
+          "https://github.com/cross-rs/cross/releases/download/v$cross_version/cross-x86_64-unknown-linux-musl.tar.gz" -o "$archive"
+        printf '%s  %s\n' a486cefa6cb486971b97be321ea9dfc2e90c1979550295314a368f53fab6d588 "$archive" | sha256sum -c -
+        tar -xzf "$archive" -C "$RUNNER_TEMP" cross cross-util
+        rm "$archive"
+        export PATH="$RUNNER_TEMP:$PATH"
+        export CROSS_TARGET_AARCH64_UNKNOWN_LINUX_GNU_IMAGE=ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge
+        cd smoke-cache
+        CARGO_TARGET_DIR="$RUNNER_TEMP/cross-target-a" cross test --target aarch64-unknown-linux-gnu --locked --offline --release
+        CARGO_TARGET_DIR="$RUNNER_TEMP/cross-target-b" cross test --target aarch64-unknown-linux-gnu --locked --offline --release
+        jq -es 'map(.stats.cache_hits.counts.Rust // 0) | add > 0' "$CODEANDSOLDER_CROSS_CACHE_CONTROL"/stats.*.json

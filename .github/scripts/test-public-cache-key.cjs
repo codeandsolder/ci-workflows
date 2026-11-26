@@ -28,6 +28,22 @@ try {
       .map(line => line.split('=')));
   };
   const a = key(); assert.deepEqual(a, key());
+  fs.writeFileSync(path.join(tmp, 'bin', 'rustup'),
+    '#!/bin/sh\nif [ "$1" = run ] && [ "$2" = stable ] && [ "$3" = rustc ]; then printf "%s\\n" "$FAKE_REQUESTED_RUSTC"; else exit 1; fi\n', { mode: 0o755 });
+  env.FAKE_REQUESTED_RUSTC = 'requested-compiler';
+  // An explicit RUSTC override wins; an installed rustup +toolchain differs
+  // from the default compiler even when its alias has not changed.
+  assert.deepEqual(a, key());
+  delete env.RUSTC;
+  const requested = key();
+  assert.notEqual(requested['restore-prefix'], a['restore-prefix']);
+  env.FAKE_REQUESTED_RUSTC = 'requested-compiler-updated';
+  assert.notEqual(key()['restore-prefix'], requested['restore-prefix']);
+  env.RUSTC = 'rustc';
+  assert.deepEqual(a, key());
+  env.CACHE_EXECUTION = 'cross';
+  assert.notEqual(key()['restore-prefix'], a['restore-prefix']);
+  delete env.CACHE_EXECUTION;
   // An outer runner workspace can contain several separately checked out Git
   // repositories. Select the intended one, not the shell's working directory.
   const nested = path.join(tmp, 'nested');
