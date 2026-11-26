@@ -30,21 +30,21 @@ jobs:
       - name: Validate report generator
         run: node --test .github/actions/rust-dependency-quality/*.test.mjs
       - name: Scan fixture with intentionally unused path dependency
+        id: scan
         uses: ./.github/actions/rust-dependency-quality
         with:
           working-directory: .github/actions/rust-dependency-quality/fixtures/example
-      - name: Verify produced report and detected candidate
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          pattern: rust-dependency-health-*
-          path: ${{ runner.temp }}/dependency-report
-          merge-multiple: true
-      - name: Assert real scanner execution
+      - name: Assert real scanner execution and successful artifact upload
         shell: bash
+        env:
+          REPORT_ARTIFACT_ID: ${{ steps.scan.outputs.artifact-id }}
         run: |
-          node - "$RUNNER_TEMP/dependency-report/results.json" <<'JS'
+          # The scanner and assertion share a runner. Read the exact local
+          # report rather than racing the artifact service's list operation.
+          node - "$RUNNER_TEMP/rust-dependency-quality/results.json" <<'JS'
           const fs = require('node:fs');
           const assert = require('node:assert/strict');
+          assert.match(process.env.REPORT_ARTIFACT_ID ?? '', /^[1-9][0-9]*$/, 'Public report upload did not return an artifact ID');
           const result = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
           assert(result.installed && result.anointInstalled && result.present, 'Scanners were not installed or fixture missing');
           assert(!result.audit.failed && !result.unused.failed && !result.anoint.failed, 'Scanner unavailable');

@@ -53,7 +53,7 @@ function fixture({failRules = false, failActivation = false, prConclusion = 'suc
 
 test('native preset changes only merge transport, not eligibility or CI policy', () => {
   const preset = JSON.parse(readFileSync(new URL('../renovate-native-automerge.json', import.meta.url), 'utf8'));
-  const {$schema, description, ...settings} = preset;
+  const {$schema: _schema, description: _description, ...settings} = preset;
   assert.deepEqual(settings, {platformAutomerge: true, automergeType: 'pr', ignoreTests: false});
 });
 test('checks must be current, successful, unique and attributed to Actions', () => {

@@ -71,6 +71,7 @@ inside the caller's wrapper. Do not set a competing Cargo target runner.
 Process-local serial-test locks do not serialize Nextest processes: configure
 Nextest test groups for tests sharing ports, daemons, or other global resources.
 
-The draft integration pin points to the upstream contribution branch on the
-existing fork. Switch to an observed, reviewed upstream revision before
-retiring the fork. Never deploy a floating branch or bypass managed sccache.
+The deployed collector is pinned to the reviewed immutable contribution
+revision in the maintained fork. Switch to an observed, reviewed upstream
+revision containing the unified collector before retiring the fork. Never
+deploy a floating branch or bypass managed sccache.
