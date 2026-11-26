@@ -2,6 +2,7 @@
 // The portable guest owns lock parsing, union comparison, consolidation
 // checks and the release-age decision.
 import { spawnSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -123,7 +124,28 @@ function publication(timestamp) {
   return {kind: 'found', time_ms: time + (/[1-9]/.test((match[1] ?? '').slice(3)) ? 1 : 0), timestamp};
 }
 
-export async function lookupPublications(packages, request = fetch) {
+// Keep one in-flight request, pace requests to the public crates.io API, and
+// respect a server-wide cooldown even after an individual crate exhausts retries.
+// Never substitute a guessed timestamp or an untrusted persistent PR cache.
+const defaultTransport = {
+  clock: Date.now,
+  sleep: delay,
+  spacingMs: 1_000,
+  budgetMs: 8 * 60_000,
+};
+
+function retryAfterMs(value, now) {
+  if (typeof value !== 'string' || !value.trim()) return 0;
+  const seconds = /^\d+$/.test(value.trim()) ? Number(value) * 1_000 : NaN;
+  if (Number.isFinite(seconds)) return seconds;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - now) : 0;
+}
+
+export async function lookupPublications(packages, request = fetch, transport = defaultTransport) {
+  const {clock, sleep, spacingMs, budgetMs} = transport;
+  const deadline = clock() + budgetMs;
+  let nextRequest = clock();
   const names = new Map();
   for (const pkg of packages) {
     if (!names.has(pkg.name)) names.set(pkg.name, new Set());
@@ -133,11 +155,34 @@ export async function lookupPublications(packages, request = fetch) {
   for (const [name, versions] of names) {
     let found;
     try {
-      const response = await request('https://crates.io/api/v1/crates/' + encodeURIComponent(name), {
-        headers: {'Accept': 'application/json', 'User-Agent': 'codeandsolder-ci-release-quarantine/1.0'},
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!response.ok) throw new Error('HTTP ' + response.status);
+      let response;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const wait = Math.max(0, nextRequest - clock());
+        if (clock() + wait >= deadline) throw new Error('crates.io request budget exhausted');
+        if (wait) await sleep(wait);
+        const remaining = deadline - clock();
+        if (remaining <= 0) throw new Error('crates.io request budget exhausted');
+        nextRequest = clock() + spacingMs;
+        try {
+          response = await request('https://crates.io/api/v1/crates/' + encodeURIComponent(name), {
+            headers: {'Accept': 'application/json', 'User-Agent': 'codeandsolder-ci-release-quarantine/1.0'},
+            signal: AbortSignal.timeout(Math.min(30_000, remaining)),
+          });
+        } catch (error) {
+          nextRequest = Math.max(nextRequest, clock() + 1_000 * 2 ** attempt);
+          if (attempt === 3) throw error;
+          continue;
+        }
+        if (response.ok) break;
+        const retryable = response.status === 429 || response.status === 408 || response.status >= 500;
+        if (retryable) {
+          const serverWait = retryAfterMs(response.headers?.get('Retry-After'), clock());
+          nextRequest = Math.max(nextRequest, clock() + Math.max(serverWait, 1_000 * 2 ** attempt));
+        }
+        if (!retryable || attempt === 3) throw new Error('HTTP ' + response.status);
+        // Release connections before retrying rather than retaining an unread body.
+        await response.body?.cancel();
+      }
       const payload = await response.json();
       if (!Array.isArray(payload.versions)) throw new Error('invalid crates.io response');
       const records = new Map(payload.versions.map((item) => [item.num, item.created_at]));
@@ -150,14 +195,15 @@ export async function lookupPublications(packages, request = fetch) {
   return Object.fromEntries(output);
 }
 
-export async function quarantine(module, root, ref, selector, hours, request = fetch, now) {
+export async function quarantine(module, root, ref, selector, hours, request = fetch, now, transport = defaultTransport) {
   if (!Number.isSafeInteger(hours) || hours < 0) throw new Error('hours must be a non-negative integer');
   const packages = guest(module, root, 'quarantine-diff', gather(root, ref, selector));
-  if (packages.length === 0) return {issues: [], count: 0};
+  if (packages.length === 0) return {issues: [], count: 0, metadataUnavailable: false};
   const checkedAt = now ?? Date.now();
-  const publications = await lookupPublications(packages, request);
+  const publications = await lookupPublications(packages, request, transport);
+  const metadataUnavailable = packages.some(({name, version}) => publications[name]?.[version]?.kind !== 'found');
   const issues = guest(module, root, 'quarantine-age', {now_ms: checkedAt, hours, packages, publications});
-  return {issues, count: packages.length};
+  return {issues, count: packages.length, metadataUnavailable};
 }
 
 async function main() {
@@ -167,9 +213,11 @@ async function main() {
   }
   const result = await quarantine(path.resolve(module), process.cwd(), ref, selector, Number(hours));
   if (result.issues.length) {
-    console.error('Cargo release-age quarantine is still active:');
+    console.error(result.metadataUnavailable
+      ? 'Cargo release-age quarantine cannot verify authoritative publication metadata:'
+      : 'Cargo release-age quarantine is still active:');
     for (const issue of result.issues) console.error('- ' + issue);
-    process.exitCode = 10;
+    process.exitCode = result.metadataUnavailable ? 11 : 10;
   } else {
     console.log('Cargo release-age quarantine passed for ' + result.count +
       ' newly introduced crates.io package versions across ' +
