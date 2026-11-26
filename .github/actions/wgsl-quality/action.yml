@@ -11,7 +11,7 @@ runs:
       shell: bash
       run: bash "$GITHUB_ACTION_PATH/../install-rust-toolchain/install.sh" stable
     - name: Configure managed sccache
-      uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
+      uses: codeandsolder/ci-workflows/.github/actions/setup-sccache@f2b37a67bfe379e8db96731f97ad3c345065b168 # main
       with:
         rust-toolchain: stable
         rustflags: ""
@@ -28,4 +28,4 @@ runs:
           "$GITHUB_WORKSPACE" "${{ inputs.manifest }}"
     - name: Finalize managed sccache
       if: always()
-      uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@169c8823c1bb0f5e5645ad813b441d605d49d5bb # main
+      uses: codeandsolder/ci-workflows/.github/actions/finalize-sccache@f2b37a67bfe379e8db96731f97ad3c345065b168 # main
