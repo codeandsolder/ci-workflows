@@ -15,7 +15,7 @@ function step(source, name, indent) {
 
 test('the provider only runs explicitly configured unified suites', () => {
   assert.match(step(workflow, 'Run unified authoritative Rust test suite', 6), /inputs\.test-suites != ''/);
-  assert.doesNotMatch(workflow, /test-impact-mode|automatic.*test-impact analysis/);
+  assert.doesNotMatch(workflow, /test-impact-mode|automatic.*test-impact analysis|coverage-report|coverage-cargo-args|coverage-working-directory|rust-coverage/);
   assert.match(workflow, /fetch-depth: .*inputs\.test-suites != ''/);
   assert.match(workflow, /HAS_TEST_SUITES.*inputs\.test-suites/);
 });

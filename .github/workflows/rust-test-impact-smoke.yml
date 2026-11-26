@@ -4,9 +4,12 @@ on:
   pull_request:
     paths:
       - ".github/workflows/rust-sccache.yml"
-      - ".github/workflows/rust-test-impact.yml"
       - ".github/workflows/rust-test-impact-smoke.yml"
       - ".github/actions/rust-test-impact/**"
+      - ".github/actions/setup-sccache/**"
+      - ".github/actions/finalize-sccache/**"
+      - ".github/actions/resolve-rust-toolchain/**"
+      - "rust-toolchain.toml"
       - "smoke-cache/**"
       - "policy-wasm/Cargo.*"
       - "policy-wasm/src/**"
@@ -14,9 +17,12 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/rust-sccache.yml"
-      - ".github/workflows/rust-test-impact.yml"
       - ".github/workflows/rust-test-impact-smoke.yml"
       - ".github/actions/rust-test-impact/**"
+      - ".github/actions/setup-sccache/**"
+      - ".github/actions/finalize-sccache/**"
+      - ".github/actions/resolve-rust-toolchain/**"
+      - "rust-toolchain.toml"
       - "smoke-cache/**"
       - "policy-wasm/Cargo.*"
       - "policy-wasm/src/**"
@@ -31,28 +37,62 @@ permissions:
   actions: read
 
 jobs:
-  compare-contract:
-    runs-on: ubuntu-26.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Assert shadow miss and cache-miss semantics
-        run: node --test .github/actions/rust-test-impact/*.test.mjs
-
-  end-to-end:
-    uses: ./.github/workflows/rust-test-impact.yml
-    with:
-      test-suites: '[{"name":"policy","directory":"policy-wasm"}]'
-
   shared-provider-end-to-end:
-    # Exercise the typed suite through the same provider used by consumers.
-    # The policy crate is binary-only; no duplicate normal unit-test command.
+    # Each workspace executes exactly once. Exercise normal and continuous
+    # profiling, nested workspaces, explicit Nextest filters, and doctests.
     uses: ./.github/workflows/rust-sccache.yml
     with:
       command: cargo fmt --manifest-path policy-wasm/Cargo.toml --all -- --check
       test-suites: |
         [
-          {"name":"cache","directory":"policy-wasm","continuous":true,"nextest":["-E","test(cache::tests::)"]},
-          {"name":"other","directory":"policy-wasm","nextest":["-E","not test(cache::tests::)"]}
+          {"name":"policy","directory":"policy-wasm","continuous":true},
+          {"name":"smoke","directory":"smoke-cache","nextest":["-E","test(smoke_value_is_stable)"],"doctests":["--locked"]}
         ]
       sccache-cache-scope: rust-test-impact-unified
+
+  verify-reports:
+    if: ${{ always() && !cancelled() }}
+    name: Validate unified test, shadow and LLVM reports
+    needs: shared-provider-end-to-end
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Download coverage reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: rust-coverage-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/coverage
+      - name: Download shadow comparisons
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: rust-test-impact-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/impact
+      - name: Require actual successful reports for both scopes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scope in policy smoke; do
+            test -s "$RUNNER_TEMP/coverage/$scope/html/index.html"
+            test -s "$RUNNER_TEMP/coverage/$scope/lcov.info"
+            test -s "$RUNNER_TEMP/coverage/$scope/coverage.json"
+            test -s "$RUNNER_TEMP/impact/$scope/comparison.json"
+          done
+          node - "$RUNNER_TEMP" <<'JS2'
+          const fs = require('node:fs');
+          const assert = require('node:assert/strict');
+          const root = process.argv[2];
+          for (const scope of ['policy', 'smoke']) {
+            const coverage = root + '/coverage/' + scope + '/';
+            assert.equal(JSON.parse(fs.readFileSync(coverage + 'status.json', 'utf8')).status, 'success');
+            const report = JSON.parse(fs.readFileSync(coverage + 'coverage.json', 'utf8'));
+            const lines = report.data?.[0]?.totals?.lines;
+            assert(lines && lines.count > 0 && lines.covered > 0, 'Expected measured source lines for ' + scope);
+            const comparison = JSON.parse(fs.readFileSync(root + '/impact/' + scope + '/comparison.json', 'utf8'));
+            assert.equal(comparison.failed, 0);
+            assert(comparison.total > 0, 'Expected executed tests for ' + scope);
+            if (scope === 'smoke') assert.equal(comparison.total, 1);
+            console.log(scope + ': ' + comparison.total + ' tests; ' + lines.covered + '/' + lines.count + ' lines covered');
+          }
+          JS2

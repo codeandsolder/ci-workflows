@@ -12,7 +12,7 @@ function report(json, status = 'success') {
     const data = join(dir, 'coverage.json');
     const summary = join(dir, 'summary.md');
     if (json !== undefined) writeFileSync(data, JSON.stringify(json));
-    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./summary.mjs', import.meta.url))], {
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL('./coverage-summary.mjs', import.meta.url))], {
       env: {
         ...process.env,
         COVERAGE_JSON: data,
