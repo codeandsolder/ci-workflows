@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   scope:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     outputs:
       selected: ${{ steps.scope.outputs.selected }}
@@ -31,7 +31,7 @@ jobs:
   conditional:
     needs: scope
     if: needs.scope.outputs.selected == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
       - run: exit 1
