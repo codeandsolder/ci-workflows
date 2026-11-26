@@ -174,7 +174,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: codeandsolder/rust-skills2
-          ref: 7cd4c792bd6aba2807b4accc42dfb3e9db238634 # main
+          ref: 8e82916a91d94d82b6bb31bcdfc59af06953b839 # main
           path: .rust-skills2-gate
           persist-credentials: false
           sparse-checkout: |
