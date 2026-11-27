@@ -107,8 +107,12 @@ after preparation to validate the actual prepared source. Prefer structured
 Optional `command` is additional non-overlapping validation **after** strict
 scopes and authoritative tests; move test prerequisites to `prepare-command`.
 Do not repeat a Cargo check already covered by an identical Clippy scope.
-Advisory dependency reporting follows required validation; scanner installation
-is shared and canonical workspace directories are scanned once. Distinct targets/features remain explicit; list required cross-targets in
+Advisory dependency reporting starts after mandatory preflight and overlaps
+strict compilation, authoritative tests, and custom validation on the same
+runner. Only remaining scanner time can extend successful CI; failed or
+cancelled required validation cancels the scan. One scanner installation and
+one scan per canonical workspace, with unavailable/incomplete diagnostics
+explicitly reported. No parallel Cargo builds contend for a single target. Distinct targets/features remain explicit; list required cross-targets in
 rust-targets and select appropriate rustflags. Strict suites require routine
 native Linux X64. Use checkout-submodules, apt-packages, and the strict Python
 location inputs only where needed. Ordinary Rust jobs without strict scopes

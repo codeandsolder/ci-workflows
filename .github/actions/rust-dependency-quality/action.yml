@@ -3,15 +3,49 @@ description: RustSec advisories, unused direct dependencies, and consolidation a
 inputs:
   working-directories:
     description: JSON array of Cargo workspace paths relative to caller checkout
-    required: true
+    required: false
+    default: "[]"
+  mode:
+    description: Run synchronously, start an overlapped scan, or finish a started scan
+    required: false
+    default: run
+  scan-state:
+    description: Runner-local state returned by mode start; required for mode finish
+    required: false
+    default: ""
+  publish:
+    description: For mode finish, publish on successful validation or cancel otherwise
+    required: false
+    default: "true"
 outputs:
+  scan-state:
+    description: Runner-local state of the overlapped scan
+    value: ${{ steps.start.outputs.scan-state }}
+  report-root:
+    description: Runner-local completed report directory
+    value: ${{ steps.collect.outputs.report-root }}
   artifact-id:
     description: ID of the uploaded public report, empty for private repositories
     value: ${{ steps.upload.outputs.artifact-id }}
 runs:
   using: composite
   steps:
+    - name: Validate dependency scan mode
+      shell: bash
+      env:
+        SCAN_MODE: ${{ inputs.mode }}
+        SCAN_STATE: ${{ inputs.scan-state }}
+        PUBLISH: ${{ inputs.publish }}
+      run: |
+        case "$SCAN_MODE" in
+          run|start) test -z "$SCAN_STATE" ;;
+          finish) test -n "$SCAN_STATE" && [[ "$PUBLISH" == true || "$PUBLISH" == false ]] ;;
+          *) echo "Invalid dependency scan mode: $SCAN_MODE" >&2; exit 2 ;;
+        esac
+
     - name: Validate dependency workspace selection
+      id: validate
+      if: inputs.mode != 'finish'
       shell: bash
       env:
         DEPENDENCY_DIRECTORIES: ${{ inputs.working-directories }}
@@ -19,6 +53,7 @@ runs:
 
     - name: Install pinned Rust dependency scanners
       id: tools
+      if: inputs.mode != 'finish'
       uses: taiki-e/install-action@073e1fd0bc889c9aee68dbaaa927cde1b5653a83 # v2.90.11
       continue-on-error: true
       with:
@@ -26,12 +61,13 @@ runs:
 
     - name: Install checksum-pinned cargo-anoint
       id: anoint
+      if: inputs.mode != 'finish'
       shell: bash
       continue-on-error: true
       run: node "$GITHUB_ACTION_PATH/install-anoint.mjs"
 
     - name: Audit dependency health and consolidation
-      if: always()
+      if: always() && inputs.mode == 'run'
       shell: bash
       continue-on-error: true
       env:
@@ -40,23 +76,45 @@ runs:
         DEPENDENCY_ANOINT_BINARY: ${{ steps.anoint.outputs.binary }}
       run: node "$GITHUB_ACTION_PATH/run.mjs"
 
-    - name: Log dependency findings in private repositories
-      if: always() && github.event.repository.private
+    - name: Launch independent dependency scan
+      id: start
+      if: ${{ !cancelled() && inputs.mode == 'start' && steps.validate.outcome == 'success' }}
+      shell: bash
+      env:
+        DEPENDENCY_DIRECTORIES: ${{ inputs.working-directories }}
+        DEPENDENCY_SCANNERS_INSTALLED: ${{ steps.tools.outcome }}
+        DEPENDENCY_ANOINT_BINARY: ${{ steps.anoint.outputs.binary }}
+      run: node "$GITHUB_ACTION_PATH/overlap.mjs" start
+
+    - name: Collect or cancel overlapped dependency scan
+      id: collect
+      if: ${{ always() && inputs.mode == 'finish' }}
       shell: bash
       continue-on-error: true
+      env:
+        SCAN_STATE: ${{ inputs.scan-state }}
+        PUBLISH: ${{ inputs.publish }}
+      run: node "$GITHUB_ACTION_PATH/overlap.mjs" finish "$SCAN_STATE" "$PUBLISH"
+
+    - name: Log dependency findings in private repositories
+      if: always() && github.event.repository.private && (inputs.mode == 'run' || (inputs.mode == 'finish' && inputs.publish == 'true' && steps.collect.outputs.report-root != ''))
+      shell: bash
+      continue-on-error: true
+      env:
+        REPORT_ROOT: ${{ steps.collect.outputs.report-root || format('{0}/rust-dependency-quality', runner.temp) }}
       run: |
-        report="$RUNNER_TEMP/rust-dependency-quality"
+        report="$REPORT_ROOT"
         if [[ -d "$report" ]]; then
           find "$report" -name results.json -type f -print -exec cat {} \;
         fi
 
     - name: Upload dependency findings
       id: upload
-      if: always() && !github.event.repository.private
+      if: always() && !github.event.repository.private && (inputs.mode == 'run' || (inputs.mode == 'finish' && inputs.publish == 'true' && steps.collect.outputs.report-root != ''))
       continue-on-error: true
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       with:
         name: rust-dependency-health-${{ github.job }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/rust-dependency-quality/
+        path: ${{ steps.collect.outputs.report-root || format('{0}/rust-dependency-quality', runner.temp) }}/
         if-no-files-found: warn
         retention-days: 14
