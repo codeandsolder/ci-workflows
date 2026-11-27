@@ -25,7 +25,7 @@ permissions:
 jobs:
   quarantine:
     runs-on: ${{ inputs.runner == 'auto' && (github.event.repository.private && fromJSON('["self-hosted","Linux","X64","local-ci"]') || 'ubuntu-24.04') || fromJSON(inputs.runner) }}
-    timeout-minutes: 10
+    timeout-minutes: 35
     steps:
       - name: Check out caller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
