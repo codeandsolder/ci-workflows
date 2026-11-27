@@ -42,7 +42,9 @@ jobs:
     # profiling, nested workspaces, explicit Nextest filters, and doctests.
     uses: ./.github/workflows/rust-sccache.yml
     with:
-      command: cargo fmt --manifest-path policy-wasm/Cargo.toml --all -- --check
+      prepare-command: cargo fmt --manifest-path policy-wasm/Cargo.toml --all -- --check
+      strict-suites: |
+        [{"name":"smoke","directory":"smoke-cache","dependency-quality":false}]
       test-suites: |
         [
           {"name":"policy","directory":"policy-wasm","continuous":true},

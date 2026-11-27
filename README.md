@@ -81,7 +81,6 @@ jobs:
   rust:
     uses: codeandsolder/ci-workflows/.github/workflows/rust-sccache.yml@<full-sha> # main
     with:
-      command: ":"
       strict-suites: |
         [{"name":"native","cargo":["--workspace","--locked","--all-targets","--all-features"]}]
       test-suites: |
@@ -92,9 +91,24 @@ Each strict scope has a unique name, optional repository-relative directory
 (default "."), Cargo selector array (default --locked --workspace --all-targets),
 optional allow-test-panics (default false) and dependency-quality (default true).
 Selectors are passed to the exact pinned rust-skills2 strict policy, not a
-weaker substitute. All scopes execute; any failing scope blocks CI. Dependency
-scanner installation is shared and identical workspace directories are scanned
-once. Distinct targets/features remain explicit; list required cross-targets in
+weaker substitute. After cheap repository policy and crate quarantine, CI
+resolves and installs the pinned compiler, checks formatting once per canonical
+Cargo workspace, and validates source and release licenses for every exact
+selector before native package installation or cache restoration. Compilation
+uses the resulting runner-local per-scope plans and one managed cache/target
+lifecycle. Any mandatory failure blocks CI; all compile scopes retain their
+diagnostics. Authoritative tests run after successful strict compilation.
+
+Use optional `prepare-command` only for prerequisites needed by strict scopes
+or tests (for example generating required files or installing a runtime).
+It runs with the managed compiler cache; if present, strict preflight runs
+after preparation to validate the actual prepared source. Prefer structured
+`checkout-submodules`, `apt-packages`, and compiler inputs over shell setup.
+Optional `command` is additional non-overlapping validation **after** strict
+scopes and authoritative tests; move test prerequisites to `prepare-command`.
+Do not repeat a Cargo check already covered by an identical Clippy scope.
+Advisory dependency reporting follows required validation; scanner installation
+is shared and canonical workspace directories are scanned once. Distinct targets/features remain explicit; list required cross-targets in
 rust-targets and select appropriate rustflags. Strict suites require routine
 native Linux X64. Use checkout-submodules, apt-packages, and the strict Python
 location inputs only where needed. Ordinary Rust jobs without strict scopes
