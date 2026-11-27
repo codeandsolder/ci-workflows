@@ -131,7 +131,8 @@ const defaultTransport = {
   clock: Date.now,
   sleep: delay,
   spacingMs: 1_000,
-  budgetMs: 8 * 60_000,
+  // Allow the paced baseline scan of a newly tracked, large workspace.
+  budgetMs: names => Math.min(30 * 60_000, 8 * 60_000 + names * 2_000),
 };
 
 function retryAfterMs(value, now) {
@@ -144,13 +145,13 @@ function retryAfterMs(value, now) {
 
 export async function lookupPublications(packages, request = fetch, transport = defaultTransport) {
   const {clock, sleep, spacingMs, budgetMs} = transport;
-  const deadline = clock() + budgetMs;
   let nextRequest = clock();
   const names = new Map();
   for (const pkg of packages) {
     if (!names.has(pkg.name)) names.set(pkg.name, new Set());
     names.get(pkg.name).add(pkg.version);
   }
+  const deadline = clock() + (typeof budgetMs === 'number' ? budgetMs : (budgetMs ?? defaultTransport.budgetMs)(names.size));
   const output = new Map();
   for (const [name, versions] of names) {
     let found;

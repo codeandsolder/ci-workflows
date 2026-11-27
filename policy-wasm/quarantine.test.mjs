@@ -267,3 +267,18 @@ test('exhausted server cooldown fails closed without hammering other crates', as
   assert.match(result.a['1'].message,/budget exhausted/);
   assert.match(result.b['1'].message,/budget exhausted/);
 });
+
+test('large initial lockfile receives a bounded paced request budget', async () => {
+  const {transport, waits} = fakeTransport();
+  delete transport.budgetMs;
+  const packages = Array.from({length: 800}, (_, i) => ({name: 'crate-' + i, version: '1'}));
+  let calls = 0;
+  // Use the production budget function with a deterministic clock.
+  const result = await lookupPublications(packages, async () => {
+    calls++;
+    return {ok:true, json: async () => ({versions:[{num:'1',created_at:'2026-01-01T00:00:00Z'}]})};
+  }, transport);
+  assert.equal(calls, 800);
+  assert.equal(waits.length, 799);
+  assert.equal(result['crate-799']['1'].kind, 'found');
+});
