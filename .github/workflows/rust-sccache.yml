@@ -3,10 +3,16 @@ name: Rust CI with mandatory sccache
 on:
   workflow_call:
     inputs:
-      command:
-        description: Rust/Cargo validation command; when test-suites is set, only non-overlapping setup/lint/build checks
-        required: true
+      prepare-command:
+        description: Explicit prerequisites for strict scopes and tests; runs with managed cache before source policy when nonempty
+        required: false
         type: string
+        default: ""
+      command:
+        description: Additional non-overlapping validation after strict scopes and authoritative tests
+        required: false
+        type: string
+        default: ""
       rust-toolchain:
         description: Explicit release compatibility toolchain, or the exact routine repository pin
         required: false
@@ -174,7 +180,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: codeandsolder/rust-skills2
-          ref: 8e82916a91d94d82b6bb31bcdfc59af06953b839 # main
+          ref: cb9083676196a8ec3bf013e7253907b2759020c7 # main
           path: .rust-skills2-gate
           persist-credentials: false
           sparse-checkout: |
@@ -238,17 +244,6 @@ jobs:
           lockfile: auto
           hours: "72"
 
-      - name: Install native build dependencies
-        if: inputs.apt-packages != ''
-        shell: bash
-        env:
-          PACKAGES: ${{ inputs.apt-packages }}
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          read -r -a packages <<< "$PACKAGES"
-          sudo apt-get install -y -- "${packages[@]}"
-
       - name: Resolve one quarantined compiler
         id: compiler
         uses: ./.ci-workflows/.github/actions/resolve-rust-toolchain
@@ -271,12 +266,11 @@ jobs:
           fi
           echo "RUSTFLAGS=$effective" >> "$GITHUB_ENV"
 
-      - name: Install Rust toolchain
+      - name: Install minimal Rust toolchain
         shell: bash
         env:
           RUST_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
-          VALIDATION_TIER: ${{ inputs.validation-tier }}
-          HAS_TEST_SUITES: ${{ inputs.test-suites != '' }}
+          HAS_STRICT_SUITES: ${{ inputs.strict-suites != '' }}
         run: |
           set -euo pipefail
           if ! rustup run "$RUST_TOOLCHAIN" rustc --version >/dev/null 2>&1; then
@@ -284,10 +278,41 @@ jobs:
           else
             echo "Rust toolchain $RUST_TOOLCHAIN is already installed on the runner."
           fi
+          # The source checker reads the exact Clippy lint catalogue; fmt
+          # needs rustfmt. Neither stage needs extra compilation targets.
+          if [[ "$HAS_STRICT_SUITES" == true ]]; then
+            rustup component add --toolchain "$RUST_TOOLCHAIN" clippy rustfmt
+          fi
 
+      - name: Configure runner-local Cargo target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_dir="$RUNNER_TEMP/cargo-target"
+          mkdir -p "$target_dir"
+          echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
+
+      - name: Strict formatting, source and release-license preflight
+        id: strict-early
+        if: inputs.strict-suites != '' && inputs.prepare-command == ''
+        shell: bash
+        env:
+          STRICT_SUITES: ${{ inputs.strict-suites }}
+          STRICT_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
+        run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs preflight
+
+      - name: Install remaining Rust components and targets
+        shell: bash
+        env:
+          RUST_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
+          VALIDATION_TIER: ${{ inputs.validation-tier }}
+          HAS_TEST_SUITES: ${{ inputs.test-suites != '' }}
+          HAS_STRICT_SUITES: ${{ inputs.strict-suites != '' }}
+        run: |
+          set -euo pipefail
           if [[ "$VALIDATION_TIER" == routine || -n "$RUST_COMPONENTS" || "$HAS_TEST_SUITES" == true ]]; then
             read -r -a components <<< "$RUST_COMPONENTS"
-            if [[ "$VALIDATION_TIER" == routine ]]; then
+            if [[ "$VALIDATION_TIER" == routine && "$HAS_STRICT_SUITES" != true ]]; then
               components+=(clippy rustfmt)
             fi
             if [[ "$HAS_TEST_SUITES" == true ]]; then
@@ -297,9 +322,15 @@ jobs:
             # Pass each requested component exactly once.
             unique_components=()
             while IFS= read -r component; do
+              [[ -n "$component" ]] || continue
+              if [[ "$HAS_STRICT_SUITES" == true && ( "$component" == clippy || "$component" == rustfmt ) ]]; then
+                continue
+              fi
               unique_components+=("$component")
             done < <(printf '%s\n' "${components[@]}" | sort -u)
-            rustup component add --toolchain "$RUST_TOOLCHAIN" "${unique_components[@]}"
+            if (( ${#unique_components[@]} )); then
+              rustup component add --toolchain "$RUST_TOOLCHAIN" "${unique_components[@]}"
+            fi
           fi
 
           # Rustup's native manifest may declare additional components/targets.
@@ -326,6 +357,17 @@ jobs:
           "$rustc_path" --version
           cargo +"$RUST_TOOLCHAIN" --version
 
+      - name: Install native build dependencies
+        if: inputs.apt-packages != ''
+        shell: bash
+        env:
+          PACKAGES: ${{ inputs.apt-packages }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          read -r -a packages <<< "$PACKAGES"
+          sudo apt-get install -y -- "${packages[@]}"
+
       - name: Isolate compiler cache daemon from test-managed sccache daemons
         if: ${{ inputs.isolate-public-sccache-server && !github.event.repository.private }}
         shell: bash
@@ -345,15 +387,7 @@ jobs:
           rustflags: ""
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
           execution: ${{ inputs.cache-execution }}
-          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}:{2}{3}', inputs.command, inputs.rust-targets, inputs.test-suites, inputs.strict-suites != '' && format(':{0}', inputs.strict-suites) || '') }}
-
-      - name: Configure runner-local Cargo target
-        shell: bash
-        run: |
-          set -euo pipefail
-          target_dir="$RUNNER_TEMP/cargo-target"
-          mkdir -p "$target_dir"
-          echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
+          cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}:{2}{3}{4}', inputs.command, inputs.rust-targets, inputs.test-suites, inputs.strict-suites != '' && format(':{0}', inputs.strict-suites) || '', inputs.prepare-command != '' && format(':prepare:{0}', inputs.prepare-command) || '') }}
 
       - name: Provision explicitly requested uv
         if: ${{ inputs.uv-version != '' }}
@@ -369,12 +403,21 @@ jobs:
           node-version: ${{ inputs.node-version }}
           package-manager-cache: false
 
-      - name: Run caller command
-        id: caller
+      - name: Prepare explicit caller prerequisites
+        if: inputs.prepare-command != ''
         shell: bash
         run: |
           set -euo pipefail
-          ${{ inputs.command }}
+          ${{ inputs.prepare-command }}
+
+      - name: Strict preflight after explicit caller preparation
+        id: strict-late
+        if: inputs.strict-suites != '' && inputs.prepare-command != ''
+        shell: bash
+        env:
+          STRICT_SUITES: ${{ inputs.strict-suites }}
+          STRICT_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
+        run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs preflight
 
       - name: Enforce all strict Rust lint scopes
         if: inputs.strict-suites != ''
@@ -383,19 +426,27 @@ jobs:
         env:
           STRICT_SUITES: ${{ inputs.strict-suites }}
           STRICT_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
-        run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs execute
-
-      - name: Audit distinct strict workspaces with one scanner installation
-        if: inputs.strict-suites != '' && steps.strict-plan.outputs.dependency-directories != '[]'
-        uses: ./.ci-workflows/.github/actions/rust-dependency-quality
-        with:
-          working-directories: ${{ steps.strict-plan.outputs.dependency-directories }}
+          STRICT_PLAN_DIR: ${{ steps.strict-early.outputs.plan-dir || steps.strict-late.outputs.plan-dir }}
+        run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs compile
 
       - name: Run unified authoritative Rust test suite
-        if: ${{ !cancelled() && steps.caller.outcome == 'success' && inputs.test-suites != '' }}
+        if: inputs.test-suites != ''
         uses: ./.ci-workflows/.github/actions/rust-test-impact
         with:
           test-suites: ${{ inputs.test-suites }}
+
+      - name: Run additional caller validation
+        if: inputs.command != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          ${{ inputs.command }}
+
+      - name: Audit distinct strict workspaces with one scanner installation
+        if: inputs.strict-suites != '' && (steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories) != '[]'
+        uses: ./.ci-workflows/.github/actions/rust-dependency-quality
+        with:
+          working-directories: ${{ steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories }}
 
       - name: Finalize mandatory sccache
         if: always()

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { appendFileSync, mkdtempSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const defaultCargo = ['--locked', '--workspace', '--all-targets'];
@@ -47,26 +47,73 @@ export function dependencyDirectories(scopes) {
   return [...new Set(scopes.filter(scope => scope.dependencyQuality).map(scope => scope.directory))];
 }
 
-export function runStrictScopes(scopes, root, toolchain, spawn = spawnSync) {
-  const gate = join(root, '.rust-skills2-gate');
-  const script = join(gate, 'scripts', 'strict_clippy.sh');
-  const action = join(gate, '.github', 'actions', 'rust-strict');
-  const failures = [];
+function scopeEnvironment(scope, root) {
+  return {
+    ...process.env, GITHUB_WORKSPACE: root,
+    RUST_SKILLS2_ACTION_DIR: join(root, '.rust-skills2-gate', '.github', 'actions', 'rust-strict'),
+    RUST_SKILLS2_WORKING_DIRECTORY: scope.directory,
+    RUST_SKILLS2_CARGO_ARGS: scope.cargo.join(' '),
+    RUST_SKILLS2_ALLOW_TEST_PANICS: String(scope.panics),
+  };
+}
+
+function runPhase(scope, root, toolchain, phase, plan, spawn) {
+  const script = join(root, '.rust-skills2-gate', 'scripts', 'strict_clippy.sh');
+  const args = [script, '--toolchain', toolchain, '--phase', phase];
+  if (plan) args.push('--plan', plan);
+  console.log('Strict Rust ' + phase + ': ' + scope.name);
+  return spawn('bash', args, {
+    cwd: root, stdio: 'inherit', env: scopeEnvironment(scope, root),
+  });
+}
+
+function failure(result) {
+  return result.error?.message ?? (result.status === 0 ? null : result.signal ?? result.status ?? 'unknown failure');
+}
+
+function workspaceDirectory(scope, root, toolchain, spawn) {
+  const result = spawn('cargo', ['+' + toolchain, 'locate-project', '--workspace', '--message-format', 'plain'], {
+    cwd: resolve(root, scope.directory), encoding: 'utf8',
+  });
+  const problem = failure(result);
+  if (problem !== null) throw new Error(scope.name + ': cargo locate-project: ' + problem + '\n' + (result.stderr ?? ''));
+  const directory = dirname(realpathSync(result.stdout.trim()));
+  const rel = relative(root, directory);
+  if (isAbsolute(rel) || rel === '..' || rel.startsWith('..' + sep)) throw new Error('Cargo workspace escapes the caller checkout: ' + scope.name);
+  return rel || '.';
+}
+
+export function preflightScopes(scopes, root, toolchain, planDir, spawn = spawnSync) {
+  const resolved = new Map();
+  const workspaces = scopes.map(scope => {
+    if (!resolved.has(scope.directory)) {
+      resolved.set(scope.directory, workspaceDirectory(scope, root, toolchain, spawn));
+    }
+    return {scope, directory: resolved.get(scope.directory)};
+  });
+  const formatted = new Set();
+  for (const {scope, directory} of workspaces) {
+    if (formatted.has(directory)) continue;
+    const problem = failure(runPhase({...scope, directory}, root, toolchain, 'format', null, spawn));
+    if (problem !== null) throw new Error('Rust formatting failed: ' + directory + ': ' + problem);
+    formatted.add(directory);
+  }
   for (const scope of scopes) {
-    console.log('Strict Rust scope: ' + scope.name);
-    const result = spawn('bash', [script, '--toolchain', toolchain], {
-      cwd: root, stdio: 'inherit',
-      env: {
-        ...process.env, GITHUB_WORKSPACE: root,
-        RUST_SKILLS2_ACTION_DIR: action,
-        RUST_SKILLS2_WORKING_DIRECTORY: scope.directory,
-        RUST_SKILLS2_CARGO_ARGS: scope.cargo.join(' '),
-        RUST_SKILLS2_ALLOW_TEST_PANICS: String(scope.panics),
-      },
-    });
-    if (result.error || result.status !== 0) {
-      failures.push(scope.name + ': ' + (result.error?.message ?? result.signal ?? result.status));
-      // Retain the old strict job's per-workspace diagnostic after a failure.
+    const problem = failure(runPhase(scope, root, toolchain, 'preflight', join(planDir, scope.name), spawn));
+    if (problem !== null) throw new Error('Rust preflight failed: ' + scope.name + ': ' + problem);
+  }
+  return dependencyDirectories(workspaces.map(({scope, directory}) => ({...scope, directory})));
+}
+
+export function runStrictScopes(scopes, root, toolchain, planDir, spawn = spawnSync) {
+  const failures = [];
+  // One shared Cargo target: concurrent independent Cargo invocations would
+  // contend on the target lock and can destroy fingerprint reuse.
+  for (const scope of scopes) {
+    const result = runPhase(scope, root, toolchain, 'compile', join(planDir, scope.name), spawn);
+    const problem = failure(result);
+    if (problem !== null) {
+      failures.push(scope.name + ': ' + problem);
       spawn('cargo', ['+' + toolchain, 'report', 'future-incompatibilities'], {
         cwd: resolve(root, scope.directory), stdio: 'inherit',
       });
@@ -79,15 +126,33 @@ function main() {
   const root = realpathSync(process.env.GITHUB_WORKSPACE);
   const scopes = parseStrictSuites(process.env.STRICT_SUITES, root);
   switch (process.argv[2]) {
-    case 'prepare': {
-      const directories = dependencyDirectories(scopes);
-      appendFileSync(process.env.GITHUB_OUTPUT, 'dependency-directories=' + JSON.stringify(directories) + '\n');
+    case 'prepare':
+      break; // Validate scope declarations before toolchain/cache setup.
+    case 'preflight': {
+      const planDir = mkdtempSync(join(realpathSync(process.env.RUNNER_TEMP), 'strict-plan-'));
+      try {
+        const directories = preflightScopes(scopes, root, process.env.STRICT_TOOLCHAIN, planDir);
+        appendFileSync(process.env.GITHUB_OUTPUT, 'plan-dir=' + planDir + '\ndependency-directories=' + JSON.stringify(directories) + '\n');
+      } catch (error) {
+        rmSync(planDir, {recursive:true, force:true});
+        throw error;
+      }
       break;
     }
-    case 'execute':
-      runStrictScopes(scopes, root, process.env.STRICT_TOOLCHAIN);
+    case 'compile': {
+      const planDir = realpathSync(process.env.STRICT_PLAN_DIR);
+      const runnerTemp = realpathSync(process.env.RUNNER_TEMP);
+      if (dirname(planDir) !== runnerTemp || !relative(runnerTemp, planDir).startsWith('strict-plan-')) {
+        throw new Error('Invalid runner-local strict plan directory');
+      }
+      try {
+        runStrictScopes(scopes, root, process.env.STRICT_TOOLCHAIN, planDir);
+      } finally {
+        rmSync(planDir, {recursive:true, force:true});
+      }
       break;
-    default: throw new Error('usage: run.mjs prepare|execute');
+    }
+    default: throw new Error('usage: run.mjs prepare|preflight|compile');
   }
 }
 

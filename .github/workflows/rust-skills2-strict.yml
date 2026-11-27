@@ -16,7 +16,6 @@ jobs:
   strict-rust:
     uses: ./.github/workflows/rust-sccache.yml
     with:
-      command: ":"
       rustflags: ""
       rust-targets: wasm32-wasip1
       strict-suites: |

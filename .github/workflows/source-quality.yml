@@ -75,15 +75,20 @@ jobs:
         uses: ./.shared-language-quality/.github/actions/javascript-quality
         with:
           manifest: ${{ runner.temp }}/shared-quality-languages.json
+      - name: Strict Ruff and ty for standalone Python projects
+        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.python-quality && steps.detect.outputs.has-python == 'true' }}
+        uses: codeandsolder/rust-skills2/.github/actions/python-strict@798a043851ff0ef78bd836ea791528d8ecb7c77b # main
+        with:
+          ban-python-outside-ci: "false"
       - name: Install stable Rust for WGSL
         id: wgsl-rust
-        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.wgsl && steps.detect.outputs.has-wgsl == 'true' }}
+        if: ${{ success() && steps.detect.outcome == 'success' && inputs.wgsl && steps.detect.outputs.has-wgsl == 'true' }}
         uses: ./.shared-language-quality/.github/actions/install-rust-toolchain
         with:
           toolchain: stable
       - name: Configure managed sccache for WGSL
         id: wgsl-cache
-        if: ${{ !cancelled() && steps.wgsl-rust.outcome == 'success' }}
+        if: ${{ success() && steps.wgsl-rust.outcome == 'success' }}
         uses: ./.shared-language-quality/.github/actions/setup-sccache
         with:
           rust-toolchain: stable
@@ -91,7 +96,7 @@ jobs:
           repository-path: .shared-language-quality
           cache-scope: shared-wgsl-quality
       - name: Check tracked WGSL with Naga
-        if: ${{ !cancelled() && steps.wgsl-cache.outcome == 'success' }}
+        if: ${{ success() && steps.wgsl-cache.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -102,28 +107,23 @@ jobs:
       - name: Finalize managed sccache for WGSL
         if: always()
         uses: ./.shared-language-quality/.github/actions/finalize-sccache
-      - name: Strict Ruff and ty for standalone Python projects
-        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.python-quality && steps.detect.outputs.has-python == 'true' }}
-        uses: codeandsolder/rust-skills2/.github/actions/python-strict@798a043851ff0ef78bd836ea791528d8ecb7c77b # main
-        with:
-          ban-python-outside-ci: "false"
       - name: Install Java for PMD
         id: jdk
-        if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.java && steps.detect.outputs.has-java == 'true' }}
+        if: ${{ success() && steps.detect.outcome == 'success' && inputs.java && steps.detect.outputs.has-java == 'true' }}
         uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
           java-version: '25'
       - name: Set up Gradle for PMD
         id: gradle
-        if: ${{ !cancelled() && steps.jdk.outcome == 'success' }}
+        if: ${{ success() && steps.jdk.outcome == 'success' }}
         uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
         with:
           gradle-version: '9.9.3'
           cache-disabled: ${{ github.event.repository.private }}
       - name: Enforce shared PMD rules
         id: pmd
-        if: ${{ !cancelled() && steps.gradle.outcome == 'success' }}
+        if: ${{ success() && steps.gradle.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
