@@ -27,21 +27,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate report generator
+      - name: Start scan of fixture with intentionally unused path dependency
+        id: start
+        uses: ./.github/actions/rust-dependency-quality
+        with:
+          mode: start
+          working-directories: '[".github/actions/rust-dependency-quality/fixtures/example","smoke-cache",".github/actions/rust-dependency-quality/fixtures/example"]'
+      - name: Validate report generator while scan runs
         run: node --test .github/actions/rust-dependency-quality/*.test.mjs
-      - name: Scan fixture with intentionally unused path dependency
+      - name: Collect dependency report
         id: scan
         uses: ./.github/actions/rust-dependency-quality
         with:
-          working-directories: '[".github/actions/rust-dependency-quality/fixtures/example","smoke-cache",".github/actions/rust-dependency-quality/fixtures/example"]'
+          mode: finish
+          scan-state: ${{ steps.start.outputs.scan-state }}
       - name: Assert real scanner execution and successful artifact upload
         shell: bash
         env:
           REPORT_ARTIFACT_ID: ${{ steps.scan.outputs.artifact-id }}
+          REPORT_ROOT: ${{ steps.scan.outputs.report-root }}
         run: |
           # The scanner and assertion share a runner. Read the exact local
           # report rather than racing the artifact service's list operation.
-          node - "$RUNNER_TEMP/rust-dependency-quality" <<'JS'
+          node - "$REPORT_ROOT" <<'JS'
           const fs = require('node:fs');
           const assert = require('node:assert/strict');
           assert.match(process.env.REPORT_ARTIFACT_ID ?? '', /^[1-9][0-9]*$/, 'Public report upload did not return an artifact ID');

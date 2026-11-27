@@ -419,6 +419,15 @@ jobs:
           STRICT_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
         run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs preflight
 
+      - name: Start advisory dependency reporting alongside compilation
+        id: dependency-scan
+        if: inputs.strict-suites != '' && (steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories) != '[]'
+        continue-on-error: true
+        uses: ./.ci-workflows/.github/actions/rust-dependency-quality
+        with:
+          mode: start
+          working-directories: ${{ steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories }}
+
       - name: Enforce all strict Rust lint scopes
         if: inputs.strict-suites != ''
         id: strict
@@ -442,11 +451,14 @@ jobs:
           set -euo pipefail
           ${{ inputs.command }}
 
-      - name: Audit distinct strict workspaces with one scanner installation
-        if: inputs.strict-suites != '' && (steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories) != '[]'
+      - name: Collect advisory dependency reporting
+        if: always() && steps.dependency-scan.outputs.scan-state != ''
+        continue-on-error: true
         uses: ./.ci-workflows/.github/actions/rust-dependency-quality
         with:
-          working-directories: ${{ steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories }}
+          mode: finish
+          scan-state: ${{ steps.dependency-scan.outputs.scan-state }}
+          publish: ${{ job.status == 'success' }}
 
       - name: Finalize mandatory sccache
         if: always()

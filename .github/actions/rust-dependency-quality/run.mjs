@@ -127,7 +127,7 @@ export function workspaceDirectories(source, root) {
   }))];
 }
 
-function scanWorkspace(root, directory, reportDir) {
+function scanWorkspace(root, directory, reportDir, summaryPath) {
   const workdir = resolve(root, directory);
   mkdirSync(reportDir, { recursive: true });
   const config = resolve(dirname(fileURLToPath(import.meta.url)), 'deny.toml');
@@ -179,8 +179,23 @@ function scanWorkspace(root, directory, reportDir) {
   const text = 'Workspace: `' + directory.replaceAll('`', '&#96;') + '`\n\n' + (!present
     ? '## Rust dependency health\n\nSkipped: selected directory does not contain Cargo.toml.\n'
     : summarize(audit, unused, anoint));
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
+  if (summaryPath) appendFileSync(summaryPath, text);
   else process.stdout.write(text);
+}
+
+// Individual tool subprocesses are bounded at 120 + 120 + 180 seconds.
+export const MAX_WORKSPACE_SCAN_MS = 420_000;
+
+export function scanWorkspaces(root, directories, reportRoot, summaryPath) {
+  mkdirSync(reportRoot, {recursive:true});
+  const entries = directories.map((directory, index) => ({directory, report: 'workspace-' + index}));
+  writeFileSync(resolve(reportRoot, 'index.json'), JSON.stringify(entries, null, 2) + '\n');
+  const failures = [];
+  for (const {directory, report} of entries) {
+    try { scanWorkspace(root, directory, resolve(reportRoot, report), summaryPath); }
+    catch (error) { failures.push(directory + ': ' + error.message); }
+  }
+  if (failures.length) throw new Error('Dependency scan unavailable: ' + failures.join('; '));
 }
 
 function main() {
@@ -188,15 +203,7 @@ function main() {
   const directories = workspaceDirectories(process.env.DEPENDENCY_DIRECTORIES, root);
   if (process.argv[2] === 'validate') return;
   const reportRoot = resolve(process.env.RUNNER_TEMP ?? process.cwd(), 'rust-dependency-quality');
-  mkdirSync(reportRoot, {recursive:true});
-  const entries = directories.map((directory, index) => ({directory, report: 'workspace-' + index}));
-  writeFileSync(resolve(reportRoot, 'index.json'), JSON.stringify(entries, null, 2) + '\n');
-  const failures = [];
-  for (const {directory, report} of entries) {
-    try { scanWorkspace(root, directory, resolve(reportRoot, report)); }
-    catch (error) { failures.push(directory + ': ' + error.message); }
-  }
-  if (failures.length) throw new Error('Dependency scan unavailable: ' + failures.join('; '));
+  scanWorkspaces(root, directories, reportRoot, process.env.GITHUB_STEP_SUMMARY);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
