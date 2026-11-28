@@ -6,6 +6,7 @@ on:
       - ".github/workflows/**"
       - ".github/actions/resolve-rust-toolchain/**"
       - ".github/actions/install-rust-toolchain/**"
+      - ".github/actions/native-packages/**"
       - ".github/actions/workflow-concurrency-policy/**"
       - ".github/actions/rust-ci-sccache-policy/**"
       - ".github/actions/actionlint-policy/**"
@@ -26,6 +27,7 @@ on:
       - ".github/workflows/**"
       - ".github/actions/resolve-rust-toolchain/**"
       - ".github/actions/install-rust-toolchain/**"
+      - ".github/actions/native-packages/**"
       - ".github/actions/workflow-concurrency-policy/**"
       - ".github/actions/rust-ci-sccache-policy/**"
       - ".github/actions/actionlint-policy/**"
@@ -60,6 +62,7 @@ jobs:
           persist-credentials: false
       - run: node --test scripts/nightly-toolchain.test.mjs .github/actions/merge-gate/evaluate.test.mjs
       - run: bash .github/actions/install-rust-toolchain/test.sh
+      - run: bash .github/actions/native-packages/test.sh
       - run: node --test languages/detect.test.mjs languages/run.test.mjs .github/actions/rust-test-impact/*.test.mjs .github/actions/rust-strict-suites/*.test.mjs
       - name: Exercise independent Naga crate inside a caller Cargo workspace
         shell: bash

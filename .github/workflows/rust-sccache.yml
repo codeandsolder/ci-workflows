@@ -99,7 +99,7 @@ on:
         default: "false"
         type: string
       apt-packages:
-        description: Space-separated Ubuntu build dependencies
+        description: Space-separated explicit host prerequisites; project runtime packages use .sccache-runtime-packages
         required: false
         default: ""
         type: string
@@ -176,6 +176,7 @@ jobs:
             .github/actions/rust-test-impact
             .github/actions/rust-strict-suites
             .github/actions/rust-dependency-quality
+            .github/actions/native-packages
             .github/actions/workflow-concurrency-policy
             .github/actions/rust-ci-sccache-policy
             .github/actions/cargo-release-quarantine
@@ -367,17 +368,6 @@ jobs:
           "$rustc_path" --version
           cargo +"$RUST_TOOLCHAIN" --version
 
-      - name: Install native build dependencies
-        if: inputs.apt-packages != ''
-        shell: bash
-        env:
-          PACKAGES: ${{ inputs.apt-packages }}
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          read -r -a packages <<< "$PACKAGES"
-          sudo apt-get install -y -- "${packages[@]}"
-
       - name: Isolate compiler cache daemon from test-managed sccache daemons
         if: ${{ inputs.isolate-public-sccache-server && !github.event.repository.private }}
         shell: bash
@@ -398,6 +388,18 @@ jobs:
           cache-size-mib: ${{ inputs.sccache-cache-size-mib }}
           execution: ${{ inputs.cache-execution }}
           cache-scope: ${{ inputs.sccache-cache-scope || format('{0}:{1}:{2}{3}{4}', inputs.command, inputs.rust-targets, inputs.test-suites, inputs.strict-suites != '' && format(':{0}', inputs.strict-suites) || '', inputs.prepare-command != '' && format(':prepare:{0}', inputs.prepare-command) || '') }}
+
+      - name: Prepare declared native build dependencies
+        if: inputs.apt-packages != '' || (runner.os == 'Linux' && inputs.cache-execution == 'native')
+        shell: bash
+        env:
+          HOST_PACKAGES: ${{ inputs.apt-packages }}
+          PACKAGE_MODE: ${{ github.event.repository.private && 'managed' || 'hosted' }}
+          NATIVE_MANIFEST: ${{ runner.os == 'Linux' && inputs.cache-execution == 'native' && '.sccache-runtime-packages' || '' }}
+        run: |
+          bash .ci-workflows/.github/actions/native-packages/prepare.sh \
+            "$PACKAGE_MODE" "$NATIVE_MANIFEST" "$HOST_PACKAGES" \
+            /etc/sccache/runtime-image /etc/sccache/runtime-profiles
 
       - name: Provision explicitly requested uv
         if: ${{ inputs.uv-version != '' }}
