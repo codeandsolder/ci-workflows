@@ -149,6 +149,13 @@ build is necessary. Use the JSON array `working-directories` for all distinct wo
 running the scanner again for each feature/target configuration. The provider's
 `rust-dependency-quality-smoke.yml` validates all three scanners against an
 intentionally unused path dependency and overlapping HTTP provider fixtures.
+For legacy Rust jobs without strict suites, set `dependency-directories` on
+one native Linux `rust-sccache.yml` job. If no suitable Rust job exists, call
+`rust-dependency-gate.yml` with explicit `working-directories`; it uses the
+provider's quarantined metadata compiler and never compiles the caller. Include
+the resulting check in the caller's required merge conditions. Do not duplicate
+a scan across matrix legs.
+
 To update cargo-anoint, run its scanner-release workflow on main, then update
 `anoint-release.json` in the action with the source commit and verified binary
 SHA-256; the smoke test verifies the actual release download and report. To suppress known `cargo-machete` false positives,

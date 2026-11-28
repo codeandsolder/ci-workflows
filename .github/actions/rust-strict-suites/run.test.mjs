@@ -150,3 +150,18 @@ test('cheap language checks precede expensive WGSL and Java provisioning', () =>
   assert.match(workflow.slice(wgsl, java), /if: \$\{\{ success\(\) && steps.detect.outcome/);
   assert.match(workflow.slice(java), /if: \$\{\{ success\(\) && steps.detect.outcome/);
 });
+
+test('legacy native jobs explicitly select a mandatory dependency scan without strict suites', () => {
+  const workflow = readFileSync(new URL('../../workflows/rust-sccache.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /dependency-directories:\n/);
+  assert.match(workflow, /Explicit dependency directories require a non-strict routine native Linux X64 job/);
+  assert.match(workflow, /if: inputs\.dependency-directories != '' \|\|/);
+  assert.match(workflow, /working-directories: .*inputs\.dependency-directories \|\| steps\.strict-early/);
+  const collect = workflow.slice(workflow.indexOf('      - name: Collect mandatory dependency scan'), workflow.indexOf('      - name: Finalize mandatory sccache'));
+  assert(!collect.includes('continue-on-error'));
+  const standalone = readFileSync(new URL('../../workflows/rust-dependency-gate.yml', import.meta.url), 'utf8');
+  assert.match(standalone, /working-directories: .*inputs\.working-directories/);
+  assert.match(standalone, /repository-path: \.ci-workflows/);
+  assert(!standalone.includes('continue-on-error'));
+  assert(!standalone.includes('cargo build'));
+});

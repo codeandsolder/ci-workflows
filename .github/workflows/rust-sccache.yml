@@ -73,6 +73,11 @@ on:
         required: false
         default: 6144
         type: number
+      dependency-directories:
+        description: Explicit JSON array of workspace paths for mandatory dependency scanning in a legacy non-strict Linux job; strict-suites already derive these automatically
+        required: false
+        type: string
+        default: ""
       strict-suites:
         description: JSON array of named strict Rust scopes; one shared policy preflight and compiler lifecycle
         required: false
@@ -137,6 +142,7 @@ jobs:
         env:
           VALIDATION_TIER: ${{ inputs.validation-tier }}
           HAS_STRICT_SUITES: ${{ inputs.strict-suites != '' }}
+          HAS_DEPENDENCY_DIRECTORIES: ${{ inputs.dependency-directories != '' }}
           CACHE_EXECUTION: ${{ inputs.cache-execution }}
         run: |
           case "$VALIDATION_TIER" in
@@ -145,6 +151,10 @@ jobs:
           esac
           if [[ "$HAS_STRICT_SUITES" == true && ( "$VALIDATION_TIER" != routine || "$RUNNER_OS" != Linux || "$RUNNER_ARCH" != X64 || "$CACHE_EXECUTION" != native ) ]]; then
             echo "Strict suites require routine native Linux X64 CI" >&2
+            exit 2
+          fi
+          if [[ "$HAS_DEPENDENCY_DIRECTORIES" == true && ( "$HAS_STRICT_SUITES" == true || "$VALIDATION_TIER" != routine || "$RUNNER_OS" != Linux || "$RUNNER_ARCH" != X64 || "$CACHE_EXECUTION" != native ) ]]; then
+            echo "Explicit dependency directories require a non-strict routine native Linux X64 job" >&2
             exit 2
           fi
 
@@ -421,11 +431,11 @@ jobs:
 
       - name: Start mandatory dependency scan alongside compilation
         id: dependency-scan
-        if: inputs.strict-suites != '' && (steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories) != '[]'
+        if: inputs.dependency-directories != '' || (inputs.strict-suites != '' && (steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories) != '[]')
         uses: ./.ci-workflows/.github/actions/rust-dependency-quality
         with:
           mode: start
-          working-directories: ${{ steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories }}
+          working-directories: ${{ inputs.dependency-directories || steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories }}
 
       - name: Enforce all strict Rust lint scopes
         if: inputs.strict-suites != ''
