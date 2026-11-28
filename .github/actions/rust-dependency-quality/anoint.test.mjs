@@ -20,7 +20,7 @@ test('workspace consolidation findings include both conflicts and recommendation
   assert.deepEqual(parsed.findings.map(f => [f.package, f.kind]), [['fixture', 'ModernAlternative'], ['fixture', 'CapabilityOverlap']]);
   const summary = summarizeAnoint(parsed);
   assert.match(summary.row, /2 \| Review candidates/);
-  assert.match(summary.lines.join('\n'), /1 potential capability overlaps, 1 other dependency recommendations/);
+  assert.match(summary.lines.join('\n'), /1 potential capability overlaps, 0 advisory overlaps, 1 other dependency recommendations/);
   assert.ok(summary.lines.findIndex(l => l.includes('CapabilityOverlap')) < summary.lines.findIndex(l => l.includes('ModernAlternative')));
 });
 
@@ -59,4 +59,25 @@ test('release URLs are commit-addressed and binary digest verification fails clo
   assert.throws(() => verifyBinary(Buffer.from('changed'), pin.sha256), /checksum mismatch/);
   assert.throws(() => releaseUrl({ ...pin, commit: 'main' }), /Invalid pinned/);
   assert.throws(() => releaseUrl({ ...pin, sha256: '' }), /Invalid pinned/);
+});
+
+
+test('member and workspace advisory overlaps remain distinct and visible', () => {
+  const advisory = { ...overlap, kind: 'AdvisoryOverlap', current: 'rustc-hash+ahash' };
+  const raw = JSON.parse(report(advisory, preference));
+  raw.workspace_suggestions = [{ ...advisory, reason: 'Different workspace members' }];
+  const parsed = parseAnointOutput(JSON.stringify(raw), 0);
+  assert.equal(parsed.failed, false);
+  assert.deepEqual(parsed.findings.map(f => [f.scope, f.package, f.kind]), [
+    ['package', 'fixture', 'AdvisoryOverlap'], ['package', 'fixture', 'ModernAlternative'],
+    ['workspace', null, 'AdvisoryOverlap'],
+  ]);
+  const summary = summarizeAnoint(parsed).lines.join('\n');
+  assert.match(summary, /0 potential capability overlaps, 2 advisory overlaps, 1 other dependency recommendations/);
+  assert.match(summary, /\*\*Workspace\*\* \[AdvisoryOverlap/);
+  assert.ok(summary.indexOf('AdvisoryOverlap') < summary.indexOf('ModernAlternative'));
+  for (const invalid of [null, {}, [overlap], [null], [{ ...advisory, package: 'fixture' }], [{ ...advisory, impact: 'Unknown' }]]) {
+    raw.workspace_suggestions = invalid;
+    assert.equal(parseAnointOutput(JSON.stringify(raw), 0).failed, true);
+  }
 });
