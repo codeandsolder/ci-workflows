@@ -77,7 +77,7 @@ jobs:
           manifest: ${{ runner.temp }}/shared-quality-languages.json
       - name: Strict Ruff and ty for standalone Python projects
         if: ${{ !cancelled() && steps.detect.outcome == 'success' && inputs.python-quality && steps.detect.outputs.has-python == 'true' }}
-        uses: codeandsolder/rust-skills2/.github/actions/python-strict@535609a4878f34a6697afea7ba3da04a454cc5f4 # main
+        uses: codeandsolder/rust-skills2/.github/actions/python-strict@2defd2ef97352d7a32cddf2dc6350d685f5ed3d4 # main
         with:
           ban-python-outside-ci: "false"
       - name: Install stable Rust for WGSL
