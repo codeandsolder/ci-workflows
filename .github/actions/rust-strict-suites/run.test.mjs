@@ -120,11 +120,11 @@ test('workflow rejects policy before provisioning by default, prepares only when
     'Setup mandatory sccache',
     'Prepare explicit caller prerequisites',
     'Strict preflight after explicit caller preparation',
-    'Start advisory dependency reporting alongside compilation',
+    'Start mandatory dependency scan alongside compilation',
     'Enforce all strict Rust lint scopes',
     'Run unified authoritative Rust test suite',
     'Run additional caller validation',
-    'Collect advisory dependency reporting',
+    'Collect mandatory dependency scan',
     'Finalize mandatory sccache',
   ];
   let previous = -1;
