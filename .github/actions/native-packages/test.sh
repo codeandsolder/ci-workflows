@@ -2,7 +2,7 @@
 set -euo pipefail
 root=$(mktemp -d)
 trap 'rm -rf -- "$root"' EXIT
-mkdir "$root/bin"
+mkdir "$root/bin" "$root/manifest" "$root/missing" "$root/pinned"
 export TEST_LOG=$root/calls
 export PATH="$root/bin:$PATH"
 cat > "$root/bin/sudo" <<'MOCK'
@@ -11,40 +11,43 @@ printf 'sudo %s\n' "$*" >> "$TEST_LOG"
 MOCK
 cat > "$root/bin/sccache-runtime-profile" <<'MOCK'
 #!/usr/bin/env bash
-printf 'profile %s\n' "$*" >> "$TEST_LOG"
-[[ $3 != *missing* ]] || exit 69
-printf 'sha256:example\n'
+[[ $1 == manifest ]]
+printf '%s/.sccache-runtime-packages\n' "$2"
+MOCK
+cat > "$root/bin/sccache-runtime" <<'MOCK'
+#!/usr/bin/env bash
+printf 'runtime %s\n' "$*" >> "$TEST_LOG"
+[[ $2 != *missing* ]] || exit 69
 MOCK
 chmod +x "$root/bin/"*
-printf 'poppler-utils\n  ripgrep # guard\n\npoppler-utils\n' > "$root/manifest"
-printf 'sha256:base\n' > "$root/base"
+printf 'poppler-utils\n  ripgrep # guard\n\npoppler-utils\n' > "$root/manifest/.sccache-runtime-packages"
 : > "$TEST_LOG"
-bash .github/actions/native-packages/prepare.sh hosted "$root/manifest" '' "$root/base" "$root/catalog"
+bash .github/actions/native-packages/prepare.sh hosted "$root/manifest/.sccache-runtime-packages" ''
 diff -u <(printf 'sudo apt-get update\nsudo apt-get install -y --no-install-recommends -- poppler-utils ripgrep\n') "$TEST_LOG"
 : > "$TEST_LOG"
-bash .github/actions/native-packages/prepare.sh managed "$root/manifest" '' "$root/base" "$root/catalog"
-diff -u <(printf 'profile select sha256:base %s %s\n' "$root/manifest" "$root/catalog") "$TEST_LOG"
+bash .github/actions/native-packages/prepare.sh managed "$root/manifest/.sccache-runtime-packages" ''
+diff -u <(printf 'runtime --project-dir %s --offline -- true\n' "$root/manifest") "$TEST_LOG"
 : > "$TEST_LOG"
-bash .github/actions/native-packages/prepare.sh managed "$root/manifest" 'host-tool' "$root/base" "$root/catalog"
-diff -u <(printf 'profile select sha256:base %s %s\nsudo apt-get update\nsudo apt-get install -y -- host-tool\n' "$root/manifest" "$root/catalog") "$TEST_LOG"
+bash .github/actions/native-packages/prepare.sh managed "$root/manifest/.sccache-runtime-packages" 'host-tool'
+diff -u <(printf 'runtime --project-dir %s --offline -- true\nsudo apt-get update\nsudo apt-get install -y -- host-tool\n' "$root/manifest") "$TEST_LOG"
 : > "$TEST_LOG"
-printf 'poppler-utils\n' > "$root/missing"
-if bash .github/actions/native-packages/prepare.sh managed "$root/missing" 'host-tool' "$root/base" "$root/catalog"; then exit 1; else [[ $? == 69 ]]; fi
-diff -u <(printf 'profile select sha256:base %s %s\n' "$root/missing" "$root/catalog") "$TEST_LOG"
+printf 'poppler-utils\n' > "$root/missing/.sccache-runtime-packages"
+if bash .github/actions/native-packages/prepare.sh managed "$root/missing/.sccache-runtime-packages" 'host-tool'; then exit 1; else [[ $? == 69 ]]; fi
+diff -u <(printf 'runtime --project-dir %s --offline -- true\n' "$root/missing") "$TEST_LOG"
 : > "$TEST_LOG"
 printf '%s\n' '--allow-unauthenticated' > "$root/invalid"
-if bash .github/actions/native-packages/prepare.sh hosted "$root/invalid" '' "$root/base" "$root/catalog"; then exit 1; else [[ $? == 65 ]]; fi
+if bash .github/actions/native-packages/prepare.sh hosted "$root/invalid" ''; then exit 1; else [[ $? == 65 ]]; fi
 [[ ! -s $TEST_LOG ]]
-bash .github/actions/native-packages/prepare.sh hosted '' '' "$root/base" "$root/catalog"
+bash .github/actions/native-packages/prepare.sh hosted '' ''
 [[ ! -s $TEST_LOG ]]
 echo 'Native package preparation tests passed'
 : > "$TEST_LOG"
-printf 'oracle sha256:%064d https://example.com/oracle.deb\n' 7 > "$root/pinned"
-bash .github/actions/native-packages/prepare.sh managed "$root/pinned" '' "$root/base" "$root/catalog"
-diff -u <(printf 'profile select sha256:base %s %s\n' "$root/pinned" "$root/catalog") "$TEST_LOG"
+printf 'oracle sha256:%064d https://example.com/oracle.deb\n' 7 > "$root/pinned/.sccache-runtime-packages"
+bash .github/actions/native-packages/prepare.sh managed "$root/pinned/.sccache-runtime-packages" ''
+diff -u <(printf 'runtime --project-dir %s --offline -- true\n' "$root/pinned") "$TEST_LOG"
 : > "$TEST_LOG"
 printf 'oracle sha256:%064d https://example.com/oracle.deb\noracle\n' 7 > "$root/conflict"
-if bash .github/actions/native-packages/prepare.sh hosted "$root/conflict" '' "$root/base" "$root/catalog"; then exit 1; else [[ $? == 65 ]]; fi
+if bash .github/actions/native-packages/prepare.sh hosted "$root/conflict" ''; then exit 1; else [[ $? == 65 ]]; fi
 [[ ! -s $TEST_LOG ]]
 printf 'archive contents\n' > "$root/deb-fixture"
 digest=$(sha256sum "$root/deb-fixture" | cut -d ' ' -f1)
@@ -67,11 +70,11 @@ cat > "$root/bin/dpkg-query" <<'MOCK'
 printf '47-1'
 MOCK
 chmod +x "$root/bin/"{curl,dpkg-deb,dpkg-query}
-printf 'oracle sha256:%s https://example.com/oracle.deb\nripgrep\n' "$digest" > "$root/pinned"
-bash .github/actions/native-packages/prepare.sh hosted "$root/pinned" '' "$root/base" "$root/catalog"
+printf 'oracle sha256:%s https://example.com/oracle.deb\nripgrep\n' "$digest" > "$root/pinned/.sccache-runtime-packages"
+bash .github/actions/native-packages/prepare.sh hosted "$root/pinned/.sccache-runtime-packages" ''
 rg -q 'sudo apt-get install -y --no-install-recommends -- .*/oracle.deb ripgrep$' "$TEST_LOG"
 : > "$TEST_LOG"
 printf 'oracle sha256:%064d https://example.com/oracle.deb\n' 7 > "$root/wrong-digest"
-if bash .github/actions/native-packages/prepare.sh hosted "$root/wrong-digest" '' "$root/base" "$root/catalog"; then exit 1; fi
+if bash .github/actions/native-packages/prepare.sh hosted "$root/wrong-digest" ''; then exit 1; fi
 [[ ! -s $TEST_LOG ]]
 echo 'Pinned Debian archive hosted/managed tests passed'

@@ -2,12 +2,10 @@
 # Project runtime packages have one declaration for managed and hosted native
 # builds. Explicit workflow apt-packages remain host prerequisites.
 set -euo pipefail
-[[ $# == 5 ]] || { echo 'Usage: prepare.sh hosted|managed MANIFEST HOST_PACKAGES BASE_ID_FILE CATALOG_DIR' >&2; exit 64; }
+[[ $# == 3 ]] || { echo 'Usage: prepare.sh hosted|managed MANIFEST HOST_PACKAGES' >&2; exit 64; }
 mode=$1
 manifest=$2
 host_packages=$3
-base_file=$4
-catalog=$5
 case "$mode" in hosted|managed) ;; *) exit 64 ;; esac
 fail() { printf '%s\n' "$*" >&2; exit 65; }
 normalize() {
@@ -34,15 +32,16 @@ declare -A pinned_versions=()
 scratch=''
 trap 'if [[ -n $scratch ]]; then rm -rf -- "$scratch"; fi' EXIT
 if [[ -n $manifest && ( -e $manifest || -L $manifest ) ]]; then
-    normalized=$(normalize "$manifest")
-    if [[ -n $normalized ]]; then
-        if [[ $mode == managed ]]; then
-            # Missing runtime/catalog is a provisioning failure, not a reason
-            # to install host packages or attempt another compiler runtime.
-            read -r base < "$base_file"
-            image=$(sccache-runtime-profile select "$base" "$manifest" "$catalog")
-            printf 'Registered managed native package image: %s\n' "$image"
-        else
+    if [[ $mode == managed ]]; then
+        # Use the same entrypoint as Cargo. It handles image selection,
+        # automatic fleet provisioning and mount validation without exposing
+        # catalog/broker internals to the workflow provider.
+        project=$(dirname -- "$(realpath -m -- "$manifest")")
+        [[ $(realpath -m -- "$manifest") == "$(sccache-runtime-profile manifest "$project")" ]] || fail "Not the project's canonical runtime manifest: $manifest"
+        sccache-runtime --project-dir "$project" --offline -- true
+    else
+        normalized=$(normalize "$manifest")
+        if [[ -n $normalized ]]; then
             while read -r name digest url; do
                 if [[ -z $digest ]]; then requested+=("$name"); continue; fi
                 if [[ -z $scratch ]]; then scratch=$(mktemp -d); chmod 755 "$scratch"; fi
