@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { dependencyDirectories, parseStrictSuites, preflightScopes, runStrictScopes } from './run.mjs';
+import { dependencyDirectories, parseStrictSuites, preflightScopes, resolveScopeWorkspaces, runStrictScopes } from './run.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'strict-suites-'));
@@ -114,13 +114,14 @@ test('workflow rejects policy before provisioning by default, prepares only when
     'Quarantine new external crates once across all workspaces',
     'Resolve one quarantined compiler',
     'Install minimal Rust toolchain',
+    'Resolve dependency workspaces independently of preflight',
+    'Start mandatory dependency scan alongside compilation',
     'Strict formatting, source and release-license preflight',
     'Install remaining Rust components and targets',
     'Setup mandatory sccache',
     'Prepare declared native build dependencies',
     'Prepare explicit caller prerequisites',
     'Strict preflight after explicit caller preparation',
-    'Start mandatory dependency scan alongside compilation',
     'Enforce all strict Rust lint scopes',
     'Run unified authoritative Rust test suite',
     'Run additional caller validation',
@@ -156,12 +157,25 @@ test('legacy native jobs explicitly select a mandatory dependency scan without s
   assert.match(workflow, /dependency-directories:\n/);
   assert.match(workflow, /Explicit dependency directories require a non-strict routine native Linux X64 job/);
   assert.match(workflow, /if: inputs\.dependency-directories != '' \|\|/);
-  assert.match(workflow, /working-directories: .*inputs\.dependency-directories \|\| steps\.strict-early/);
+  assert.match(workflow, /working-directories: .*inputs\.dependency-directories \|\| steps\.dependency-selection\.outputs\.directories/);
   const collect = workflow.slice(workflow.indexOf('      - name: Collect mandatory dependency scan'), workflow.indexOf('      - name: Finalize mandatory sccache'));
   assert(!collect.includes('continue-on-error'));
+  assert.match(collect, /publish: \$\{\{ !cancelled\(\) \}\}/);
   const standalone = readFileSync(new URL('../../workflows/rust-dependency-gate.yml', import.meta.url), 'utf8');
   assert.match(standalone, /working-directories: .*inputs\.working-directories/);
   assert.match(standalone, /repository-path: \.ci-workflows/);
   assert(!standalone.includes('continue-on-error'));
   assert(!standalone.includes('cargo build'));
+});
+
+test('canonical dependency scope selection performs no lint or build', t => {
+  const root = fixture(t);
+  const scopes = parseStrictSuites('[{"name":"a","directory":"native"},{"name":"b","directory":"other"},{"name":"c","dependency-quality":false}]', root);
+  const calls = [];
+  const workspaces = resolveScopeWorkspaces(scopes, root, 'nightly-2026-11-23', (program,args,opts) => {
+    calls.push({program,args});
+    return {status:0, stdout:join(opts.cwd === join(root,'other') ? join(root,'native') : opts.cwd,'Cargo.toml')};
+  });
+  assert(calls.every(call => call.program === 'cargo' && call.args.includes('locate-project')));
+  assert.deepEqual(dependencyDirectories(workspaces.map(({scope,directory}) => ({...scope,directory}))), ['native']);
 });

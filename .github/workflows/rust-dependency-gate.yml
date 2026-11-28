@@ -7,6 +7,11 @@ on:
         description: JSON array of repository-relative Cargo workspace roots
         required: true
         type: string
+      checkout-submodules:
+        description: Submodule checkout mode for the caller workspace
+        required: false
+        type: string
+        default: "false"
 
 permissions:
   contents: read
@@ -20,6 +25,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: ${{ inputs.checkout-submodules }}
 
       - name: Checkout pinned dependency gate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
