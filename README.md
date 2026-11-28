@@ -118,7 +118,7 @@ native Linux X64. Use checkout-submodules, apt-packages, and the strict Python
 location inputs only where needed. Ordinary Rust jobs without strict scopes
 retain the existing setup.
 
-## Informational Rust dependency quality
+## Mandatory Rust dependency consolidation
 
 The shared [`.github/actions/rust-dependency-quality`](.github/actions/rust-dependency-quality/action.yml)
 composite scans a selected Cargo workspace **without compiling it**. The pinned
@@ -131,8 +131,11 @@ organization forks. It scans all features and dependency roles across the
 platform union once per workspace; verify mutually exclusive configurations
 before consolidating. No scanner builds the caller project.
 
-Results are advisory while the fleet's existing debt and scanner false
-positives are reviewed: scanner findings are not a merge gate. The
+Cargo-anoint is mandatory: unavailable scans, explicit caller failure policy,
+and unexempted focused provider overlaps fail CI. Workload-sensitive overlap
+advisories and other recommendations remain review candidates, as do the
+RustSec and unused-dependency reports. Intentional direct-provider coexistence
+requires a reasoned exact provider pair in the workspace anoint.toml. The
 GitHub job summary distinguishes findings from unavailable/incomplete scans;
 raw diagnostics and structured results are available in a 14-day public artifact
 or the private job log. An unavailable or malformed cargo-anoint scan is

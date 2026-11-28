@@ -419,10 +419,9 @@ jobs:
           STRICT_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
         run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs preflight
 
-      - name: Start advisory dependency reporting alongside compilation
+      - name: Start mandatory dependency scan alongside compilation
         id: dependency-scan
         if: inputs.strict-suites != '' && (steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories) != '[]'
-        continue-on-error: true
         uses: ./.ci-workflows/.github/actions/rust-dependency-quality
         with:
           mode: start
@@ -451,9 +450,8 @@ jobs:
           set -euo pipefail
           ${{ inputs.command }}
 
-      - name: Collect advisory dependency reporting
+      - name: Collect mandatory dependency scan
         if: always() && steps.dependency-scan.outputs.scan-state != ''
-        continue-on-error: true
         uses: ./.ci-workflows/.github/actions/rust-dependency-quality
         with:
           mode: finish

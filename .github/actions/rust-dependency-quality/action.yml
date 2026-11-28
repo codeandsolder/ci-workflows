@@ -1,5 +1,5 @@
-name: Rust dependency quality (informational)
-description: RustSec advisories, unused direct dependencies, and consolidation advice without a compilation pass.
+name: Rust dependency quality
+description: Mandatory dependency consolidation gate plus advisory RustSec and unused-dependency reports without a compilation pass.
 inputs:
   working-directories:
     description: JSON array of Cargo workspace paths relative to caller checkout
@@ -69,7 +69,6 @@ runs:
     - name: Audit dependency health and consolidation
       if: always() && inputs.mode == 'run'
       shell: bash
-      continue-on-error: true
       env:
         DEPENDENCY_DIRECTORIES: ${{ inputs.working-directories }}
         DEPENDENCY_SCANNERS_INSTALLED: ${{ steps.tools.outcome }}
@@ -90,7 +89,6 @@ runs:
       id: collect
       if: ${{ always() && inputs.mode == 'finish' }}
       shell: bash
-      continue-on-error: true
       env:
         SCAN_STATE: ${{ inputs.scan-state }}
         PUBLISH: ${{ inputs.publish }}
