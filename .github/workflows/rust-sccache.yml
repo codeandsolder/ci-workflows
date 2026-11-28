@@ -391,15 +391,11 @@ jobs:
 
       - name: Prepare declared native build dependencies
         if: inputs.apt-packages != '' || (runner.os == 'Linux' && inputs.cache-execution == 'native')
-        shell: bash
-        env:
-          HOST_PACKAGES: ${{ inputs.apt-packages }}
-          PACKAGE_MODE: ${{ github.event.repository.private && 'managed' || 'hosted' }}
-          NATIVE_MANIFEST: ${{ runner.os == 'Linux' && inputs.cache-execution == 'native' && '.sccache-runtime-packages' || '' }}
-        run: |
-          bash .ci-workflows/.github/actions/native-packages/prepare.sh \
-            "$PACKAGE_MODE" "$NATIVE_MANIFEST" "$HOST_PACKAGES" \
-            /etc/sccache/runtime-image /etc/sccache/runtime-profiles
+        uses: ./.ci-workflows/.github/actions/native-packages
+        with:
+          mode: ${{ github.event.repository.private && 'managed' || 'hosted' }}
+          host-packages: ${{ inputs.apt-packages }}
+          manifest: ${{ runner.os == 'Linux' && inputs.cache-execution == 'native' && '.sccache-runtime-packages' || '' }}
 
       - name: Provision explicitly requested uv
         if: ${{ inputs.uv-version != '' }}

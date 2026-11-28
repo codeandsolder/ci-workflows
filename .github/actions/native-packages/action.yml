@@ -1,0 +1,26 @@
+name: Prepare project native packages
+description: Install declared packages on hosted Linux, or verify the immutable runtime profile on managed Linux
+inputs:
+  mode:
+    description: hosted or managed
+    required: true
+  manifest:
+    description: Project native package declaration, relative to the caller checkout
+    required: false
+    default: .sccache-runtime-packages
+  host-packages:
+    description: Explicit host prerequisites, distinct from project runtime packages
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Prepare declared native packages
+      shell: bash
+      env:
+        PACKAGE_MODE: ${{ inputs.mode }}
+        NATIVE_MANIFEST: ${{ inputs.manifest }}
+        HOST_PACKAGES: ${{ inputs.host-packages }}
+      run: |
+        bash "$GITHUB_ACTION_PATH/prepare.sh" "$PACKAGE_MODE" "$NATIVE_MANIFEST" "$HOST_PACKAGES" \
+          /etc/sccache/runtime-image /etc/sccache/runtime-profiles
