@@ -303,6 +303,25 @@ jobs:
           mkdir -p "$target_dir"
           echo "CARGO_TARGET_DIR=$target_dir" >> "$GITHUB_ENV"
 
+      - name: Resolve dependency workspaces independently of preflight
+        id: dependency-selection
+        if: inputs.strict-suites != ''
+        shell: bash
+        env:
+          STRICT_SUITES: ${{ inputs.strict-suites }}
+          STRICT_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
+        run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs dependency-directories
+
+      - name: Start mandatory dependency scan alongside compilation
+        id: dependency-scan
+        if: inputs.dependency-directories != '' || (inputs.strict-suites != '' && steps.dependency-selection.outputs.directories != '[]')
+        uses: ./.ci-workflows/.github/actions/rust-dependency-quality
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
+        with:
+          mode: start
+          working-directories: ${{ inputs.dependency-directories || steps.dependency-selection.outputs.directories }}
+
       - name: Strict formatting, source and release-license preflight
         id: strict-early
         if: inputs.strict-suites != '' && inputs.prepare-command == ''
@@ -427,14 +446,6 @@ jobs:
           STRICT_TOOLCHAIN: ${{ steps.compiler.outputs.channel }}
         run: node .ci-workflows/.github/actions/rust-strict-suites/run.mjs preflight
 
-      - name: Start mandatory dependency scan alongside compilation
-        id: dependency-scan
-        if: inputs.dependency-directories != '' || (inputs.strict-suites != '' && (steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories) != '[]')
-        uses: ./.ci-workflows/.github/actions/rust-dependency-quality
-        with:
-          mode: start
-          working-directories: ${{ inputs.dependency-directories || steps.strict-early.outputs.dependency-directories || steps.strict-late.outputs.dependency-directories }}
-
       - name: Enforce all strict Rust lint scopes
         if: inputs.strict-suites != ''
         id: strict
@@ -464,7 +475,7 @@ jobs:
         with:
           mode: finish
           scan-state: ${{ steps.dependency-scan.outputs.scan-state }}
-          publish: ${{ job.status == 'success' }}
+          publish: ${{ !cancelled() }}
 
       - name: Finalize mandatory sccache
         if: always()

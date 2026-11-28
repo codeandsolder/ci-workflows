@@ -83,14 +83,18 @@ function workspaceDirectory(scope, root, toolchain, spawn) {
   return rel || '.';
 }
 
-export function preflightScopes(scopes, root, toolchain, planDir, spawn = spawnSync) {
+export function resolveScopeWorkspaces(scopes, root, toolchain, spawn = spawnSync) {
   const resolved = new Map();
-  const workspaces = scopes.map(scope => {
+  return scopes.map(scope => {
     if (!resolved.has(scope.directory)) {
       resolved.set(scope.directory, workspaceDirectory(scope, root, toolchain, spawn));
     }
     return {scope, directory: resolved.get(scope.directory)};
   });
+}
+
+export function preflightScopes(scopes, root, toolchain, planDir, spawn = spawnSync) {
+  const workspaces = resolveScopeWorkspaces(scopes, root, toolchain, spawn);
   const formatted = new Set();
   for (const {scope, directory} of workspaces) {
     if (formatted.has(directory)) continue;
@@ -128,11 +132,17 @@ function main() {
   switch (process.argv[2]) {
     case 'prepare':
       break; // Validate scope declarations before toolchain/cache setup.
+    case 'dependency-directories': {
+      const workspaces = resolveScopeWorkspaces(scopes, root, process.env.STRICT_TOOLCHAIN);
+      const directories = dependencyDirectories(workspaces.map(({scope, directory}) => ({...scope, directory})));
+      appendFileSync(process.env.GITHUB_OUTPUT, 'directories=' + JSON.stringify(directories) + '\n');
+      break;
+    }
     case 'preflight': {
       const planDir = mkdtempSync(join(realpathSync(process.env.RUNNER_TEMP), 'strict-plan-'));
       try {
-        const directories = preflightScopes(scopes, root, process.env.STRICT_TOOLCHAIN, planDir);
-        appendFileSync(process.env.GITHUB_OUTPUT, 'plan-dir=' + planDir + '\ndependency-directories=' + JSON.stringify(directories) + '\n');
+        preflightScopes(scopes, root, process.env.STRICT_TOOLCHAIN, planDir);
+        appendFileSync(process.env.GITHUB_OUTPUT, 'plan-dir=' + planDir + '\n');
       } catch (error) {
         rmSync(planDir, {recursive:true, force:true});
         throw error;

@@ -14,7 +14,7 @@ inputs:
     required: false
     default: ""
   publish:
-    description: For mode finish, publish on successful validation or cancel otherwise
+    description: For mode finish, collect and publish unless the workflow was cancelled
     required: false
     default: "true"
 outputs:
@@ -94,18 +94,6 @@ runs:
         PUBLISH: ${{ inputs.publish }}
       run: node "$GITHUB_ACTION_PATH/overlap.mjs" finish "$SCAN_STATE" "$PUBLISH"
 
-    - name: Log dependency findings in private repositories
-      if: always() && github.event.repository.private && (inputs.mode == 'run' || (inputs.mode == 'finish' && inputs.publish == 'true' && steps.collect.outputs.report-root != ''))
-      shell: bash
-      continue-on-error: true
-      env:
-        REPORT_ROOT: ${{ steps.collect.outputs.report-root || format('{0}/rust-dependency-quality', runner.temp) }}
-      run: |
-        report="$REPORT_ROOT"
-        if [[ -d "$report" ]]; then
-          find "$report" -name results.json -type f -print -exec cat {} \;
-        fi
-
     - name: Upload dependency findings
       id: upload
       if: always() && !github.event.repository.private && (inputs.mode == 'run' || (inputs.mode == 'finish' && inputs.publish == 'true' && steps.collect.outputs.report-root != ''))
@@ -116,3 +104,14 @@ runs:
         path: ${{ steps.collect.outputs.report-root || format('{0}/rust-dependency-quality', runner.temp) }}/
         if-no-files-found: warn
         retention-days: 14
+
+    - name: Log dependency findings when no artifact is available
+      if: always() && (github.event.repository.private || steps.upload.outcome != 'success') && (inputs.mode == 'run' || (inputs.mode == 'finish' && inputs.publish == 'true' && steps.collect.outputs.report-root != ''))
+      shell: bash
+      continue-on-error: true
+      env:
+        REPORT_ROOT: ${{ steps.collect.outputs.report-root || format('{0}/rust-dependency-quality', runner.temp) }}
+      run: |
+        if [[ -d "$REPORT_ROOT" ]]; then
+          find "$REPORT_ROOT" -maxdepth 2 -name results.json -type f -print -exec cat {} \;
+        fi
