@@ -8,7 +8,7 @@ publish = false
 caseless = "0.2.2"
 regex = "1"
 saphyr = { version = "0.3.3", default-features = false }
-saphyr-parser = "0.3.3"
+saphyr-parser = "0.4.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
