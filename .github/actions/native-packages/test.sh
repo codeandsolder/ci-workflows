@@ -72,7 +72,7 @@ MOCK
 chmod +x "$root/bin/"{curl,dpkg-deb,dpkg-query}
 printf 'oracle sha256:%s https://example.com/oracle.deb\nripgrep\n' "$digest" > "$root/pinned/.sccache-runtime-packages"
 bash .github/actions/native-packages/prepare.sh hosted "$root/pinned/.sccache-runtime-packages" ''
-rg -q 'sudo apt-get install -y --no-install-recommends -- .*/oracle.deb ripgrep$' "$TEST_LOG"
+[[ $(<"$TEST_LOG") == *'sudo apt-get install -y --no-install-recommends -- '*'/oracle.deb ripgrep' ]]
 : > "$TEST_LOG"
 printf 'oracle sha256:%064d https://example.com/oracle.deb\n' 7 > "$root/wrong-digest"
 if bash .github/actions/native-packages/prepare.sh hosted "$root/wrong-digest" ''; then exit 1; fi
