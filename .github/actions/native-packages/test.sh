@@ -23,14 +23,14 @@ bash .github/actions/native-packages/prepare.sh hosted "$root/manifest" '' "$roo
 diff -u <(printf 'sudo apt-get update\nsudo apt-get install -y --no-install-recommends -- poppler-utils ripgrep\n') "$TEST_LOG"
 : > "$TEST_LOG"
 bash .github/actions/native-packages/prepare.sh managed "$root/manifest" '' "$root/base" "$root/catalog"
-diff -u <(printf 'profile select sha256:base %s %s\n' "$root/manifest" "$root/catalog") "$TEST_LOG"
+diff -u <(printf 'profile ensure sha256:base %s %s /run/sccache-runtime-profile.sock\n' "$root/manifest" "$root/catalog") "$TEST_LOG"
 : > "$TEST_LOG"
 bash .github/actions/native-packages/prepare.sh managed "$root/manifest" 'host-tool' "$root/base" "$root/catalog"
-diff -u <(printf 'profile select sha256:base %s %s\nsudo apt-get update\nsudo apt-get install -y -- host-tool\n' "$root/manifest" "$root/catalog") "$TEST_LOG"
+diff -u <(printf 'profile ensure sha256:base %s %s /run/sccache-runtime-profile.sock\nsudo apt-get update\nsudo apt-get install -y -- host-tool\n' "$root/manifest" "$root/catalog") "$TEST_LOG"
 : > "$TEST_LOG"
 printf 'poppler-utils\n' > "$root/missing"
 if bash .github/actions/native-packages/prepare.sh managed "$root/missing" 'host-tool' "$root/base" "$root/catalog"; then exit 1; else [[ $? == 69 ]]; fi
-diff -u <(printf 'profile select sha256:base %s %s\n' "$root/missing" "$root/catalog") "$TEST_LOG"
+diff -u <(printf 'profile ensure sha256:base %s %s /run/sccache-runtime-profile.sock\n' "$root/missing" "$root/catalog") "$TEST_LOG"
 : > "$TEST_LOG"
 printf '%s\n' '--allow-unauthenticated' > "$root/invalid"
 if bash .github/actions/native-packages/prepare.sh hosted "$root/invalid" '' "$root/base" "$root/catalog"; then exit 1; else [[ $? == 65 ]]; fi
@@ -41,7 +41,7 @@ echo 'Native package preparation tests passed'
 : > "$TEST_LOG"
 printf 'oracle sha256:%064d https://example.com/oracle.deb\n' 7 > "$root/pinned"
 bash .github/actions/native-packages/prepare.sh managed "$root/pinned" '' "$root/base" "$root/catalog"
-diff -u <(printf 'profile select sha256:base %s %s\n' "$root/pinned" "$root/catalog") "$TEST_LOG"
+diff -u <(printf 'profile ensure sha256:base %s %s /run/sccache-runtime-profile.sock\n' "$root/pinned" "$root/catalog") "$TEST_LOG"
 : > "$TEST_LOG"
 printf 'oracle sha256:%064d https://example.com/oracle.deb\noracle\n' 7 > "$root/conflict"
 if bash .github/actions/native-packages/prepare.sh hosted "$root/conflict" '' "$root/base" "$root/catalog"; then exit 1; else [[ $? == 65 ]]; fi

@@ -40,8 +40,8 @@ if [[ -n $manifest && ( -e $manifest || -L $manifest ) ]]; then
             # Missing runtime/catalog is a provisioning failure, not a reason
             # to install host packages or attempt another compiler runtime.
             read -r base < "$base_file"
-            image=$(sccache-runtime-profile select "$base" "$manifest" "$catalog")
-            printf 'Registered managed native package image: %s\n' "$image"
+            image=$(sccache-runtime-profile ensure "$base" "$manifest" "$catalog" /run/sccache-runtime-profile.sock)
+            printf 'Resolved managed native package image: %s\n' "$image"
         else
             while read -r name digest url; do
                 if [[ -z $digest ]]; then requested+=("$name"); continue; fi
