@@ -78,7 +78,7 @@ test('launch returns while a real scanner subprocess is blocked, then collects i
   assert.match(readFileSync(f.summary,'utf8'), /Rust dependency health/);
 });
 
-test('failed mandatory validation cancels an active scanner and removes state without publication', async t => {
+test('workflow cancellation terminates an active scanner and removes state without publication', async t => {
   const f = fixture(t);
   const state = f.start();
   await waitForFile(f.started);

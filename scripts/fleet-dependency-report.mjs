@@ -65,7 +65,13 @@ export function summarizeReports(reports) {
   const selected = [...workspaces.values()];
   const usable = selected.filter(r => r.available);
   const findings = usable.flatMap(r => r.findings);
-  const distinct = new Map(findings.map(f => [JSON.stringify([f.kind,f.current,f.recommended]), f]));
+  const distinct = new Map();
+  const priority = {High:3,Medium:2,Low:1};
+  for (const f of findings) {
+    const key = JSON.stringify([f.kind,f.current,f.recommended]);
+    const previous = distinct.get(key);
+    if (!previous || priority[f.impact] > priority[previous.impact]) distinct.set(key,f);
+  }
   return {
     reports: selected,
     packages: usable.length ? usable.reduce((n,r)=>n+r.packages,0) : null,
@@ -74,7 +80,7 @@ export function summarizeReports(reports) {
     high: usable.length ? [...distinct.values()].filter(f => f.impact === 'High').length : null,
     overlaps: usable.length ? [...distinct.values()].filter(f => f.kind === 'CapabilityOverlap') : null,
     advisoryOverlaps: usable.length ? [...distinct.values()].filter(f => f.kind === 'AdvisoryOverlap') : null,
-    complete: usable.length > 0 && usable.length === selected.length,
+    allRetrievedReportsAvailable: usable.length > 0 && usable.length === selected.length,
   };
 }
 
@@ -123,8 +129,10 @@ async function readRun(fullName, run, artifacts, output, privateRepo, errors) {
     try {
       await gh(['run','download',String(run.id),'-R',fullName,'-D',temp,'-p',prefix+'*']);
       for (const path of await resultFiles(temp)) {
-        const report = normalizeReport(JSON.parse(await readFile(path,'utf8')), {...source, type:'artifact'});
-        if (report) reports.push(report);
+        try {
+          const report = normalizeReport(JSON.parse(await readFile(path,'utf8')), {...source, type:'artifact'});
+          if (report) reports.push(report);
+        } catch (e) { errors.push('Invalid result in artifact '+run.id+': '+e.message); }
       }
     } catch (e) { errors.push('Artifact '+run.id+': '+e.message); }
     finally { await rm(temp,{recursive:true,force:true}); }
@@ -172,7 +180,7 @@ async function collect(owner, repo, output) {
     const current = await tryGroups(groups,'default');
     if (current) return current;
     const prs = (await json(['api',base+'runs?event=pull_request&per_page=30'])).workflow_runs;
-    const fallback = await tryGroups(groupRuns(prs,artifacts,null).filter(group=>group[0].head_branch!==branch),'pr');
+    const fallback = await tryGroups(groupRuns(prs.filter(run=>run.head_branch!==branch),artifacts.filter(a=>a.workflow_run?.head_branch!==branch),null),'pr');
     if (fallback) return fallback;
     return {...inventory,coverage:'unavailable',...summarizeReports(unavailable),errors};
   } catch (e) {

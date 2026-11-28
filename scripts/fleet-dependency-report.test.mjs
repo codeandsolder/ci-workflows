@@ -17,7 +17,7 @@ test('private logs recover full report boundaries and preserve empty findings',(
   assert.equal(summary.raw,1);
   assert.equal(summary.unique,1);
   assert.equal(summary.high,1);
-  assert(summary.complete);
+  assert(summary.allRetrievedReportsAvailable);
 });
 
 test('missing, corrupt and unavailable scanners never count as zero',()=>{
@@ -26,7 +26,7 @@ test('missing, corrupt and unavailable scanners never count as zero',()=>{
   const summary = summarizeReports([unavailable]);
   assert.equal(summary.raw,null);
   assert.equal(summary.unique,null);
-  assert.equal(summary.complete,false);
+  assert.equal(summary.allRetrievedReportsAvailable,false);
   assert.deepEqual(logReports('job\tstep\t2026-11-28T07:01:00Z /tmp/results.json\njob\tstep\t2026-11-28T07:01:01Z {\njob\tstep\t2026-11-28T07:01:02Z unrelated'),[]);
 });
 
@@ -45,4 +45,11 @@ test('select default branches and group runs by exact commit, not workflow name 
   const runs=[run(1,'main','a','2026-11-28T01:00:00Z'),run(2,'main','b','2026-11-28T02:00:00Z'),run(3,'pr','c','2026-11-28T03:00:00Z'),run(4,'main','b','2026-11-28T02:01:00Z','Strict Rust'),run(5,'main','d','2026-11-28T04:00:00Z','Duplicate-code regression')];
   const groups=groupRuns(runs,[],'main');
   assert.deepEqual(groups.map(g=>g.map(r=>r.id)),[[4,2],[1]]);
+});
+
+test('repeated recommendations keep their highest reported impact',()=>{
+  const low = normalizeReport({...good,directory:'fuzz',anoint:{...good.anoint,findings:[{...finding,impact:'Low'}]}},source);
+  const result=summarizeReports([normalizeReport(good,source),low]);
+  assert.equal(result.unique,1);
+  assert.equal(result.high,1);
 });
