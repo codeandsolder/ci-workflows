@@ -1,5 +1,12 @@
-const kinds = new Set(['ModernAlternative', 'FeatureOptimization', 'StdReplacement', 'ComboWin', 'CapabilityOverlap', 'Unmaintained']);
+const kinds = new Set(['ModernAlternative', 'FeatureOptimization', 'StdReplacement', 'ComboWin', 'CapabilityOverlap', 'AdvisoryOverlap', 'Unmaintained']);
 const impacts = new Set(['High', 'Medium', 'Low']);
+
+function validateSuggestion(suggestion) {
+  if (!suggestion || !kinds.has(suggestion.kind) || !impacts.has(suggestion.impact) ||
+      ['current', 'recommended', 'reason'].some((key) => typeof suggestion[key] !== 'string')) {
+    throw new Error('Invalid dependency suggestion');
+  }
+}
 
 export function parseAnointOutput(raw, status, stderr = '') {
   const failed = { findings: [], packages: 0, version: null, policyTriggered: false, failed: true };
@@ -17,13 +24,20 @@ export function parseAnointOutput(raw, status, stderr = '') {
         throw new Error('Invalid package report');
       }
       return pkg.dependency_suggestions.map((suggestion) => {
-        if (!kinds.has(suggestion.kind) || !impacts.has(suggestion.impact) ||
-            ['current', 'recommended', 'reason'].some((key) => typeof suggestion[key] !== 'string')) {
-          throw new Error('Invalid dependency suggestion');
-        }
-        return { ...suggestion, package: pkg.name, packageVersion: pkg.version, manifest: pkg.manifest_path };
+        validateSuggestion(suggestion);
+        return { ...suggestion, scope: 'package', package: pkg.name, packageVersion: pkg.version, manifest: pkg.manifest_path };
       });
     });
+    if (report.workspace_suggestions !== undefined) {
+      if (!Array.isArray(report.workspace_suggestions)) throw new Error('Invalid workspace suggestions');
+      for (const suggestion of report.workspace_suggestions) {
+        validateSuggestion(suggestion);
+        if (suggestion.kind !== 'AdvisoryOverlap' || suggestion.package != null) {
+          throw new Error('Invalid workspace suggestion scope');
+        }
+        findings.push({ ...suggestion, scope: 'workspace', package: null, packageVersion: null, manifest: null });
+      }
+    }
     if (policyTriggered && findings.length === 0) return failed;
     return { findings, packages: report.packages.length, version: report.cargo_anoint_version, policyTriggered, failed: false };
   } catch {
@@ -38,22 +52,23 @@ function escapeMarkdown(value) {
 
 export function summarizeAnoint(report) {
   const overlaps = report.findings.filter((finding) => finding.kind === 'CapabilityOverlap');
-  const recommendations = report.findings.filter((finding) => finding.kind !== 'CapabilityOverlap');
+  const advisory = report.findings.filter((finding) => finding.kind === 'AdvisoryOverlap');
+  const recommendations = report.findings.filter((finding) => finding.kind !== 'CapabilityOverlap' && finding.kind !== 'AdvisoryOverlap');
   const status = report.failed ? 'Unavailable' : report.findings.length ? 'Review candidates' : 'No candidates';
   const row = '| Dependency consolidation / cargo-anoint | ' + report.findings.length + ' | ' + status + ' |';
   if (report.failed) return { row, lines: [] };
   const lines = [
     'Cargo-anoint ' + escapeMarkdown(report.version) + ': ' + report.packages + ' workspace member(s); ' +
-      overlaps.length + ' potential capability overlaps, ' + recommendations.length + ' other dependency recommendations.',
+      overlaps.length + ' potential capability overlaps, ' + advisory.length + ' advisory overlaps, ' + recommendations.length + ' other dependency recommendations.',
     '',
     'The scan includes all features and dependency roles across the Cargo platform union. Check feature/target exclusivity and build/dev roles before consolidating; findings are advisory.',
     '',
   ];
   if (report.policyTriggered) lines.push('The repository\'s own anoint.toml failure policy triggered. This shared report remains informational.', '');
   const impactRank = { High: 0, Medium: 1, Low: 2 };
-  const ordered = [...overlaps, ...recommendations.sort((a, b) => impactRank[a.impact] - impactRank[b.impact])];
+  const ordered = [...overlaps, ...advisory, ...recommendations.sort((a, b) => impactRank[a.impact] - impactRank[b.impact])];
   for (const finding of ordered.slice(0, 40)) {
-    lines.push('- **' + escapeMarkdown(finding.package) + '** [' + finding.kind + ', ' + finding.impact + ']: ' +
+    lines.push('- **' + escapeMarkdown(finding.scope === 'workspace' ? 'Workspace' : finding.package) + '** [' + finding.kind + ', ' + finding.impact + ']: ' +
       escapeMarkdown(finding.current) + ' → ' + escapeMarkdown(finding.recommended) + '. ' + escapeMarkdown(finding.reason));
   }
   if (ordered.length > 40) lines.push('- …and ' + (ordered.length - 40) + ' more in the structured diagnostics');
