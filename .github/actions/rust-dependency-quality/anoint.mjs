@@ -50,21 +50,32 @@ function escapeMarkdown(value) {
     .replace(/[\r\n]/g, ' ').replace(/[\\`*_{}[\]()#+\-.!|]/g, '\\$&');
 }
 
+// Fail closed for unavailable scans, explicit repository policy failures,
+// and unresolved focused overlaps, even if a scanner unexpectedly exits zero.
+export function anointGateFailure(report) {
+  if (report.failed) return 'cargo-anoint unavailable or invalid report';
+  const conflicts = report.findings.filter(finding => finding.kind === 'CapabilityOverlap');
+  if (conflicts.length) return 'Unresolved dependency provider overlaps: ' +
+    conflicts.map(f => f.package + ': ' + f.current).join('; ');
+  if (report.policyTriggered) return 'Repository cargo-anoint failure policy triggered';
+  return null;
+}
+
 export function summarizeAnoint(report) {
   const overlaps = report.findings.filter((finding) => finding.kind === 'CapabilityOverlap');
   const advisory = report.findings.filter((finding) => finding.kind === 'AdvisoryOverlap');
   const recommendations = report.findings.filter((finding) => finding.kind !== 'CapabilityOverlap' && finding.kind !== 'AdvisoryOverlap');
-  const status = report.failed ? 'Unavailable' : report.findings.length ? 'Review candidates' : 'No candidates';
+  const status = report.failed ? 'Unavailable (gate failed)' : anointGateFailure(report) ? 'Gate failed' : report.findings.length ? 'Review candidates' : 'No candidates';
   const row = '| Dependency consolidation / cargo-anoint | ' + report.findings.length + ' | ' + status + ' |';
   if (report.failed) return { row, lines: [] };
   const lines = [
     'Cargo-anoint ' + escapeMarkdown(report.version) + ': ' + report.packages + ' workspace member(s); ' +
       overlaps.length + ' potential capability overlaps, ' + advisory.length + ' advisory overlaps, ' + recommendations.length + ' other dependency recommendations.',
     '',
-    'The scan includes all features and dependency roles across the Cargo platform union. Check feature/target exclusivity and build/dev roles before consolidating; findings are advisory.',
+    'The scan includes all features and dependency roles across the Cargo platform union. Unexempted focused overlaps fail CI; workload-sensitive findings remain advisory. Review feature/target exclusivity and build/dev roles before consolidating.',
     '',
   ];
-  if (report.policyTriggered) lines.push('The repository\'s own anoint.toml failure policy triggered. This shared report remains informational.', '');
+  if (report.policyTriggered) lines.push('The repository\'s own anoint.toml failure policy triggered. The mandatory scanner gate failed.', '');
   const impactRank = { High: 0, Medium: 1, Low: 2 };
   const ordered = [...overlaps, ...advisory, ...recommendations.sort((a, b) => impactRank[a.impact] - impactRank[b.impact])];
   for (const finding of ordered.slice(0, 40)) {

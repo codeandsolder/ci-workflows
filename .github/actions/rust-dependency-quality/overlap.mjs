@@ -99,7 +99,7 @@ function worker(directory) {
   try {
     scanWorkspaces(root, directories, join(directory, 'report'), join(directory, 'summary.md'));
   } catch (error) {
-    status = {status: 'unavailable', reason: String(error.message)};
+    status = {status: 'failed', reason: String(error.message)};
     console.error(error);
     process.exitCode = 1;
   }
@@ -138,11 +138,12 @@ export async function collect(path, publish) {
   if (process.env.GITHUB_STEP_SUMMARY) {
     if (existsSync(summary)) appendFileSync(process.env.GITHUB_STEP_SUMMARY, readFileSync(summary));
     if (status.status !== 'success') {
-      appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\nDependency reporting unavailable or incomplete: ' + status.reason + '\n');
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\nDependency gate failed or incomplete: ' + status.reason + '\n');
     }
   }
-  if (status.status !== 'success') console.warn('Dependency reporting unavailable or incomplete: ' + status.reason);
+  if (status.status !== 'success') console.warn('Dependency gate failed or incomplete: ' + status.reason);
   appendFileSync(process.env.GITHUB_OUTPUT, 'report-root=' + report + '\n');
+  if (status.status !== 'success') throw new Error(status.reason);
   return report;
 }
 

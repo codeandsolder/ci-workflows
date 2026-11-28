@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAnointOutput, summarizeAnoint } from './anoint.mjs';
+import { anointGateFailure, parseAnointOutput, summarizeAnoint } from './anoint.mjs';
 import { releaseUrl, verifyBinary } from './install-anoint.mjs';
 import { createHash } from 'node:crypto';
 
@@ -19,7 +19,7 @@ test('workspace consolidation findings include both conflicts and recommendation
   assert.equal(parsed.packages, 1);
   assert.deepEqual(parsed.findings.map(f => [f.package, f.kind]), [['fixture', 'ModernAlternative'], ['fixture', 'CapabilityOverlap']]);
   const summary = summarizeAnoint(parsed);
-  assert.match(summary.row, /2 \| Review candidates/);
+  assert.match(summary.row, /2 \| Gate failed/);
   assert.match(summary.lines.join('\n'), /1 potential capability overlaps, 0 advisory overlaps, 1 other dependency recommendations/);
   assert.ok(summary.lines.findIndex(l => l.includes('CapabilityOverlap')) < summary.lines.findIndex(l => l.includes('ModernAlternative')));
 });
@@ -80,4 +80,12 @@ test('member and workspace advisory overlaps remain distinct and visible', () =>
     raw.workspace_suggestions = invalid;
     assert.equal(parseAnointOutput(JSON.stringify(raw), 0).failed, true);
   }
+});
+
+test('mandatory policy distinguishes focused conflicts, advisories and unavailable reports', () => {
+  assert.equal(anointGateFailure(parseAnointOutput(report(), 0)), null);
+  assert.match(anointGateFailure(parseAnointOutput(report(overlap), 0)), /fixture: wreq\+reqwest/);
+  assert.match(anointGateFailure(parseAnointOutput('broken', 0)), /unavailable/);
+  assert.equal(anointGateFailure(parseAnointOutput(report({...overlap,kind:'AdvisoryOverlap'}), 0)), null);
+  assert.match(anointGateFailure(parseAnointOutput(report(preference), 1, 'Error: exiting with non-zero status: at least one dependency suggestion matched --fail-on')), /policy triggered/);
 });

@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, realpathSync } from 'node:fs';
 import { resolve, dirname, isAbsolute, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseAnointOutput, summarizeAnoint } from './anoint.mjs';
+import { anointGateFailure, parseAnointOutput, summarizeAnoint } from './anoint.mjs';
 
 export function parseAdvisoryOutput(raw, status) {
   const diagnostics = [];
@@ -58,9 +58,9 @@ export function parseMacheteOutput(raw, status) {
 export function summarize(audit, unused, anoint) {
   const anointSummary = summarizeAnoint(anoint);
   const lines = [
-    '## Rust dependency health (informational)',
+    '## Rust dependency health',
     '',
-    'No additional compilation, no minimum threshold, and no change to required Rust checks.',
+    'No additional compilation. Cargo-anoint is required; RustSec and unused-dependency reports remain advisory.',
     '',
     '| Check | Findings | Status |',
     '| --- | ---: | --- |',
@@ -146,7 +146,7 @@ function scanWorkspace(root, directory, reportDir, summaryPath) {
 
   const anointBinary = process.env.DEPENDENCY_ANOINT_BINARY;
   const anointRun = anointBinary && present
-    ? run(anointBinary, ['anoint', '--workspace', '--offline', '--json', '--all-features', '--all-targets'], { cwd: workdir, timeout: 180_000 })
+    ? run(anointBinary, ['anoint', '--workspace', '--offline', '--json', '--all-features', '--all-targets', '--fail-on-overlap'], { cwd: workdir, timeout: 180_000 })
     : null;
   const anoint = parseAnointOutput(anointRun?.stdout ?? '', anointRun?.status ?? null, anointRun?.stderr);
 
@@ -177,10 +177,12 @@ function scanWorkspace(root, directory, reportDir, summaryPath) {
   }, null, 2) + '\n');
 
   const text = 'Workspace: `' + directory.replaceAll('`', '&#96;') + '`\n\n' + (!present
-    ? '## Rust dependency health\n\nSkipped: selected directory does not contain Cargo.toml.\n'
+    ? '## Rust dependency health\n\nGate failed: selected directory does not contain Cargo.toml.\n'
     : summarize(audit, unused, anoint));
   if (summaryPath) appendFileSync(summaryPath, text);
   else process.stdout.write(text);
+  const failure = anointGateFailure(anoint);
+  if (failure) throw new Error(failure);
 }
 
 // Individual tool subprocesses are bounded at 120 + 120 + 180 seconds.
@@ -195,7 +197,7 @@ export function scanWorkspaces(root, directories, reportRoot, summaryPath) {
     try { scanWorkspace(root, directory, resolve(reportRoot, report), summaryPath); }
     catch (error) { failures.push(directory + ': ' + error.message); }
   }
-  if (failures.length) throw new Error('Dependency scan unavailable: ' + failures.join('; '));
+  if (failures.length) throw new Error('Dependency gate failed: ' + failures.join('; '));
 }
 
 function main() {

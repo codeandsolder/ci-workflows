@@ -21,12 +21,16 @@ function fixture(t) {
   const started = join(temp, 'started');
   const release = join(temp, 'release');
   writeFileSync(join(bin, 'cargo-deny'), '#!/usr/bin/env bash\nset -euo pipefail\ntouch "$SCAN_STARTED"\nwhile [[ ! -e "$SCAN_RELEASE" ]]; do sleep 0.05; done\n', {mode:0o755});
+  const anoint = join(bin, 'cargo-anoint');
+  writeFileSync(anoint, '#!/usr/bin/env bash\nprintf "%s\\n" "$SCAN_ANOINT_JSON"\nexit "$SCAN_ANOINT_STATUS"\n', {mode:0o755});
   writeFileSync(join(bin, 'cargo-machete'), '#!/usr/bin/env bash\nprintf "{}\\n"\n', {mode:0o755});
   const env = {
     ...process.env, RUNNER_TEMP:temp, GITHUB_WORKSPACE:root,
     GITHUB_OUTPUT:output, GITHUB_STEP_SUMMARY:summary,
     DEPENDENCY_DIRECTORIES:'["."]', DEPENDENCY_SCANNERS_INSTALLED:'success',
-    DEPENDENCY_ANOINT_BINARY:'', PATH:bin + ':' + process.env.PATH,
+    DEPENDENCY_ANOINT_BINARY:anoint, PATH:bin + ':' + process.env.PATH,
+    SCAN_ANOINT_JSON:JSON.stringify({cargo_anoint_version:'test',workspace_scan:true,packages:[{name:'fixture',version:'0.1.0',manifest_path:join(root,'Cargo.toml'),dependency_suggestions:[]}]}),
+    SCAN_ANOINT_STATUS:'0',
     SCAN_STARTED:started, SCAN_RELEASE:release,
   };
   const invoke = (...args) => spawnSync(process.execPath, [script, ...args], {env, encoding:'utf8', timeout:10_000});
@@ -36,7 +40,7 @@ function fixture(t) {
     rmSync(temp,{recursive:true,force:true});
   });
   return {
-    output, summary, started, release, invoke,
+    output, summary, started, release, invoke, env,
     start() {
       const result = invoke('start');
       assert.equal(result.status,0,result.stderr);
@@ -96,3 +100,25 @@ test('refuse state paths outside the exact runner-owned scan directory', t => {
   assert.match(result.stderr,/Invalid runner-local dependency scan state/);
 });
 
+
+test('unavailable scanner and unresolved focused overlap fail collection after publishing diagnostics', async t => {
+  for (const mode of ['unavailable','conflict']) {
+    const f = fixture(t);
+    if (mode === 'unavailable') f.env.DEPENDENCY_ANOINT_BINARY = '';
+    else {
+      const report = JSON.parse(f.env.SCAN_ANOINT_JSON);
+      report.packages[0].dependency_suggestions.push({kind:'CapabilityOverlap',current:'wreq+reqwest',recommended:'wreq',reason:'overlap',impact:'Medium'});
+      f.env.SCAN_ANOINT_JSON = JSON.stringify(report);
+    }
+    const state = f.start();
+    await waitForFile(f.started);
+    writeFileSync(f.release,'');
+    const result = f.invoke('finish',state,'true');
+    assert.notEqual(result.status,0);
+    assert.match(readFileSync(f.output,'utf8'), /report-root=/);
+    const status = JSON.parse(readFileSync(join(state,'report','run-status.json'),'utf8'));
+    assert.equal(status.status,'failed');
+    assert.match(status.reason, /Dependency gate failed/);
+    assert(existsSync(join(state,'report','workspace-0','results.json')));
+  }
+});

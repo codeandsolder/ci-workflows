@@ -1,4 +1,4 @@
-name: Informational Rust dependency quality smoke
+name: Mandatory Rust dependency quality smoke
 
 on:
   pull_request:
@@ -35,8 +35,9 @@ jobs:
           working-directories: '[".github/actions/rust-dependency-quality/fixtures/example","smoke-cache",".github/actions/rust-dependency-quality/fixtures/example"]'
       - name: Validate report generator while scan runs
         run: node --test .github/actions/rust-dependency-quality/*.test.mjs
-      - name: Collect dependency report
+      - name: Collect dependency report (intentional conflict)
         id: scan
+        continue-on-error: true
         uses: ./.github/actions/rust-dependency-quality
         with:
           mode: finish
@@ -46,6 +47,7 @@ jobs:
         env:
           REPORT_ARTIFACT_ID: ${{ steps.scan.outputs.artifact-id }}
           REPORT_ROOT: ${{ steps.scan.outputs.report-root }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
         run: |
           # The scanner and assertion share a runner. Read the exact local
           # report rather than racing the artifact service's list operation.
@@ -66,6 +68,7 @@ jobs:
           assert.equal(result.auditExitCode, 0);
           assert.equal(result.unusedExitCode, 1);
           assert.deepEqual(result.unused.findings.map(f => f.dependency), ['local_helper']);
-          assert.equal(result.anointExitCode, 0);
+          assert.equal(process.env.SCAN_OUTCOME, 'failure', 'Conflict must fail the mandatory gate');
+          assert.equal(result.anointExitCode, 1);
           assert(result.anoint.findings.some(f => f.kind === 'CapabilityOverlap' && f.current === 'wreq+reqwest'), 'Expected HTTP provider overlap');
           JS
